@@ -33,6 +33,14 @@
         <h3 id="workflowModalTitle">创建工作流</h3>
         <div class="form-grid">
           <label>名称<input name="name" required /></label>
+          <label>工作流类型
+            <select name="workflowType" required>
+              <option value="">请选择</option>
+              <option value="voice_transcribe">提取声音文本</option>
+              <option value="line_audio">生成台词音频</option>
+              <option value="voice_sample">生成示例音频</option>
+            </select>
+          </label>
           <label class="full">描述<input name="description" /></label>
           <label class="full">工作流JSON<textarea name="jsonText" rows="10" required></textarea></label>
         </div>

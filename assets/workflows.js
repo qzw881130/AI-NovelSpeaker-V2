@@ -15,6 +15,16 @@ function orderedWorkflows() {
   });
 }
 
+const WORKFLOW_TYPE_LABELS = {
+  voice_transcribe: "提取声音文本",
+  line_audio: "生成台词音频",
+  voice_sample: "生成示例音频",
+};
+
+function getWorkflowTypeLabel(type) {
+  return WORKFLOW_TYPE_LABELS[type] || type || "-";
+}
+
 function render() {
   document.getElementById("workflowList").innerHTML = orderedWorkflows()
     .map(
@@ -24,7 +34,7 @@ function render() {
           <h3>${translateText(w.name)}</h3>
           <span class="chip ${w.type === "system" ? "pending" : "completed"}">${w.type === "system" ? "系统" : "用户"}</span>
         </div>
-        <p class="meta">${translateText(w.description || "-")}</p>
+        <p class="meta"><strong>类型:</strong> ${getWorkflowTypeLabel(w.workflowType)} | ${translateText(w.description || "-")}</p>
         <div class="card-actions">
           <button class="ghost-btn" data-action="copy" data-id="${w.id}">复制为用户工作流</button>
           <button class="ghost-btn" data-action="${w.type === "system" ? "view" : "edit"}" data-id="${w.id}">${w.type === "system" ? "查看" : "编辑"}</button>
@@ -44,6 +54,7 @@ function render() {
 function setFormReadonly(readonly) {
   const form = document.getElementById("workflowForm");
   form.name.readOnly = readonly;
+  form.workflowType.disabled = readonly;
   form.description.readOnly = readonly;
   form.jsonText.readOnly = readonly;
   const saveBtn = document.getElementById("workflowSaveBtn");
@@ -58,6 +69,7 @@ function openModal(item, mode = "create") {
     mode === "view" ? "查看系统工作流" : editingId ? "编辑工作流" : "创建工作流";
   const form = document.getElementById("workflowForm");
   form.name.value = mode === "view" ? translateText(item?.name || "") : item?.name || "";
+  form.workflowType.value = item?.workflowType || "";
   form.description.value = mode === "view" ? translateText(item?.description || "") : item?.description || "";
   form.jsonText.value = item?.jsonText || '{"workflow":""}';
   setFormReadonly(mode === "view");
@@ -110,6 +122,7 @@ function bindEvents() {
     await saveWorkflow(
       {
         name: form.name.value.trim(),
+        workflowType: form.workflowType.value,
         description: form.description.value.trim(),
         jsonText: form.jsonText.value.trim(),
       },

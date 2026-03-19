@@ -19,6 +19,53 @@ SYSTEM_WORKFLOW_NAME = "古典小说默认工作流"
 SYSTEM_WORKFLOW_DESC = "系统内置，作为 ComfyUI TTS 默认流程"
 DEFAULT_SYSTEM_WORKFLOW_JSON = '{"workflow":"classic-default"}'
 
+# 系统工作流定义
+SYSTEM_WORKFLOWS = [
+    {
+        "file": WORKFLOWS_DIR / "voice_transcribe_workflow.json",
+        "name": "提取声音文本",
+        "description": "系统内置，使用 Whisper 提取音频中的文本",
+        "workflow_type": "voice_transcribe",
+    },
+    {
+        "file": WORKFLOWS_DIR / "line_audio_workflow.json",
+        "name": "生成台词音频",
+        "description": "系统内置，使用 FishS2 Voice Clone 生成台词音频",
+        "workflow_type": "line_audio",
+    },
+    {
+        "file": WORKFLOWS_DIR / "voice_sample_workflow.json",
+        "name": "生成示例音频",
+        "description": "系统内置，使用 Qwen3-TTS VoiceDesign 生成示例音频",
+        "workflow_type": "voice_sample",
+    },
+]
+
+
+def migrate_novels_table(conn: sqlite3.Connection) -> None:
+    """迁移：为 novels 表添加新的工作流字段"""
+    # 检查字段是否存在
+    columns = conn.execute("PRAGMA table_info(novels)").fetchall()
+    column_names = [col[1] for col in columns]
+
+    # 添加 voice_sample_workflow_id 字段
+    if "voice_sample_workflow_id" not in column_names:
+        conn.execute(
+            "ALTER TABLE novels ADD COLUMN voice_sample_workflow_id INTEGER REFERENCES comfy_workflows(id)"
+        )
+
+    # 添加 line_audio_workflow_id 字段
+    if "line_audio_workflow_id" not in column_names:
+        conn.execute(
+            "ALTER TABLE novels ADD COLUMN line_audio_workflow_id INTEGER REFERENCES comfy_workflows(id)"
+        )
+
+    # 添加 voice_transcribe_workflow_id 字段
+    if "voice_transcribe_workflow_id" not in column_names:
+        conn.execute(
+            "ALTER TABLE novels ADD COLUMN voice_transcribe_workflow_id INTEGER REFERENCES comfy_workflows(id)"
+        )
+
 
 def db_conn() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH, timeout=12.0)
@@ -40,4 +87,6 @@ def db_conn() -> sqlite3.Connection:
         )
         """
     )
+    # 执行迁移
+    migrate_novels_table(conn)
     return conn

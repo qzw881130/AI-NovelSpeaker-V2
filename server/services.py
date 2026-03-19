@@ -29,6 +29,7 @@ from .app_context import (
     SYSTEM_WORKFLOW_DESC,
     SYSTEM_WORKFLOW_FILE,
     SYSTEM_WORKFLOW_NAME,
+    SYSTEM_WORKFLOWS,
     WORKFLOWS_DIR,
     db_conn,
 )
@@ -171,13 +172,17 @@ def fetch_workflows(conn: sqlite3.Connection) -> list[dict]:
         """
         SELECT id,name,workflow_type,description,json_text,created_at,updated_at
         FROM comfy_workflows
-        ORDER BY CASE WHEN workflow_type='system' THEN 0 ELSE 1 END, id DESC
+        ORDER BY CASE WHEN workflow_type='system' OR workflow_type='voice_transcribe' OR workflow_type='line_audio' OR workflow_type='voice_sample' THEN 0 ELSE 1 END, id DESC
         """
     ).fetchall()
     return [
         {
             "id": int(r["id"]),
-            "type": str(r["workflow_type"]),
+            "type": "system"
+            if str(r["workflow_type"])
+            in ["system", "voice_transcribe", "line_audio", "voice_sample"]
+            else "user",
+            "workflowType": str(r["workflow_type"]),
             "name": str(r["name"]),
             "description": str(r["description"] or ""),
             "jsonText": str(r["json_text"]),
@@ -218,23 +223,112 @@ def load_system_workflow_json_text() -> str:
     return json.dumps(parsed, ensure_ascii=False)
 
 
+def load_system_workflow_file(file_path: Path) -> str:
+    """加载系统工作流JSON文件内容"""
+    if not file_path.exists():
+        return "{}"
+    text = file_path.read_text(encoding="utf-8", errors="ignore").strip()
+    if not text:
+        return "{}"
+    try:
+        parsed = json.loads(text)
+        if not isinstance(parsed, dict):
+            return "{}"
+        return json.dumps(parsed, ensure_ascii=False)
+    except json.JSONDecodeError:
+        return "{}"
+
+
+def migrate_workflow_type_constraint(conn: sqlite3.Connection) -> None:
+    """迁移：移除 workflow_type 的 CHECK 约束，以支持新的工作流类型"""
+    # 检查是否存在 CHECK 约束（通过尝试插入一个无效值来测试）
+    try:
+        conn.execute(
+            "INSERT INTO comfy_workflows (name, workflow_type, description, json_text) VALUES ('__test__', 'test_type', '', '')"
+        )
+        conn.execute("DELETE FROM comfy_workflows WHERE name = '__test__'")
+        # 如果插入成功，说明没有 CHECK 约束，无需迁移
+        return
+    except sqlite3.IntegrityError:
+        # CHECK 约束存在，需要迁移
+        pass
+
+    # 禁用外键约束
+    conn.execute("PRAGMA foreign_keys = OFF")
+
+    try:
+        # 创建新表（不包含 CHECK 约束）
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS comfy_workflows_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                workflow_type TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                json_text TEXT NOT NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+
+        # 复制数据
+        conn.execute(
+            """
+            INSERT INTO comfy_workflows_new (id, name, workflow_type, description, json_text, created_at, updated_at)
+            SELECT id, name, workflow_type, description, json_text, created_at, updated_at
+            FROM comfy_workflows
+            """
+        )
+
+        # 删除旧表
+        conn.execute("DROP TABLE comfy_workflows")
+
+        # 重命名新表
+        conn.execute("ALTER TABLE comfy_workflows_new RENAME TO comfy_workflows")
+
+        conn.commit()
+    finally:
+        # 重新启用外键约束
+        conn.execute("PRAGMA foreign_keys = ON")
+
+
 def sync_system_workflow_from_file(conn: sqlite3.Connection) -> None:
-    json_text = load_system_workflow_json_text()
+    """同步所有系统工作流到数据库"""
+    # 先执行迁移
+    migrate_workflow_type_constraint(conn)
+
+    # 删除旧的"古典小说默认工作流"
+    # 先解除外键引用（将 novels 表中引用该工作流的记录设为 NULL）
     conn.execute(
-        """
-        INSERT INTO comfy_workflows (name,workflow_type,description,json_text)
-        VALUES (?, 'system', ?, ?)
-        ON CONFLICT(name) DO UPDATE SET
-            workflow_type='system',
-            description=excluded.description,
-            json_text=excluded.json_text,
-            updated_at=CURRENT_TIMESTAMP
-        WHERE comfy_workflows.workflow_type<>'system'
-           OR comfy_workflows.description<>excluded.description
-           OR comfy_workflows.json_text<>excluded.json_text
-        """,
-        (SYSTEM_WORKFLOW_NAME, SYSTEM_WORKFLOW_DESC, json_text),
+        "UPDATE novels SET workflow_id=NULL WHERE workflow_id IN (SELECT id FROM comfy_workflows WHERE name=?)",
+        (SYSTEM_WORKFLOW_NAME,),
     )
+    conn.execute("DELETE FROM comfy_workflows WHERE name=?", (SYSTEM_WORKFLOW_NAME,))
+
+    # 同步系统工作流（voice_sample, voice_transcribe, line_audio）
+    for wf_config in SYSTEM_WORKFLOWS:
+        json_text = load_system_workflow_file(wf_config["file"])
+        conn.execute(
+            """
+            INSERT INTO comfy_workflows (name,workflow_type,description,json_text)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(name) DO UPDATE SET
+                workflow_type=excluded.workflow_type,
+                description=excluded.description,
+                json_text=excluded.json_text,
+                updated_at=CURRENT_TIMESTAMP
+            WHERE comfy_workflows.workflow_type<>excluded.workflow_type
+               OR comfy_workflows.description<>excluded.description
+               OR comfy_workflows.json_text<>excluded.json_text
+            """,
+            (
+                wf_config["name"],
+                wf_config["workflow_type"],
+                wf_config["description"],
+                json_text,
+            ),
+        )
 
 
 def next_workflow_copy_name(conn: sqlite3.Connection, src_name: str) -> str:
@@ -259,7 +353,7 @@ def fetch_novels(conn: sqlite3.Connection) -> list[dict]:
     rows = conn.execute(
         """
         SELECT n.id,n.name,n.author,n.english_dir,n.intro,n.chapter_count,n.total_words,
-               n.prompt_id,n.workflow_id,n.created_at,n.updated_at,
+               n.prompt_id,n.workflow_id,n.voice_sample_workflow_id,n.line_audio_workflow_id,n.voice_transcribe_workflow_id,n.created_at,n.updated_at,
                COALESCE(SUM(CASE WHEN c.has_audio=1 THEN 1 ELSE 0 END),0) AS audio_done,
                COALESCE(COUNT(c.id),0) AS chapter_total,
                COALESCE(SUM(c.word_count),0) AS chapter_words
@@ -316,6 +410,15 @@ def fetch_novels(conn: sqlite3.Connection) -> list[dict]:
                 "promptId": int(r["prompt_id"]) if r["prompt_id"] is not None else None,
                 "workflowId": int(r["workflow_id"])
                 if r["workflow_id"] is not None
+                else None,
+                "voiceSampleWorkflowId": int(r["voice_sample_workflow_id"])
+                if r["voice_sample_workflow_id"] is not None
+                else None,
+                "lineAudioWorkflowId": int(r["line_audio_workflow_id"])
+                if r["line_audio_workflow_id"] is not None
+                else None,
+                "voiceTranscribeWorkflowId": int(r["voice_transcribe_workflow_id"])
+                if r["voice_transcribe_workflow_id"] is not None
                 else None,
                 "jsonProgress": json_progress,
                 "audioProgress": audio_progress,

@@ -104,7 +104,19 @@ function openNovelModal(novel) {
   document.getElementById("novelPromptSelect").innerHTML = currentData.prompts
     .map((p) => `<option value="${p.id}">${p.name}</option>`)
     .join("");
-  document.getElementById("novelWorkflowSelect").innerHTML = currentData.workflows
+  
+  // 按类型筛选工作流
+  const voiceSampleWorkflows = currentData.workflows.filter(w => w.workflowType === 'voice_sample' || w.type === 'system');
+  const lineAudioWorkflows = currentData.workflows.filter(w => w.workflowType === 'line_audio' || w.type === 'system');
+  const voiceTranscribeWorkflows = currentData.workflows.filter(w => w.workflowType === 'voice_transcribe' || w.type === 'system');
+  
+  document.getElementById("voiceSampleWorkflowSelect").innerHTML = voiceSampleWorkflows
+    .map((w) => `<option value="${w.id}">${w.name}</option>`)
+    .join("");
+  document.getElementById("lineAudioWorkflowSelect").innerHTML = lineAudioWorkflows
+    .map((w) => `<option value="${w.id}">${w.name}</option>`)
+    .join("");
+  document.getElementById("voiceTranscribeWorkflowSelect").innerHTML = voiceTranscribeWorkflows
     .map((w) => `<option value="${w.id}">${w.name}</option>`)
     .join("");
 
@@ -113,7 +125,9 @@ function openNovelModal(novel) {
   form.englishDir.value = novel?.englishDir || "";
   form.intro.value = novel?.intro || "";
   form.promptId.value = novel?.promptId || currentData.prompts[0]?.id || "";
-  form.workflowId.value = novel?.workflowId || currentData.workflows[0]?.id || "";
+  form.voiceSampleWorkflowId.value = novel?.voiceSampleWorkflowId || voiceSampleWorkflows[0]?.id || "";
+  form.lineAudioWorkflowId.value = novel?.lineAudioWorkflowId || lineAudioWorkflows[0]?.id || "";
+  form.voiceTranscribeWorkflowId.value = novel?.voiceTranscribeWorkflowId || voiceTranscribeWorkflows[0]?.id || "";
   localizeDocumentText(document);
   modal.showModal();
 }
@@ -206,7 +220,9 @@ function bindEvents() {
           englishDir,
           intro: form.intro.value,
           promptId: form.promptId.value,
-          workflowId: form.workflowId.value,
+          voiceSampleWorkflowId: form.voiceSampleWorkflowId.value,
+          lineAudioWorkflowId: form.lineAudioWorkflowId.value,
+          voiceTranscribeWorkflowId: form.voiceTranscribeWorkflowId.value,
         },
         editingId
       );

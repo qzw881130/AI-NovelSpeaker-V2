@@ -41,7 +41,7 @@ DDL_STATEMENTS = [
     CREATE TABLE IF NOT EXISTS comfy_workflows (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL UNIQUE,
-        workflow_type TEXT NOT NULL CHECK (workflow_type IN ('system', 'user')),
+        workflow_type TEXT NOT NULL,
         description TEXT NOT NULL DEFAULT '',
         json_text TEXT NOT NULL,
         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -64,12 +64,18 @@ DDL_STATEMENTS = [
         db_bytes INTEGER NOT NULL DEFAULT 0,
         prompt_id INTEGER,
         workflow_id INTEGER,
+        voice_sample_workflow_id INTEGER,
+        line_audio_workflow_id INTEGER,
+        voice_transcribe_workflow_id INTEGER,
         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         CHECK (length(english_dir) BETWEEN 1 AND 25),
         CHECK (english_dir GLOB '[A-Za-z0-9_]*'),
         FOREIGN KEY(prompt_id) REFERENCES json_prompts(id),
-        FOREIGN KEY(workflow_id) REFERENCES comfy_workflows(id)
+        FOREIGN KEY(workflow_id) REFERENCES comfy_workflows(id),
+        FOREIGN KEY(voice_sample_workflow_id) REFERENCES comfy_workflows(id),
+        FOREIGN KEY(line_audio_workflow_id) REFERENCES comfy_workflows(id),
+        FOREIGN KEY(voice_transcribe_workflow_id) REFERENCES comfy_workflows(id)
     )
     """,
     """
@@ -295,33 +301,16 @@ def seed_core_data(conn: sqlite3.Connection) -> None:
             system_prompt_content,
         ),
     )
-    conn.execute(
-        """
-        INSERT INTO comfy_workflows (name, workflow_type, description, json_text)
-        VALUES (?, 'system', ?, ?)
-        ON CONFLICT(name) DO NOTHING
-        """,
-        (
-            SYSTEM_WORKFLOW_NAME,
-            SYSTEM_WORKFLOW_DESC,
-            system_workflow_json_text,
-        ),
-    )
-
     prompt_id = conn.execute(
         "SELECT id FROM json_prompts WHERE name=?",
         (SYSTEM_PROMPT_NAME,),
     ).fetchone()[0]
-    workflow_id = conn.execute(
-        "SELECT id FROM comfy_workflows WHERE name=?",
-        (SYSTEM_WORKFLOW_NAME,),
-    ).fetchone()[0]
 
     novels = [
-        ("古本水浒传", "施耐庵", "xhz", prompt_id, workflow_id),
-        ("红楼梦", "曹雪芹", "hlm", prompt_id, workflow_id),
+        ("古本水浒传", "施耐庵", "xhz", prompt_id),
+        ("红楼梦", "曹雪芹", "hlm", prompt_id),
     ]
-    for name, author, english_dir, p_id, w_id in novels:
+    for name, author, english_dir, p_id in novels:
         conn.execute(
             """
             INSERT INTO novels (
@@ -333,18 +322,16 @@ def seed_core_data(conn: sqlite3.Connection) -> None:
                 total_words,
                 json_progress,
                 audio_progress,
-                prompt_id,
-                workflow_id
+                prompt_id
             )
-            VALUES (?, ?, ?, '', 0, 0, 0, 0, ?, ?)
+            VALUES (?, ?, ?, '', 0, 0, 0, 0, ?)
             ON CONFLICT(english_dir) DO UPDATE SET
                 name=excluded.name,
                 author=excluded.author,
                 prompt_id=excluded.prompt_id,
-                workflow_id=excluded.workflow_id,
                 updated_at=CURRENT_TIMESTAMP
             """,
-            (name, author, english_dir, p_id, w_id),
+            (name, author, english_dir, p_id),
         )
 
     conn.execute(

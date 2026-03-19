@@ -115,7 +115,9 @@ async function saveNovel(input, id) {
     englishDir: String(input.englishDir || "").trim(),
     intro: String(input.intro || "").trim(),
     promptId: input.promptId ? Number(input.promptId) : null,
-    workflowId: input.workflowId ? Number(input.workflowId) : null,
+    voiceSampleWorkflowId: input.voiceSampleWorkflowId ? Number(input.voiceSampleWorkflowId) : null,
+    lineAudioWorkflowId: input.lineAudioWorkflowId ? Number(input.lineAudioWorkflowId) : null,
+    voiceTranscribeWorkflowId: input.voiceTranscribeWorkflowId ? Number(input.voiceTranscribeWorkflowId) : null,
   };
   if (id) {
     await api(`/api/novels/${Number(id)}`, { method: "PUT", body: JSON.stringify(payload) });
@@ -251,6 +253,7 @@ async function deletePrompt(id) {
 async function saveWorkflow(input, id) {
   const payload = {
     name: String(input.name || "").trim(),
+    workflowType: String(input.workflowType || "").trim(),
     description: String(input.description || "").trim(),
     jsonText: String(input.jsonText || "").trim(),
   };

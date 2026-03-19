@@ -1,0 +1,62 @@
+{
+  "3": {
+    "inputs": {
+      "text": [
+        "7",
+        0
+      ],
+      "instruct": [
+        "6",
+        0
+      ],
+      "model_choice": "1.7B",
+      "device": "auto",
+      "precision": "bf16",
+      "language": "Chinese",
+      "seed": 720008947256741,
+      "max_new_tokens": 2048,
+      "top_p": 0.8,
+      "top_k": 20,
+      "temperature": 1,
+      "repetition_penalty": 1.05,
+      "attention": "auto",
+      "unload_model_after_generate": false
+    },
+    "class_type": "FB_Qwen3TTSVoiceDesign",
+    "_meta": {
+      "title": "Qwen3-TTS VoiceDesign"
+    }
+  },
+  "6": {
+    "inputs": {
+      "prompt": "一个二十六七岁的男性声音，潇洒风流自信豪爽，语气机敏油滑带点霸气，语速中等略快。"
+    },
+    "class_type": "CR Prompt Text",
+    "_meta": {
+      "title": "CR Prompt Text"
+    }
+  },
+  "7": {
+    "inputs": {
+      "prompt": "奴等了一早晨，叔叔怎的不归来吃早饭？"
+    },
+    "class_type": "CR Prompt Text",
+    "_meta": {
+      "title": "CR Prompt Text"
+    }
+  },
+  "9": {
+    "inputs": {
+      "filename_prefix": "voices/role-sample",
+      "audioUI": "/api/view?filename=ComfyUI_00174_.flac&type=output&subfolder=audio&rand=0.7072593380559313",
+      "audio": [
+        "3",
+        0
+      ]
+    },
+    "class_type": "SaveAudio",
+    "_meta": {
+      "title": "Save Audio (FLAC)"
+    }
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "1": {
+    "inputs": {
+      "text_0": "",
+      "text": [
+        "4",
+        0
+      ]
+    },
+    "class_type": "ShowText|pysssss",
+    "_meta": {
+      "title": "Show Text"
+    }
+  },
+  "2": {
+    "inputs": {
+      "audio": "sample.flac",
+      "audioUI": "/api/view?filename=sample.flac&type=input&subfolder=&rand=0.1"
+    },
+    "class_type": "LoadAudio",
+    "_meta": {
+      "title": "Load Audio"
+    }
+  },
+  "3": {
+    "inputs": {
+      "model_size": "large-v3",
+      "download_missing": false
+    },
+    "class_type": "Load Whisper (mtb)",
+    "_meta": {
+      "title": "Load Whisper (mtb)"
+    }
+  },
+  "4": {
+    "inputs": {
+      "language": "auto",
+      "return_timestamps": false,
+      "pipeline": [
+        "3",
+        0
+      ],
+      "audio": [
+        "2",
+        0
+      ]
+    },
+    "class_type": "Audio To Text (mtb)",
+    "_meta": {
+      "title": "Audio To Text (mtb)"
+    }
+  }
+}

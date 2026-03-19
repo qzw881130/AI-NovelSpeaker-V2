@@ -1,0 +1,78 @@
+{
+  "27": {
+    "inputs": {
+      "audio": "1-旁白.flac",
+      "audioUI": "/api/view?filename=1-%E6%97%81%E7%99%BD.flac&type=input&subfolder=&rand=0.17807626345274807"
+    },
+    "class_type": "LoadAudio",
+    "_meta": {
+      "title": "Load Audio"
+    }
+  },
+  "29": {
+    "inputs": {
+      "model_path": "s2-pro-fp8",
+      "text": [
+        "33",
+        0
+      ],
+      "language": "auto",
+      "device": "auto",
+      "precision": "bfloat16",
+      "attention": "flash_attention",
+      "max_new_tokens": 0,
+      "chunk_length": 200,
+      "temperature": 0.7,
+      "top_p": 0.8,
+      "repetition_penalty": 1.1,
+      "seed": 580216274,
+      "keep_model_loaded": true,
+      "offload_to_cpu": false,
+      "compile_model": "the sun is shining brightly in the clear blue sky. A gentle breeze is blowing and birds are singing sweet melodies. The world is full of beauty and wonder waiting to be explored.",
+      "reference_text": [
+        "40",
+        0
+      ],
+      "reference_audio": [
+        "27",
+        0
+      ]
+    },
+    "class_type": "FishS2VoiceCloneTTS",
+    "_meta": {
+      "title": "Fish S2 Voice Clone TTS"
+    }
+  },
+  "33": {
+    "inputs": {
+      "prompt": "只见一对对缨枪的猎户，摆将过来，后面便是那打死的老虎，好象锦布袋一般，四个人还抬不动。"
+    },
+    "class_type": "CR Prompt Text",
+    "_meta": {
+      "title": "CR Prompt Text"
+    }
+  },
+  "40": {
+    "inputs": {
+      "text": "话说当日武松来到县前客店内，收拾行李铺盖"
+    },
+    "class_type": "Text Multiline",
+    "_meta": {
+      "title": "Text Multiline"
+    }
+  },
+  "41": {
+    "inputs": {
+      "filename_prefix": "audio/ComfyUI",
+      "audioUI": "/api/view?filename=ComfyUI_00176_.flac&type=output&subfolder=audio&rand=0.48171145038532426",
+      "audio": [
+        "29",
+        0
+      ]
+    },
+    "class_type": "SaveAudio",
+    "_meta": {
+      "title": "Save Audio (FLAC)"
+    }
+  }
+}

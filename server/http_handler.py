@@ -625,8 +625,8 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 conn.execute(
                     """
-                    INSERT INTO novels (name,author,english_dir,intro,prompt_id,workflow_id,chapter_count,total_words)
-                    VALUES (?,?,?,?,?,?,0,0)
+                    INSERT INTO novels (name,author,english_dir,intro,prompt_id,workflow_id,voice_sample_workflow_id,line_audio_workflow_id,voice_transcribe_workflow_id,chapter_count,total_words)
+                    VALUES (?,?,?,?,?,?,?,?,?,0,0)
                     """,
                     (
                         str(body.get("name") or "").strip(),
@@ -635,6 +635,15 @@ class Handler(BaseHTTPRequestHandler):
                         str(body.get("intro") or "").strip(),
                         int(body.get("promptId")) if body.get("promptId") else None,
                         int(body.get("workflowId")) if body.get("workflowId") else None,
+                        int(body.get("voiceSampleWorkflowId"))
+                        if body.get("voiceSampleWorkflowId")
+                        else None,
+                        int(body.get("lineAudioWorkflowId"))
+                        if body.get("lineAudioWorkflowId")
+                        else None,
+                        int(body.get("voiceTranscribeWorkflowId"))
+                        if body.get("voiceTranscribeWorkflowId")
+                        else None,
                     ),
                 )
                 conn.commit()
@@ -1193,7 +1202,7 @@ class Handler(BaseHTTPRequestHandler):
                 conn.execute(
                     """
                     UPDATE novels
-                    SET name=?,author=?,english_dir=?,intro=?,prompt_id=?,workflow_id=?,updated_at=CURRENT_TIMESTAMP
+                    SET name=?,author=?,english_dir=?,intro=?,prompt_id=?,workflow_id=?,voice_sample_workflow_id=?,line_audio_workflow_id=?,voice_transcribe_workflow_id=?,updated_at=CURRENT_TIMESTAMP
                     WHERE id=?
                     """,
                     (
@@ -1203,6 +1212,15 @@ class Handler(BaseHTTPRequestHandler):
                         str(body.get("intro") or "").strip(),
                         int(body.get("promptId")) if body.get("promptId") else None,
                         int(body.get("workflowId")) if body.get("workflowId") else None,
+                        int(body.get("voiceSampleWorkflowId"))
+                        if body.get("voiceSampleWorkflowId")
+                        else None,
+                        int(body.get("lineAudioWorkflowId"))
+                        if body.get("lineAudioWorkflowId")
+                        else None,
+                        int(body.get("voiceTranscribeWorkflowId"))
+                        if body.get("voiceTranscribeWorkflowId")
+                        else None,
                         novel_id,
                     ),
                 )

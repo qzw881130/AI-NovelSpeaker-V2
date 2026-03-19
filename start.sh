@@ -85,4 +85,5 @@ if [[ "${LAN_PRINTED}" -eq 0 ]]; then
 fi
 
 echo "[start] Starting server..."
-NOVELSPEAKER_PORT="$PORT" python3 app_server.py
+NOVELSPEAKER_PORT="$PORT" nohup python3 app_server.py > /dev/null 2>&1 &
+echo "[start] Server started in background (PID: $!)"
