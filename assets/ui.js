@@ -72,10 +72,34 @@ function navBadgeForHref(href) {
   return 0;
 }
 
+const NAV_COLLAPSED_KEY = "ai_novel_nav_collapsed";
+
+function isNavCollapsed() {
+  return localStorage.getItem(NAV_COLLAPSED_KEY) === "true";
+}
+
+function setNavCollapsed(collapsed) {
+  localStorage.setItem(NAV_COLLAPSED_KEY, String(collapsed));
+}
+
+function updateNavLayout() {
+  const appShell = document.querySelector(".app-shell");
+  if (appShell) {
+    appShell.classList.toggle("nav-collapsed", isNavCollapsed());
+  }
+}
+
+function toggleNav() {
+  const newState = !isNavCollapsed();
+  setNavCollapsed(newState);
+  updateNavLayout();
+}
+
 function renderNav() {
   const nav = document.getElementById("mainNav");
   if (!nav) return;
   const current = window.location.pathname.split("/").pop() || "index.html";
+  const collapsed = isNavCollapsed();
   const links = NAV_ITEMS.map((item) => {
     const active = current === item.href.replace("./", "") ? "active" : "";
     const badge = navBadgeForHref(item.href);
@@ -86,8 +110,18 @@ function renderNav() {
     <div class="brand">
       <strong>AI NovelSpeaker V1</strong>
     </div>
+    <button class="nav-toggle" id="navToggle" title="${collapsed ? "展开菜单" : "收起菜单"}">◀</button>
     ${links}
   `;
+
+  // Bind toggle event
+  const toggleBtn = document.getElementById("navToggle");
+  if (toggleBtn) {
+    toggleBtn.addEventListener("click", toggleNav);
+  }
+
+  // Apply initial collapsed state
+  updateNavLayout();
 }
 
 async function bindNovelSelector(selectId, onChanged) {
