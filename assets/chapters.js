@@ -819,7 +819,7 @@ function renderRolesTable() {
       <td>
         ${role.sampleAudioPath
           ? `<audio controls src="/api/novels/${activeNovel.id}/roles/${role.id}/sample" style="width: 150px;"></audio>`
-          : "<span class="text-muted">无</span>"
+          : '<span class="text-muted">无</span>'
         }
       </td>
       <td>
