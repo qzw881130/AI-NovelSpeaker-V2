@@ -275,6 +275,7 @@ async function loadChapter(chapterNum) {
     document.getElementById("chapterContent").textContent = detail.content;
     refreshChapterAudioState(detail);
     await syncGenerateAudioVisibility();
+    await updateRolesWarningBadge();
     setStatus("就绪");
     renderChapterList();
     localizeDocumentText(document);
@@ -429,6 +430,7 @@ async function saveJsonViewEdit() {
   jsonViewEditing = false;
   renderJsonViewMode();
   await syncGenerateAudioVisibility();
+  await updateRolesWarningBadge();
   setStatus("JSON 已保存");
   toast(t("toast.saved"));
 }
@@ -896,13 +898,14 @@ function renderRolesTable() {
             body: JSON.stringify({
               name: role.name,
               instruct: role.instruct,
-              sample_text: role.text,
+              sampleText: role.text,
             }),
           });
           if (res.ok) {
             toast("已保存到角色库");
             await loadGlobalRoleDefaults();
             renderRolesTable();
+            await updateRolesWarningBadge();
           } else {
             toast("保存失败");
           }
@@ -977,11 +980,43 @@ async function saveRolesEdit() {
       updateRolesToolbarState();
       renderRolesTable();
       toast("角色已保存");
+      await updateRolesWarningBadge();
     }
   } catch (err) {
     setRolesModalError("保存失败: " + err.message);
   } finally {
     saveBtn.disabled = false;
+  }
+}
+
+// 检查角色库状态并更新警告图标
+async function updateRolesWarningBadge() {
+  const warningEl = document.getElementById("viewRolesWarning");
+  if (!warningEl) return;
+
+  const parsed = parseChapterJson();
+  if (!parsed || !activeNovel) {
+    warningEl.classList.add("hidden");
+    return;
+  }
+
+  const chapterRoleNames = (parsed.role_list || []).map(r => String(r.name || "").trim()).filter(Boolean);
+  if (chapterRoleNames.length === 0) {
+    warningEl.classList.add("hidden");
+    return;
+  }
+
+  // 获取角色库中的角色
+  try {
+    const res = await fetch(`/api/novels/${activeNovel.id}/roles`);
+    const data = await res.json();
+    const libraryRoleNames = new Set((data.roles || []).map(r => String(r.name || "").trim()));
+
+    // 检查是否有角色不在角色库中
+    const hasMissingRoles = chapterRoleNames.some(name => !libraryRoleNames.has(name));
+    warningEl.classList.toggle("hidden", !hasMissingRoles);
+  } catch {
+    warningEl.classList.add("hidden");
   }
 }
 
