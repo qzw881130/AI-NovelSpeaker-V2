@@ -1364,3 +1364,352 @@ menu {
   gap: 12px;
   margin-bottom: 16px;
 }
+
+/* 角色库独立页面样式 */
+.roles-page-status {
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.roles-page-status.success {
+  background: #d4edda;
+  color: #155724;
+}
+
+.roles-page-status.error {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.roles-filters {
+  display: flex;
+  gap: 16px;
+  align-items: end;
+  flex-wrap: wrap;
+  padding: 16px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.filter-group label {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.filter-group select,
+.filter-group input {
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+}
+
+.filter-group-wide {
+  flex: 1;
+  min-width: 200px;
+}
+
+.role-name-filter {
+  position: relative;
+}
+
+.role-name-filter-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+  min-height: 28px;
+}
+
+.role-name-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: var(--primary);
+  color: var(--primary-ink);
+  border-radius: 4px;
+  font-size: 12px;
+  border: none;
+  cursor: pointer;
+}
+
+.role-name-chip span {
+  font-weight: bold;
+}
+
+.role-name-filter-input {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+}
+
+.role-name-filter-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  max-height: 200px;
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  margin-top: 4px;
+  z-index: 100;
+  box-shadow: var(--shadow);
+}
+
+.role-name-option {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.role-name-option:hover,
+.role-name-option.active {
+  background: var(--bg-secondary);
+}
+
+.role-name-filter-empty {
+  padding: 12px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.roles-table-wrap {
+  overflow-x: auto;
+}
+
+.role-page-input,
+.role-page-textarea {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--panel);
+  font-family: inherit;
+}
+
+.role-page-textarea {
+  resize: vertical;
+}
+
+.role-sample-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.role-sample-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.role-sample-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.role-row-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* 台词队列页面样式 */
+.tasks-layout {
+  display: grid;
+  grid-template-columns: 360px 1fr;
+  gap: 16px;
+  min-height: 60vh;
+}
+
+.task-list-panel,
+.task-detail-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.task-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 65vh;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.task-list-empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.task-list-item {
+  padding: 12px;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.task-list-item:hover {
+  background: var(--bg-secondary);
+}
+
+.task-list-item.active {
+  background: var(--primary);
+  color: var(--primary-ink);
+}
+
+.task-list-item.active .task-list-meta {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.task-list-title {
+  font-weight: 500;
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
+.task-list-subtitle {
+  font-size: 13px;
+  opacity: 0.9;
+  margin-bottom: 4px;
+}
+
+.task-list-meta {
+  font-size: 12px;
+  color: var(--muted);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.task-detail-content {
+  padding: 16px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  min-height: 200px;
+}
+
+.task-detail-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.detail-row {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 12px;
+  align-items: start;
+}
+
+.detail-label {
+  font-weight: 500;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.detail-value {
+  font-size: 14px;
+  word-break: break-word;
+}
+
+.error-text {
+  color: var(--danger);
+}
+
+.task-audio-section {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.task-audio-section h4 {
+  margin-bottom: 12px;
+  font-size: 14px;
+}
+
+.task-actions {
+  margin-top: 16px;
+  display: flex;
+  gap: 8px;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.status-badge.status-pending {
+  background: #e9ecef;
+  color: #495057;
+}
+
+.status-badge.status-running {
+  background: #fff3cd;
+  color: #856404;
+}
+
+.status-badge.status-completed {
+  background: #d4edda;
+  color: #155724;
+}
+
+.status-badge.status-failed {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.empty-text {
+  text-align: center;
+  color: var(--muted);
+  padding: 40px 20px;
+}
+
+@media (max-width: 768px) {
+  .tasks-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .task-list {
+    max-height: 30vh;
+  }
+
+  .roles-filters {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .detail-row {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+}
+

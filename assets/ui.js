@@ -24,6 +24,8 @@ const NAV_ITEMS = [
   { href: "./chapters.html", labelKey: "nav.chapters" },
   { href: "./json-tasks.html", labelKey: "nav.jsonTasks" },
   { href: "./audio-queue.html", labelKey: "nav.audioQueue" },
+  { href: "./line-audio-tasks.html", labelKey: "nav.lineAudioTasks" },
+  { href: "./roles.html", labelKey: "nav.roles" },
   { href: "./prompts.html", labelKey: "nav.prompts" },
   { href: "./workflows.html", labelKey: "nav.workflows" },
   { href: "./settings.html", labelKey: "nav.settings" },

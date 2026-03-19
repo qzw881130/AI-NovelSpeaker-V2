@@ -44,7 +44,6 @@
                 <button id="downloadChapterBtn" class="ghost-btn" type="button">下载文本</button>
                 <button id="convertJsonBtn" class="primary-btn" type="button">AI转JSON</button>
                 <button id="viewJsonBtn" class="ghost-btn" type="button">查看JSON</button>
-                <button id="viewRolesBtn" class="ghost-btn" type="button">角色库</button>
                 <button id="viewLineAudioBtn" class="ghost-btn" type="button">台词预览</button>
                 <span id="audioScheduleWrap" class="audio-schedule-wrap">
                   <label class="audio-schedule-inline" for="audioScheduleMode"><span id="audioScheduleLabel">有声执行</span>
@@ -107,64 +106,6 @@
       </form>
     </dialog>
 
-    <div id="toast" class="toast"></div>
-
-    <!-- 角色库弹窗 -->
-    <dialog id="rolesDialog" class="modal modal-large">
-      <form method="dialog" class="roles-form">
-        <h3>角色库管理</h3>
-        <div class="roles-stats" id="rolesStats"></div>
-        <div class="roles-toolbar">
-          <button id="createRoleBtn" class="primary-btn" type="button">添加角色</button>
-          <input id="roleSearch" type="search" placeholder="搜索角色" />
-        </div>
-        <div class="roles-list-container">
-          <table class="roles-table">
-            <thead>
-              <tr>
-                <th>等级</th>
-                <th>角色名</th>
-                <th>人设</th>
-                <th>示例文本</th>
-                <th>示例音频</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody id="rolesTableBody"></tbody>
-          </table>
-        </div>
-        <menu>
-          <button class="primary-btn" type="submit">关闭</button>
-        </menu>
-      </form>
-    </dialog>
-
-    <!-- 角色编辑弹窗 -->
-    <dialog id="roleModal" class="modal">
-      <form id="roleForm" method="dialog">
-        <h3 id="roleModalTitle">添加角色</h3>
-        <div class="form-grid">
-          <label class="full">角色名<input name="name" required /></label>
-          <label class="full">人设（语音风格描述）<textarea name="instruct" rows="3"></textarea></label>
-          <label class="full">示例台词<textarea name="sampleText" rows="3"></textarea></label>
-          <div class="form-field full" id="roleSampleAudioSection">
-            <label>示例音频</label>
-            <div class="audio-upload-row">
-              <input type="file" id="roleAudioFile" accept="audio/*" class="hidden" />
-              <button id="uploadRoleAudioBtn" class="ghost-btn" type="button">上传音频</button>
-              <button id="generateRoleAudioBtn" class="ghost-btn" type="button">生成音频</button>
-              <audio id="roleAudioPlayer" controls class="hidden"></audio>
-              <span id="roleAudioStatus"></span>
-            </div>
-          </div>
-        </div>
-        <menu>
-          <button id="roleCancelBtn" class="ghost-btn" type="button">取消</button>
-          <button class="primary-btn" type="submit">保存</button>
-        </menu>
-      </form>
-    </dialog>
-
     <!-- 台词预览弹窗 -->
     <dialog id="lineAudioDialog" class="modal modal-large">
       <form method="dialog" class="line-audio-form">
@@ -172,7 +113,6 @@
         <div class="line-audio-toolbar">
           <button id="enqueueAllLineAudioBtn" class="primary-btn" type="button">批量生成所有</button>
           <button id="mergeLineAudioBtn" class="ghost-btn" type="button">合并音频</button>
-          <button id="viewLineAudioTasksBtn" class="ghost-btn" type="button">查看队列</button>
         </div>
         <div class="line-audio-list-container">
           <table class="line-audio-table">
@@ -195,30 +135,7 @@
       </form>
     </dialog>
 
-    <!-- 台词音频任务队列弹窗 -->
-    <dialog id="lineAudioTasksDialog" class="modal modal-large">
-      <form method="dialog">
-        <h3>台词音频任务队列</h3>
-        <div class="line-audio-tasks-container">
-          <table class="line-audio-tasks-table">
-            <thead>
-              <tr>
-                <th>章节</th>
-                <th>行号</th>
-                <th>角色</th>
-                <th>台词</th>
-                <th>状态</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody id="lineAudioTasksTableBody"></tbody>
-          </table>
-        </div>
-        <menu>
-          <button class="primary-btn" type="submit">关闭</button>
-        </menu>
-      </form>
-    </dialog>
+    <div id="toast" class="toast"></div>
 
     <script type="module" src="./assets/chapters.js"></script>
   </body>

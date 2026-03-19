@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>角色库 - AI NovelSpeaker V1</title>
+    <link rel="stylesheet" href="./assets/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="main-nav" id="mainNav"></aside>
+      <main class="page">
+        <header class="page-header">
+          <div>
+            <h1 id="rolesPageTitle">角色库</h1>
+          </div>
+          <div class="header-actions">
+            <label class="header-novel-switch">切换小说
+              <select id="rolesNovelSelect"></select>
+            </label>
+            <a class="ghost-btn" href="./chapters.html">返回章节管理</a>
+            <a class="ghost-btn" href="./json-tasks.html">JSON任务</a>
+            <a class="ghost-btn" href="./audio-queue.html">有声队列</a>
+            <a class="ghost-btn" href="./line-audio-tasks.html">台词队列</a>
+            <button id="refreshRolesBtn" class="primary-btn" type="button">刷新</button>
+          </div>
+        </header>
+
+        <section class="hero-grid">
+          <article class="hero-card">
+            <h2>角色统计</h2>
+            <div class="hero-metrics" id="rolesStats">
+              <div class="metric"><span class="label">角色数</span><strong id="roleTotalCount">0</strong></div>
+              <div class="metric"><span class="label">一等角色</span><strong id="roleLevel1Count">0</strong></div>
+              <div class="metric"><span class="label">二等角色</span><strong id="roleLevel2Count">0</strong></div>
+              <div class="metric"><span class="label">三等角色</span><strong id="roleLevel3Count">0</strong></div>
+              <div class="metric"><span class="label">无声音示例</span><strong id="roleNoSampleCount">0</strong></div>
+            </div>
+          </article>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>过滤器</h2>
+          </div>
+          <div class="roles-filters">
+            <div class="filter-group">
+              <label for="sampleFilterSelect">是否有声音示例</label>
+              <select id="sampleFilterSelect">
+                <option value="all">全部</option>
+                <option value="with">有</option>
+                <option value="without">无</option>
+              </select>
+            </div>
+            <div class="filter-group">
+              <label for="levelFilterSelect">角色级别</label>
+              <select id="levelFilterSelect">
+                <option value="all">全部</option>
+                <option value="1">一等角色</option>
+                <option value="2">二等角色</option>
+                <option value="3">三等角色</option>
+              </select>
+            </div>
+            <div class="filter-group filter-group-wide">
+              <label>角色名筛选</label>
+              <div id="roleNameFilter" class="role-name-filter">
+                <div id="roleNameFilterTags" class="role-name-filter-tags"></div>
+                <input id="roleNameFilterInput" class="role-name-filter-input" type="text" placeholder="输入角色名筛选，可多选" />
+                <div id="roleNameFilterDropdown" class="role-name-filter-dropdown hidden"></div>
+              </div>
+            </div>
+            <button id="clearRoleFiltersBtn" class="ghost-btn" type="button">清空筛选</button>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>角色列表</h2>
+            <div class="toolbar">
+              <button id="createRoleBtn" class="primary-btn" type="button">添加角色</button>
+            </div>
+          </div>
+          <div id="rolesPageStatus" class="roles-page-status"></div>
+          <div class="roles-table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>角色名</th>
+                  <th>音色描述(instruct)</th>
+                  <th>示例台词</th>
+                  <th>声音示例</th>
+                  <th>角色级别</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="rolesPageTableBody">
+                <tr>
+                  <td colspan="6" class="empty-cell">暂无角色数据</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <!-- 角色编辑弹窗 -->
+    <dialog id="roleModal" class="modal">
+      <form id="roleForm" method="dialog">
+        <h3 id="roleModalTitle">添加角色</h3>
+        <div class="form-grid">
+          <label class="full">角色名<input name="name" required /></label>
+          <label class="full">人设（音色描述）<textarea name="instruct" rows="3"></textarea></label>
+          <label class="full">示例台词<textarea name="sampleText" rows="3"></textarea></label>
+          <div class="form-field full" id="roleSampleAudioSection">
+            <label>示例音频</label>
+            <div class="audio-upload-row">
+              <input type="file" id="roleAudioFile" accept="audio/*" class="hidden" />
+              <button id="uploadRoleAudioBtn" class="ghost-btn" type="button">上传音频</button>
+              <button id="generateRoleAudioBtn" class="ghost-btn" type="button">生成音频</button>
+              <audio id="roleAudioPlayer" controls class="hidden"></audio>
+              <span id="roleAudioStatus"></span>
+            </div>
+          </div>
+        </div>
+        <menu>
+          <button id="roleCancelBtn" class="ghost-btn" type="button">取消</button>
+          <button class="primary-btn" type="submit">保存</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <!-- 提取声音文本弹窗 -->
+    <dialog id="roleTextModal" class="modal">
+      <form method="dialog">
+        <h3>提取声音文本</h3>
+        <div id="roleTextModalContent" class="role-text-content"></div>
+        <menu>
+          <button class="primary-btn" type="submit">关闭</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <div id="toast" class="toast"></div>
+    <script type="module" src="./assets/roles.js"></script>
+  </body>
+</html>

@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>台词队列 - AI NovelSpeaker V1</title>
+    <link rel="stylesheet" href="./assets/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="main-nav" id="mainNav"></aside>
+      <main class="page">
+        <header class="page-header">
+          <div>
+            <h1 id="lineAudioPageTitle">台词音频任务队列</h1>
+          </div>
+          <div class="header-actions">
+            <label class="header-novel-switch">切换小说
+              <select id="lineAudioNovelSelect"></select>
+            </label>
+            <label>自动刷新
+              <select id="refreshLineAudioIntervalSelect">
+                <option value="0" selected>不刷新</option>
+                <option value="5">5秒</option>
+                <option value="10">10秒</option>
+                <option value="20">20秒</option>
+                <option value="30">30秒</option>
+                <option value="60">60秒</option>
+              </select>
+            </label>
+            <a class="ghost-btn" href="./chapters.html">返回章节管理</a>
+            <a class="ghost-btn" href="./json-tasks.html">JSON任务</a>
+            <a class="ghost-btn" href="./audio-queue.html">有声队列</a>
+            <a class="ghost-btn" href="./roles.html">角色库</a>
+            <button id="refreshLineAudioTasksBtn" class="primary-btn" type="button">刷新队列</button>
+          </div>
+        </header>
+
+        <section class="panel">
+          <div class="tasks-layout">
+            <aside class="task-list-panel">
+              <div class="panel-head">
+                <h2>任务列表</h2>
+              </div>
+              <ul id="lineAudioTaskList" class="task-list"></ul>
+            </aside>
+            <div class="task-detail-panel">
+              <div class="panel-head">
+                <h2>任务详情</h2>
+              </div>
+              <div id="lineAudioTaskDetail" class="task-detail-content">
+                <p class="empty-text">请选择左侧任务查看详情。</p>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div id="toast" class="toast"></div>
+    <script type="module" src="./assets/line-audio-tasks.js"></script>
+  </body>
+</html>
