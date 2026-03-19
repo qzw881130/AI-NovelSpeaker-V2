@@ -439,7 +439,7 @@ async function refreshChapters() {
     document.getElementById("downloadAudioBtn").disabled = true;
     document.getElementById("chapterTitle").textContent = "暂无章节";
     document.getElementById("chapterMeta").textContent = "当前小说尚未创建章节";
-    document.getElementById("chapterContent").textContent = "请先点击"创建章回"录入章节信息。";
+    document.getElementById("chapterContent").textContent = '请先点击"创建章回"录入章节信息。';
     renderChapterList();
     localizeDocumentText(document);
     return;
