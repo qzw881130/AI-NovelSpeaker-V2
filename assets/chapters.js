@@ -976,13 +976,13 @@ function renderLineAudioTable() {
       <td>
         ${entry.task
           ? `<span class="status-${entry.task.status}">${entry.task.status}</span>`
-          : "<span class="text-muted">-</span>"
+          : '<span class="text-muted">-</span>'
         }
       </td>
       <td>
         ${entry.hasAudio && entry.streamUrl
           ? `<audio controls src="${entry.streamUrl}" style="width: 150px;"></audio>`
-          : "<span class="text-muted">未生成</span>"
+          : '<span class="text-muted">未生成</span>'
         }
       </td>
       <td>
