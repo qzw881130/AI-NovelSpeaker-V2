@@ -1,6 +1,26 @@
 import zipfile
 
 from .services import *  # noqa: F401,F403
+from .roles import (
+    list_roles,
+    get_role,
+    upsert_role_default,
+    update_role_fields,
+    update_role_level,
+    duplicate_role,
+    delete_role,
+    save_role_sample_audio,
+)
+from .line_audio import (
+    list_line_audio_tasks,
+    get_line_audio_task,
+    get_chapter_line_audio_entries,
+    enqueue_line_audio_task,
+    enqueue_all_line_audio_tasks,
+    merge_chapter_line_audio,
+    get_chapter_merged_audio_path,
+    delete_line_audio_task,
+)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -447,6 +467,139 @@ class Handler(BaseHTTPRequestHandler):
             data = fetch_audio_tasks(conn)
             conn.close()
             self.send_json({"audioTasks": data})
+            return
+
+        # 角色库API
+        m_roles = re.match(r"^/api/novels/(\d+)/roles$", route)
+        if m_roles:
+            novel_id = int(m_roles.group(1))
+            result = list_roles(novel_id)
+            self.send_json(result)
+            return
+
+        m_role_detail = re.match(r"^/api/novels/(\d+)/roles/(\d+)$", route)
+        if m_role_detail:
+            role_id = int(m_role_detail.group(2))
+            role = get_role(role_id)
+            if not role:
+                self.send_json({"error": "role not found"}, 404)
+                return
+            self.send_json({"role": role})
+            return
+
+        m_role_sample = re.match(r"^/api/novels/(\d+)/roles/(\d+)/sample$", route)
+        if m_role_sample:
+            role_id = int(m_role_sample.group(2))
+            role = get_role(role_id)
+            if not role:
+                self.send_json({"error": "role not found"}, 404)
+                return
+            file_path = str(role.get("sampleAudioPath") or "").strip()
+            if not file_path:
+                self.send_json({"error": "role sample audio not found"}, 404)
+                return
+            abs_path = (ROOT_DIR / file_path).resolve()
+            if not abs_path.exists() or not abs_path.is_file():
+                self.send_json({"error": "audio file not found"}, 404)
+                return
+            body = abs_path.read_bytes()
+            ctype = mimetypes.guess_type(abs_path.name)[0] or "application/octet-stream"
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
+        # 台词音频API
+        m_chapter_line_audios = re.match(
+            r"^/api/novels/(\d+)/chapters/(\d+)/line-audios$", route
+        )
+        if m_chapter_line_audios:
+            novel_id = int(m_chapter_line_audios.group(1))
+            chapter_num = int(m_chapter_line_audios.group(2))
+            conn = db_conn()
+            chapter_row = conn.execute(
+                "SELECT id FROM chapters WHERE novel_id=? AND chapter_num=?",
+                (novel_id, chapter_num),
+            ).fetchone()
+            conn.close()
+            if not chapter_row:
+                self.send_json({"error": "chapter not found"}, 404)
+                return
+            entries = get_chapter_line_audio_entries(novel_id, int(chapter_row["id"]))
+            self.send_json({"lineAudios": entries})
+            return
+
+        m_line_audio_tasks = re.match(r"^/api/novels/(\d+)/line-audio-tasks$", route)
+        if m_line_audio_tasks:
+            novel_id = int(m_line_audio_tasks.group(1))
+            tasks = list_line_audio_tasks(novel_id)
+            self.send_json({"lineAudioTasks": tasks})
+            return
+
+        m_line_audio_task_detail = re.match(r"^/api/line-audio-tasks/(\d+)$", route)
+        if m_line_audio_task_detail:
+            task_id = int(m_line_audio_task_detail.group(1))
+            task = get_line_audio_task(task_id)
+            if not task:
+                self.send_json({"error": "line audio task not found"}, 404)
+                return
+            self.send_json({"task": task})
+            return
+
+        m_line_audio_file = re.match(r"^/api/line-audio-tasks/(\d+)/file$", route)
+        if m_line_audio_file:
+            task_id = int(m_line_audio_file.group(1))
+            task = get_line_audio_task(task_id)
+            if not task:
+                self.send_json({"error": "line audio task not found"}, 404)
+                return
+            file_path = str(task.get("downloadedFilePath") or "").strip()
+            if task.get("status") != "completed" or not file_path:
+                self.send_json({"error": "audio file not available"}, 409)
+                return
+            abs_path = (ROOT_DIR / file_path).resolve()
+            if not abs_path.exists() or not abs_path.is_file():
+                self.send_json({"error": "audio file not found"}, 404)
+                return
+            body = abs_path.read_bytes()
+            ctype = mimetypes.guess_type(abs_path.name)[0] or "audio/flac"
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
+        m_merged_audio = re.match(
+            r"^/api/novels/(\d+)/chapters/(\d+)/merged-audio$", route
+        )
+        if m_merged_audio:
+            novel_id = int(m_merged_audio.group(1))
+            chapter_num = int(m_merged_audio.group(2))
+            conn = db_conn()
+            chapter_row = conn.execute(
+                "SELECT id FROM chapters WHERE novel_id=? AND chapter_num=?",
+                (novel_id, chapter_num),
+            ).fetchone()
+            conn.close()
+            if not chapter_row:
+                self.send_json({"error": "chapter not found"}, 404)
+                return
+            merged_path = get_chapter_merged_audio_path(
+                novel_id, int(chapter_row["id"])
+            )
+            if not merged_path:
+                self.send_json({"error": "merged audio not found"}, 404)
+                return
+            body = merged_path.read_bytes()
+            ctype = mimetypes.guess_type(merged_path.name)[0] or "audio/flac"
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
             return
 
         if not self.serve_static(route):
@@ -1063,6 +1216,146 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"status": "ok"})
             return
 
+        # 角色库POST API
+        m_roles_post = re.match(r"^/api/novels/(\d+)/roles$", route)
+        if m_roles_post:
+            novel_id = int(m_roles_post.group(1))
+            body = self.read_json()
+            name = str(body.get("name") or "").strip()
+            instruct = str(body.get("instruct") or "").strip()
+            sample_text = str(body.get("sampleText") or "").strip()
+            if not name:
+                self.send_json({"error": "role name is required"}, 400)
+                return
+            ok, msg, role = upsert_role_default(novel_id, name, instruct, sample_text)
+            if not ok or role is None:
+                self.send_json({"error": msg}, 409)
+                return
+            self.send_json({"status": "saved", "role": role})
+            return
+
+        m_role_level = re.match(r"^/api/novels/(\d+)/roles/(\d+)/level$", route)
+        if m_role_level:
+            role_id = int(m_role_level.group(2))
+            body = self.read_json()
+            role_level = body.get("roleLevel")
+            if not isinstance(role_level, int):
+                self.send_json({"error": "roleLevel must be integer"}, 400)
+                return
+            ok, msg, role = update_role_level(role_id, role_level)
+            if not ok or role is None:
+                code = 404 if msg == "Role not found" else 409
+                self.send_json({"error": msg}, code)
+                return
+            self.send_json({"status": "saved", "role": role})
+            return
+
+        m_role_duplicate = re.match(r"^/api/novels/(\d+)/roles/(\d+)/duplicate$", route)
+        if m_role_duplicate:
+            role_id = int(m_role_duplicate.group(2))
+            ok, msg, role = duplicate_role(role_id)
+            if not ok or role is None:
+                code = 404 if msg == "Role not found" else 409
+                self.send_json({"error": msg}, code)
+                return
+            self.send_json({"status": "duplicated", "role": role})
+            return
+
+        m_role_sample_audio = re.match(
+            r"^/api/novels/(\d+)/roles/(\d+)/sample-audio$", route
+        )
+        if m_role_sample_audio:
+            role_id = int(m_role_sample_audio.group(2))
+            body = self.read_json()
+            audio_base64 = str(body.get("audioBase64") or "").strip()
+            source = str(body.get("source") or "uploaded").strip()
+            if not audio_base64:
+                self.send_json({"error": "audioBase64 is required"}, 400)
+                return
+            ok, msg, role = save_role_sample_audio(role_id, audio_base64, source)
+            if not ok or role is None:
+                code = 404 if msg == "Role not found" else 409
+                self.send_json({"error": msg}, code)
+                return
+            self.send_json({"status": "saved", "role": role})
+            return
+
+        # 台词音频POST API
+        m_line_audio_enqueue = re.match(
+            r"^/api/novels/(\d+)/chapters/(\d+)/line-audio/enqueue$", route
+        )
+        if m_line_audio_enqueue:
+            novel_id = int(m_line_audio_enqueue.group(1))
+            chapter_num = int(m_line_audio_enqueue.group(2))
+            body = self.read_json()
+            line_index = body.get("lineIndex")
+            if not isinstance(line_index, int):
+                self.send_json({"error": "lineIndex must be integer"}, 400)
+                return
+            conn = db_conn()
+            chapter_row = conn.execute(
+                "SELECT id FROM chapters WHERE novel_id=? AND chapter_num=?",
+                (novel_id, chapter_num),
+            ).fetchone()
+            conn.close()
+            if not chapter_row:
+                self.send_json({"error": "chapter not found"}, 404)
+                return
+            ok, msg, task_id = enqueue_line_audio_task(
+                novel_id, int(chapter_row["id"]), line_index
+            )
+            if not ok:
+                self.send_json({"error": msg}, 409)
+                return
+            self.send_json({"status": "queued", "taskId": task_id})
+            return
+
+        m_line_audio_enqueue_all = re.match(
+            r"^/api/novels/(\d+)/chapters/(\d+)/line-audio/enqueue-all$", route
+        )
+        if m_line_audio_enqueue_all:
+            novel_id = int(m_line_audio_enqueue_all.group(1))
+            chapter_num = int(m_line_audio_enqueue_all.group(2))
+            conn = db_conn()
+            chapter_row = conn.execute(
+                "SELECT id FROM chapters WHERE novel_id=? AND chapter_num=?",
+                (novel_id, chapter_num),
+            ).fetchone()
+            conn.close()
+            if not chapter_row:
+                self.send_json({"error": "chapter not found"}, 404)
+                return
+            ok, msg, data = enqueue_all_line_audio_tasks(
+                novel_id, int(chapter_row["id"])
+            )
+            if not ok:
+                self.send_json({"error": msg}, 409)
+                return
+            self.send_json({"status": "queued", **data})
+            return
+
+        m_merge_audio = re.match(
+            r"^/api/novels/(\d+)/chapters/(\d+)/merge-line-audio$", route
+        )
+        if m_merge_audio:
+            novel_id = int(m_merge_audio.group(1))
+            chapter_num = int(m_merge_audio.group(2))
+            conn = db_conn()
+            chapter_row = conn.execute(
+                "SELECT id FROM chapters WHERE novel_id=? AND chapter_num=?",
+                (novel_id, chapter_num),
+            ).fetchone()
+            conn.close()
+            if not chapter_row:
+                self.send_json({"error": "chapter not found"}, 404)
+                return
+            ok, msg, path = merge_chapter_line_audio(novel_id, int(chapter_row["id"]))
+            if not ok:
+                self.send_json({"error": msg}, 409)
+                return
+            self.send_json({"status": "merged", "path": path})
+            return
+
         self.send_json({"error": "not found"}, 404)
 
     def do_PUT(self) -> None:
@@ -1147,6 +1440,23 @@ class Handler(BaseHTTPRequestHandler):
             conn.commit()
             conn.close()
             self.send_json({"status": "ok"})
+            return
+
+        m_update_role = re.match(r"^/api/novels/(\d+)/roles/(\d+)$", route)
+        if m_update_role:
+            role_id = int(m_update_role.group(2))
+            name = str(body.get("name") or "").strip()
+            instruct = str(body.get("instruct") or "").strip()
+            sample_text = str(body.get("sampleText") or "").strip()
+            if not name:
+                self.send_json({"error": "role name is required"}, 400)
+                return
+            ok, msg, role = update_role_fields(role_id, name, instruct, sample_text)
+            if not ok or role is None:
+                code = 404 if msg == "Role not found" else 409
+                self.send_json({"error": msg}, code)
+                return
+            self.send_json({"status": "saved", "role": role})
             return
 
         m_update_chapter = re.match(r"^/api/novels/(\d+)/chapters/(\d+)$", route)
@@ -1542,6 +1852,30 @@ class Handler(BaseHTTPRequestHandler):
             conn.commit()
             conn.close()
             self.send_json({"status": "ok"})
+            return
+
+        # 角色库DELETE API
+        m_delete_role = re.match(r"^/api/novels/(\d+)/roles/(\d+)$", route)
+        if m_delete_role:
+            role_id = int(m_delete_role.group(2))
+            ok, msg = delete_role(role_id)
+            if not ok:
+                code = 404 if msg == "Role not found" else 409
+                self.send_json({"error": msg}, code)
+                return
+            self.send_json({"status": "deleted"})
+            return
+
+        # 台词音频DELETE API
+        m_delete_line_task = re.match(r"^/api/line-audio-tasks/(\d+)$", route)
+        if m_delete_line_task:
+            task_id = int(m_delete_line_task.group(1))
+            ok, msg = delete_line_audio_task(task_id)
+            if not ok:
+                code = 404 if "not found" in msg else 409
+                self.send_json({"error": msg}, code)
+                return
+            self.send_json({"status": "deleted"})
             return
 
         self.send_json({"error": "not found"}, 404)

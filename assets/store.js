@@ -376,6 +376,115 @@ async function downloadChapterAudio(novelId, chapterNum) {
   URL.revokeObjectURL(a.href);
 }
 
+// 角色库API
+async function fetchRoles(novelId) {
+  const data = await api(`/api/novels/${Number(novelId)}/roles`);
+  return data || { stats: {}, roles: [] };
+}
+
+async function createRole(novelId, input) {
+  const res = await api(`/api/novels/${Number(novelId)}/roles`, {
+    method: "POST",
+    body: JSON.stringify({
+      name: String(input.name || "").trim(),
+      instruct: String(input.instruct || "").trim(),
+      sampleText: String(input.sampleText || "").trim(),
+    }),
+  });
+  return res;
+}
+
+async function updateRole(novelId, roleId, input) {
+  const res = await api(`/api/novels/${Number(novelId)}/roles/${Number(roleId)}`, {
+    method: "PUT",
+    body: JSON.stringify({
+      name: String(input.name || "").trim(),
+      instruct: String(input.instruct || "").trim(),
+      sampleText: String(input.sampleText || "").trim(),
+    }),
+  });
+  return res;
+}
+
+async function updateRoleLevel(novelId, roleId, level) {
+  const res = await api(`/api/novels/${Number(novelId)}/roles/${Number(roleId)}/level`, {
+    method: "POST",
+    body: JSON.stringify({ roleLevel: Number(level) }),
+  });
+  return res;
+}
+
+async function duplicateRole(novelId, roleId) {
+  const res = await api(`/api/novels/${Number(novelId)}/roles/${Number(roleId)}/duplicate`, {
+    method: "POST",
+    body: "{}",
+  });
+  return res;
+}
+
+async function deleteRole(novelId, roleId) {
+  await api(`/api/novels/${Number(novelId)}/roles/${Number(roleId)}`, { method: "DELETE" });
+}
+
+async function uploadRoleSampleAudio(novelId, roleId, audioBase64, source = "uploaded") {
+  const res = await api(`/api/novels/${Number(novelId)}/roles/${Number(roleId)}/sample-audio`, {
+    method: "POST",
+    body: JSON.stringify({ audioBase64, source }),
+  });
+  return res;
+}
+
+async function getRoleSampleAudioUrl(novelId, roleId) {
+  return `/api/novels/${Number(novelId)}/roles/${Number(roleId)}/sample`;
+}
+
+// 台词音频API
+async function fetchChapterLineAudios(novelId, chapterNum) {
+  const data = await api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/line-audios`);
+  return data.lineAudios || [];
+}
+
+async function enqueueLineAudio(novelId, chapterNum, lineIndex) {
+  const res = await api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/line-audio/enqueue`, {
+    method: "POST",
+    body: JSON.stringify({ lineIndex: Number(lineIndex) }),
+  });
+  return res;
+}
+
+async function enqueueAllLineAudios(novelId, chapterNum) {
+  const res = await api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/line-audio/enqueue-all`, {
+    method: "POST",
+    body: "{}",
+  });
+  return res;
+}
+
+async function mergeChapterLineAudio(novelId, chapterNum) {
+  const res = await api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/merge-line-audio`, {
+    method: "POST",
+    body: "{}",
+  });
+  return res;
+}
+
+async function fetchLineAudioTasks(novelId) {
+  const data = await api(`/api/novels/${Number(novelId)}/line-audio-tasks`);
+  return data.lineAudioTasks || [];
+}
+
+async function deleteLineAudioTask(taskId) {
+  await api(`/api/line-audio-tasks/${Number(taskId)}`, { method: "DELETE" });
+}
+
+async function getLineAudioFileUrl(taskId) {
+  return `/api/line-audio-tasks/${Number(taskId)}/file`;
+}
+
+async function getMergedAudioUrl(novelId, chapterNum) {
+  return `/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/merged-audio`;
+}
+
 export {
   advanceAudioTasks,
   advanceJsonTasks,
@@ -412,4 +521,21 @@ export {
   saveSettings,
   saveWorkflow,
   setActiveNovelId,
+  // 角色库
+  fetchRoles,
+  createRole,
+  updateRole,
+  updateRoleLevel,
+  duplicateRole,
+  deleteRole,
+  uploadRoleSampleAudio,
+  // 台词音频
+  fetchChapterLineAudios,
+  enqueueLineAudio,
+  enqueueAllLineAudios,
+  mergeChapterLineAudio,
+  fetchLineAudioTasks,
+  deleteLineAudioTask,
+  getLineAudioFileUrl,
+  getMergedAudioUrl,
 };

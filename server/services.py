@@ -2057,10 +2057,15 @@ def advance_status(conn: sqlite3.Connection, table: str) -> None:
 
 
 def task_worker_loop() -> None:
+    from .line_audio import run_line_audio_queue_once
+
     while not TASK_WORKER_STOP.is_set():
         has_json_work = run_json_queue_once()
         has_audio_work = run_audio_queue_once()
-        TASK_WORKER_STOP.wait(1.0 if (has_json_work or has_audio_work) else 3.0)
+        has_line_audio_work = run_line_audio_queue_once()
+        TASK_WORKER_STOP.wait(
+            1.0 if (has_json_work or has_audio_work or has_line_audio_work) else 3.0
+        )
 
 
 def ensure_task_worker() -> None:
@@ -2070,3 +2075,43 @@ def ensure_task_worker() -> None:
     TASK_WORKER_STOP.clear()
     TASK_WORKER_THREAD = threading.Thread(target=task_worker_loop, daemon=True)
     TASK_WORKER_THREAD.start()
+
+
+def comfy_upload_input_file(filename: str, data: bytes) -> dict:
+    """上传文件到 ComfyUI input 目录"""
+    conn = db_conn()
+    settings = fetch_settings(conn)
+    conn.close()
+    comfy_url = str(settings.get("comfyUrl") or "").strip()
+    if not comfy_url:
+        raise RuntimeError("ComfyUI URL is not configured")
+
+    url = f"{comfy_url.rstrip('/')}/upload/image"
+    boundary = f"----FormBoundary{int(time.time() * 1000)}"
+
+    body = bytearray()
+    body.extend(f"--{boundary}\r\n".encode())
+    body.extend(
+        f'Content-Disposition: form-data; name="image"; filename="{filename}"\r\n'.encode()
+    )
+    body.extend(b"Content-Type: application/octet-stream\r\n\r\n")
+    body.extend(data)
+    body.extend(b"\r\n")
+    body.extend(f"--{boundary}--\r\n".encode())
+
+    headers = {
+        "Content-Type": f"multipart/form-data; boundary={boundary}",
+    }
+
+    code, resp_body = http_json_request(
+        "POST", url, payload=None, headers=headers, timeout=60.0
+    )
+    if not (200 <= code < 300):
+        raise RuntimeError(f"Upload failed: HTTP {code}")
+
+    try:
+        result = json.loads(resp_body)
+    except json.JSONDecodeError:
+        result = {"name": filename, "subfolder": "", "type": "input"}
+
+    return result

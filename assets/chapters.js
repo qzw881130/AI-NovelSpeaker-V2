@@ -11,6 +11,21 @@ import {
   saveChapterJsonOutput,
   setActiveNovelId,
   updateChapter,
+  fetchRoles,
+  createRole,
+  updateRole,
+  updateRoleLevel,
+  duplicateRole,
+  deleteRole,
+  uploadRoleSampleAudio,
+  fetchChapterLineAudios,
+  enqueueLineAudio,
+  enqueueAllLineAudios,
+  mergeChapterLineAudio,
+  fetchLineAudioTasks,
+  deleteLineAudioTask,
+  getLineAudioFileUrl,
+  getMergedAudioUrl,
 } from "./store.js";
 import { fmtDateTime, fmtNumber, incrementNavBadge, renderNav, showPageError, toast } from "./ui.js";
 import { localizeDocumentText, t, translateText } from "./i18n.js";
@@ -27,6 +42,16 @@ let jsonViewMode = "raw";
 let jsonViewRawText = "";
 let jsonViewParsed = null;
 let jsonViewEditing = false;
+
+// 角色库状态
+let rolesState = [];
+let roleModalMode = "create";
+let editingRoleId = null;
+let roleAudioBase64 = "";
+
+// 台词音频状态
+let lineAudioEntries = [];
+let lineAudioTasks = [];
 
 function setGenerateAudioVisible(visible) {
   document.getElementById("generateAudioBtn").classList.toggle("hidden", !visible);
@@ -77,6 +102,19 @@ async function syncGenerateAudioVisibility() {
   } catch {
     setGenerateAudioVisible(false);
   }
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = reader.result?.toString()?.split(",")?.[1];
+      if (base64) resolve(base64);
+      else reject(new Error("Failed to convert file to base64"));
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 
 function fmtDuration(seconds) {
@@ -633,6 +671,89 @@ function bindActions() {
     toast(`${t("common.view")}: ${activeNovel.name}`);
   });
 
+  // 角色库按钮
+  document.getElementById("viewRolesBtn")?.addEventListener("click", async () => {
+    if (!activeNovel) {
+      toast("请先选择小说");
+      return;
+    }
+    await loadRoles();
+    document.getElementById("rolesDialog")?.showModal();
+  });
+
+  // 台词预览按钮
+  document.getElementById("viewLineAudioBtn")?.addEventListener("click", async () => {
+    if (!activeNovel || !activeChapterNum) {
+      toast("请先选择章节");
+      return;
+    }
+    const chapter = getCurrentChapterState();
+    if (!chapter?.hasJson) {
+      toast("当前章节没有JSON数据，请先转换");
+      return;
+    }
+    await loadLineAudios();
+    document.getElementById("lineAudioDialog")?.showModal();
+  });
+
+  // 角色库弹窗内按钮
+  document.getElementById("createRoleBtn")?.addEventListener("click", () => openRoleModal("create"));
+  document.getElementById("roleCancelBtn")?.addEventListener("click", () => {
+    document.getElementById("roleModal")?.close();
+  });
+  document.getElementById("roleForm")?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    saveRoleFromForm();
+  });
+  document.getElementById("roleSearch")?.addEventListener("input", renderRolesTable);
+
+  // 角色音频上传
+  document.getElementById("uploadRoleAudioBtn")?.addEventListener("click", () => {
+    document.getElementById("roleAudioFile")?.click();
+  });
+  document.getElementById("roleAudioFile")?.addEventListener("change", async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const base64 = await fileToBase64(file);
+      roleAudioBase64 = base64;
+      document.getElementById("roleAudioStatus").textContent = `已选择: ${file.name}`;
+    } catch (err) {
+      toast("上传失败: " + err.message);
+    }
+  });
+
+  // 台词音频弹窗内按钮
+  document.getElementById("enqueueAllLineAudioBtn")?.addEventListener("click", async () => {
+    if (!activeNovel || !activeChapterNum) return;
+    try {
+      const result = await enqueueAllLineAudios(activeNovel.id, activeChapterNum);
+      toast(`已加入队列: ${result.queued || 0} 个, 跳过: ${result.skipped?.length || 0} 个`);
+      await loadLineAudios();
+    } catch (err) {
+      toast(err.message);
+    }
+  });
+
+  document.getElementById("mergeLineAudioBtn")?.addEventListener("click", async () => {
+    if (!activeNovel || !activeChapterNum) return;
+    try {
+      await mergeChapterLineAudio(activeNovel.id, activeChapterNum);
+      toast("音频已合并");
+      // 播放合并后的音频
+      const url = getMergedAudioUrl(activeNovel.id, activeChapterNum);
+      const audio = new Audio(url);
+      audio.play();
+    } catch (err) {
+      toast(err.message);
+    }
+  });
+
+  document.getElementById("viewLineAudioTasksBtn")?.addEventListener("click", async () => {
+    await loadLineAudioTasks();
+    document.getElementById("lineAudioTasksDialog")?.showModal();
+  });
+
   const player = document.getElementById("chapterAudioPlayer");
   const duration = document.getElementById("chapterAudioDuration");
   player.addEventListener("loadedmetadata", () => {
@@ -646,6 +767,286 @@ function bindActions() {
   });
 
   bindAudioScheduleControl();
+}
+
+// ============ 角色库功能 ============
+
+async function loadRoles() {
+  if (!activeNovel) return;
+  try {
+    const result = await fetchRoles(activeNovel.id);
+    rolesState = result.roles || [];
+    renderRolesStats(result.stats || {});
+    renderRolesTable();
+  } catch (err) {
+    toast(t("error.loadFailed", { msg: err.message }));
+  }
+}
+
+function renderRolesStats(stats) {
+  const el = document.getElementById("rolesStats");
+  if (!el) return;
+  el.innerHTML = `
+    <span class="stat-item">总计: ${stats.total || 0}</span>
+    <span class="stat-item">一等: ${stats.level_1 || 0}</span>
+    <span class="stat-item">二等: ${stats.level_2 || 0}</span>
+    <span class="stat-item">三等: ${stats.level_3 || 0}</span>
+    <span class="stat-item">无音频: ${stats.without_sample || 0}</span>
+  `;
+}
+
+function renderRolesTable() {
+  const tbody = document.getElementById("rolesTableBody");
+  if (!tbody) return;
+
+  const keyword = document.getElementById("roleSearch")?.value?.trim() || "";
+  const filtered = keyword
+    ? rolesState.filter(r => r.name?.includes(keyword) || r.instruct?.includes(keyword))
+    : rolesState;
+
+  tbody.innerHTML = filtered.map(role => `
+    <tr data-role-id="${role.id}">
+      <td>
+        <select class="role-level-select" data-role-id="${role.id}">
+          <option value="1" ${role.roleLevel === 1 ? "selected" : ""}>一等</option>
+          <option value="2" ${role.roleLevel === 2 ? "selected" : ""}>二等</option>
+          <option value="3" ${role.roleLevel === 3 ? "selected" : ""}>三等</option>
+        </select>
+      </td>
+      <td>${escapeHtml(role.name || "")}</td>
+      <td>${escapeHtml(role.instruct || "")}</td>
+      <td>${escapeHtml(role.sampleText || "")}</td>
+      <td>
+        ${role.sampleAudioPath
+          ? `<audio controls src="/api/novels/${activeNovel.id}/roles/${role.id}/sample" style="width: 150px;"></audio>`
+          : "<span class="text-muted">无</span>"
+        }
+      </td>
+      <td>
+        <button class="ghost-btn btn-sm edit-role-btn" data-role-id="${role.id}">编辑</button>
+        <button class="ghost-btn btn-sm duplicate-role-btn" data-role-id="${role.id}">复制</button>
+        <button class="ghost-btn btn-sm danger delete-role-btn" data-role-id="${role.id}">删除</button>
+      </td>
+    </tr>
+  `).join("");
+
+  // 绑定事件
+  tbody.querySelectorAll(".role-level-select").forEach(select => {
+    select.addEventListener("change", async (e) => {
+      const roleId = Number(e.target.dataset.roleId);
+      const level = Number(e.target.value);
+      try {
+        await updateRoleLevel(activeNovel.id, roleId, level);
+        toast("等级已更新");
+        await loadRoles();
+      } catch (err) {
+        toast(err.message);
+      }
+    });
+  });
+
+  tbody.querySelectorAll(".edit-role-btn").forEach(btn => {
+    btn.addEventListener("click", (e) => openRoleModal("edit", Number(e.target.dataset.roleId)));
+  });
+
+  tbody.querySelectorAll(".duplicate-role-btn").forEach(btn => {
+    btn.addEventListener("click", async (e) => {
+      const roleId = Number(e.target.dataset.roleId);
+      try {
+        await duplicateRole(activeNovel.id, roleId);
+        toast("角色已复制");
+        await loadRoles();
+      } catch (err) {
+        toast(err.message);
+      }
+    });
+  });
+
+  tbody.querySelectorAll(".delete-role-btn").forEach(btn => {
+    btn.addEventListener("click", async (e) => {
+      const roleId = Number(e.target.dataset.roleId);
+      if (!window.confirm("确定要删除这个角色吗？")) return;
+      try {
+        await deleteRole(activeNovel.id, roleId);
+        toast("角色已删除");
+        await loadRoles();
+      } catch (err) {
+        toast(err.message);
+      }
+    });
+  });
+}
+
+function escapeHtml(text) {
+  const div = document.createElement("div");
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function openRoleModal(mode, roleId = null) {
+  const modal = document.getElementById("roleModal");
+  const form = document.getElementById("roleForm");
+  roleModalMode = mode;
+  editingRoleId = roleId;
+  roleAudioBase64 = "";
+
+  if (mode === "create") {
+    document.getElementById("roleModalTitle").textContent = "添加角色";
+    form.name.value = "";
+    form.instruct.value = "";
+    form.sampleText.value = "";
+    document.getElementById("roleAudioPlayer").classList.add("hidden");
+    document.getElementById("roleAudioStatus").textContent = "";
+  } else {
+    const role = rolesState.find(r => r.id === roleId);
+    if (!role) return;
+    document.getElementById("roleModalTitle").textContent = "编辑角色";
+    form.name.value = role.name || "";
+    form.instruct.value = role.instruct || "";
+    form.sampleText.value = role.sampleText || "";
+    if (role.sampleAudioPath) {
+      document.getElementById("roleAudioPlayer").src = `/api/novels/${activeNovel.id}/roles/${role.id}/sample`;
+      document.getElementById("roleAudioPlayer").classList.remove("hidden");
+    } else {
+      document.getElementById("roleAudioPlayer").classList.add("hidden");
+    }
+  }
+  modal.showModal();
+}
+
+async function saveRoleFromForm() {
+  const form = document.getElementById("roleForm");
+  const input = {
+    name: form.name.value.trim(),
+    instruct: form.instruct.value.trim(),
+    sampleText: form.sampleText.value.trim(),
+  };
+  if (!input.name) {
+    toast("角色名不能为空");
+    return;
+  }
+  try {
+    if (roleModalMode === "create") {
+      const result = await createRole(activeNovel.id, input);
+      if (roleAudioBase64 && result?.role?.id) {
+        await uploadRoleSampleAudio(activeNovel.id, result.role.id, roleAudioBase64, "uploaded");
+      }
+      toast("角色已创建");
+    } else {
+      await updateRole(activeNovel.id, editingRoleId, input);
+      if (roleAudioBase64) {
+        await uploadRoleSampleAudio(activeNovel.id, editingRoleId, roleAudioBase64, "uploaded");
+      }
+      toast("角色已更新");
+    }
+    document.getElementById("roleModal").close();
+    await loadRoles();
+  } catch (err) {
+    toast(err.message);
+  }
+}
+
+// ============ 台词音频功能 ============
+
+async function loadLineAudios() {
+  if (!activeNovel || !activeChapterNum) return;
+  try {
+    const chapter = getCurrentChapterState();
+    if (!chapter) return;
+    lineAudioEntries = await fetchChapterLineAudios(activeNovel.id, activeChapterNum);
+    renderLineAudioTable();
+  } catch (err) {
+    toast(t("error.loadFailed", { msg: err.message }));
+  }
+}
+
+function renderLineAudioTable() {
+  const tbody = document.getElementById("lineAudioTableBody");
+  if (!tbody) return;
+
+  tbody.innerHTML = lineAudioEntries.map(entry => `
+    <tr data-line-index="${entry.lineIndex}">
+      <td>${entry.lineNo}</td>
+      <td>
+        ${entry.roleName}
+        ${!entry.roleInLibrary ? '<span class="badge badge-warning">未入库</span>' : ""}
+        ${entry.roleInLibrary && !entry.roleHasSampleAudio ? '<span class="badge badge-warning">无音频</span>' : ""}
+      </td>
+      <td>${escapeHtml(entry.lineText)}</td>
+      <td>
+        ${entry.task
+          ? `<span class="status-${entry.task.status}">${entry.task.status}</span>`
+          : "<span class="text-muted">-</span>"
+        }
+      </td>
+      <td>
+        ${entry.hasAudio && entry.streamUrl
+          ? `<audio controls src="${entry.streamUrl}" style="width: 150px;"></audio>`
+          : "<span class="text-muted">未生成</span>"
+        }
+      </td>
+      <td>
+        <button class="ghost-btn btn-sm enqueue-line-btn" data-line-index="${entry.lineIndex}" ${!entry.canGenerate ? "disabled" : ""}>
+          生成
+        </button>
+      </td>
+    </tr>
+  `).join("");
+
+  tbody.querySelectorAll(".enqueue-line-btn").forEach(btn => {
+    btn.addEventListener("click", async (e) => {
+      const lineIndex = Number(e.target.dataset.lineIndex);
+      try {
+        await enqueueLineAudio(activeNovel.id, activeChapterNum, lineIndex);
+        toast("已加入生成队列");
+        await loadLineAudios();
+      } catch (err) {
+        toast(err.message);
+      }
+    });
+  });
+}
+
+async function loadLineAudioTasks() {
+  if (!activeNovel) return;
+  try {
+    lineAudioTasks = await fetchLineAudioTasks(activeNovel.id);
+    renderLineAudioTasksTable();
+  } catch (err) {
+    toast(err.message);
+  }
+}
+
+function renderLineAudioTasksTable() {
+  const tbody = document.getElementById("lineAudioTasksTableBody");
+  if (!tbody) return;
+
+  tbody.innerHTML = lineAudioTasks.map(task => `
+    <tr>
+      <td>${task.chapterTitle || task.chapterNum}</td>
+      <td>${task.lineIndex + 1}</td>
+      <td>${task.roleName}</td>
+      <td>${escapeHtml(task.lineText?.substring(0, 30) || "")}...</td>
+      <td><span class="status-${task.status}">${task.status}</span></td>
+      <td>
+        <button class="ghost-btn btn-sm danger delete-task-btn" data-task-id="${task.id}">删除</button>
+      </td>
+    </tr>
+  `).join("");
+
+  tbody.querySelectorAll(".delete-task-btn").forEach(btn => {
+    btn.addEventListener("click", async (e) => {
+      const taskId = Number(e.target.dataset.taskId);
+      if (!window.confirm("确定要删除这个任务吗？")) return;
+      try {
+        await deleteLineAudioTask(taskId);
+        toast("任务已删除");
+        await loadLineAudioTasks();
+      } catch (err) {
+        toast(err.message);
+      }
+    });
+  });
 }
 
 function openChapterModal(mode) {

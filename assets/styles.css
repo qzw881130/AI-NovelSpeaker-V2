@@ -1174,3 +1174,132 @@ menu {
     display: none;
   }
 }
+
+/* 角色库样式 */
+.modal-large {
+  max-width: 90vw;
+  width: 1000px;
+}
+
+.roles-stats {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 16px;
+  padding: 12px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+}
+
+.stat-item {
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.roles-toolbar {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+  align-items: center;
+}
+
+.roles-list-container,
+.line-audio-list-container,
+.line-audio-tasks-container {
+  max-height: 60vh;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.roles-table,
+.line-audio-table,
+.line-audio-tasks-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.roles-table th,
+.roles-table td,
+.line-audio-table th,
+.line-audio-table td,
+.line-audio-tasks-table th,
+.line-audio-tasks-table td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+}
+
+.roles-table th,
+.line-audio-table th,
+.line-audio-tasks-table th {
+  background: var(--bg-secondary);
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+}
+
+.roles-table tr:hover,
+.line-audio-table tr:hover,
+.line-audio-tasks-table tr:hover {
+  background: var(--bg-secondary);
+}
+
+.role-level-select {
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--panel);
+  font-size: 13px;
+}
+
+.btn-sm {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.badge {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  margin-left: 4px;
+}
+
+.badge-warning {
+  background: #fff3cd;
+  color: #856404;
+}
+
+.status-pending {
+  color: var(--pending);
+}
+
+.status-processing {
+  color: var(--running);
+}
+
+.status-completed {
+  color: var(--ok);
+}
+
+.status-failed {
+  color: var(--danger);
+}
+
+.text-muted {
+  color: var(--muted);
+}
+
+.audio-upload-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.line-audio-toolbar {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+}

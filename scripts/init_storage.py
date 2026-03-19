@@ -196,7 +196,61 @@ DDL_STATEMENTS = [
     )
     """,
     """
+    CREATE TABLE IF NOT EXISTS roles (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        novel_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        instruct TEXT NOT NULL DEFAULT '',
+        sample_text TEXT NOT NULL DEFAULT '',
+        sample_audio_path TEXT NOT NULL DEFAULT '',
+        sample_audio_source TEXT NOT NULL DEFAULT '',
+        role_level INTEGER NOT NULL DEFAULT 3,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(novel_id, name),
+        FOREIGN KEY(novel_id) REFERENCES novels(id) ON DELETE CASCADE
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS line_audio_tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        novel_id INTEGER NOT NULL,
+        chapter_id INTEGER NOT NULL,
+        chapter_num INTEGER NOT NULL,
+        chapter_title TEXT NOT NULL,
+        line_index INTEGER NOT NULL,
+        role_name TEXT NOT NULL,
+        line_text TEXT NOT NULL,
+        reference_text TEXT NOT NULL DEFAULT '',
+        reference_audio_path TEXT NOT NULL DEFAULT '',
+        line_hash TEXT NOT NULL,
+        status TEXT NOT NULL,
+        comfy_prompt_id TEXT,
+        comfy_status TEXT,
+        output_filename TEXT,
+        output_subfolder TEXT,
+        output_type TEXT,
+        downloaded_file_path TEXT,
+        error_message TEXT,
+        comfy_started_at DATETIME,
+        comfy_finished_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(novel_id) REFERENCES novels(id) ON DELETE CASCADE,
+        FOREIGN KEY(chapter_id) REFERENCES chapters(id) ON DELETE CASCADE
+    )
+    """,
+    """
     CREATE INDEX IF NOT EXISTS idx_chapters_novel_num ON chapters(novel_id, chapter_num)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_roles_novel_id ON roles(novel_id)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_line_audio_tasks_novel_chapter ON line_audio_tasks(novel_id, chapter_id)
+    """,
+    """
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_line_audio_tasks_hash ON line_audio_tasks(novel_id, chapter_id, line_hash)
     """,
     """
     CREATE INDEX IF NOT EXISTS idx_json_tasks_novel_status ON json_tasks(novel_id, status)
