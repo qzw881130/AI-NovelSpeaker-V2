@@ -1713,3 +1713,81 @@ menu {
   }
 }
 
+
+/* ============ 角色列表弹窗样式 ============ */
+.roles-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.roles-toolbar .error-message {
+  color: var(--danger);
+  font-size: 14px;
+  flex: 1;
+}
+
+.roles-list-container {
+  max-height: 60vh;
+  overflow-y: auto;
+  margin-bottom: 16px;
+}
+
+.roles-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.roles-table th,
+.roles-table td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+}
+
+.roles-table th {
+  background: var(--bg-secondary);
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+}
+
+.roles-table td {
+  vertical-align: top;
+}
+
+.roles-table tr:hover td {
+  background: rgba(164, 74, 28, 0.04);
+}
+
+.role-input,
+.role-textarea {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 14px;
+  background: var(--panel-strong);
+}
+
+.role-input:focus,
+.role-textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.role-textarea {
+  resize: vertical;
+  min-height: 60px;
+}
+
+.success-text {
+  color: var(--ok);
+  font-size: 13px;
+  font-weight: 500;
+}

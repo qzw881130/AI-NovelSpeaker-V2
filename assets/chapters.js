@@ -36,6 +36,11 @@ let jsonViewEditing = false;
 // 台词音频状态
 let lineAudioEntries = [];
 
+// 角色列表状态
+let chapterRoles = [];
+let isRolesEditing = false;
+let globalRoleDefaults = [];
+
 function setGenerateAudioVisible(visible) {
   document.getElementById("generateAudioBtn").classList.toggle("hidden", !visible);
   document.getElementById("audioScheduleWrap").classList.toggle("hidden", !visible);
@@ -774,6 +779,238 @@ function renderLineAudioTable() {
   });
 }
 
+// ============ 角色列表功能 ============
+
+function parseChapterJson() {
+  const jsonText = jsonViewRawText;
+  if (!jsonText) return null;
+  try {
+    return JSON.parse(jsonText);
+  } catch {
+    return null;
+  }
+}
+
+function getRoleListFromJson(parsed) {
+  if (!parsed) return [];
+  const roleList = parsed.role_list || [];
+  return roleList.map((role) => ({
+    name: String(role.name || "").trim(),
+    instruct: String(role.instruct || "").trim(),
+    text: String(role.text || "").trim(),
+  }));
+}
+
+function escapeHtml(text) {
+  const div = document.createElement("div");
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+async function loadGlobalRoleDefaults() {
+  if (!activeNovel) return;
+  try {
+    const res = await fetch(`/api/novels/${activeNovel.id}/roles`);
+    const data = await res.json();
+    globalRoleDefaults = data.roles || [];
+  } catch {
+    globalRoleDefaults = [];
+  }
+}
+
+function setRolesModalError(msg) {
+  const el = document.getElementById("rolesModalError");
+  if (el) {
+    el.textContent = msg || "";
+    el.classList.toggle("hidden", !msg);
+  }
+}
+
+function updateRolesToolbarState() {
+  document.getElementById("editRolesBtn").classList.toggle("hidden", isRolesEditing);
+  document.getElementById("saveRolesBtn").classList.toggle("hidden", !isRolesEditing);
+  document.getElementById("cancelRolesEditBtn").classList.toggle("hidden", !isRolesEditing);
+}
+
+function renderRolesTable() {
+  const tbody = document.getElementById("rolesTableBody");
+  if (!tbody) return;
+
+  tbody.innerHTML = chapterRoles.map((role, index) => {
+    if (isRolesEditing) {
+      return `
+        <tr data-role-index="${index}">
+          <td><input class="role-input" data-field="name" value="${escapeHtml(role.name)}" /></td>
+          <td><textarea class="role-textarea" data-field="instruct" rows="2">${escapeHtml(role.instruct)}</textarea></td>
+          <td><textarea class="role-textarea" data-field="text" rows="2">${escapeHtml(role.text)}</textarea></td>
+          <td><button class="ghost-btn btn-sm delete-role-btn" type="button">删除</button></td>
+        </tr>
+      `;
+    } else {
+      const roleName = String(role.name || "").trim();
+      const roleInstruct = String(role.instruct || "").trim();
+      const defaultRole = globalRoleDefaults.find(
+        (item) => String(item.name || "").trim() === roleName
+      );
+      
+      let actionHtml = '<span class="text-muted">-</span>';
+      if (!defaultRole) {
+        actionHtml = '<button class="ghost-btn btn-sm add-to-library-btn" type="button">加入角色库</button>';
+      } else if (String(defaultRole.instruct || "").trim() !== roleInstruct) {
+        actionHtml = '<button class="ghost-btn btn-sm replace-library-btn" type="button">替换角色库</button>';
+      } else {
+        actionHtml = '<span class="success-text">已设为默认</span>';
+      }
+      
+      return `
+        <tr data-role-index="${index}">
+          <td>${escapeHtml(role.name || "-")}</td>
+          <td>${escapeHtml(role.instruct || "-")}</td>
+          <td>${escapeHtml(role.text || "-")}</td>
+          <td>${actionHtml}</td>
+        </tr>
+      `;
+    }
+  }).join("");
+
+  // 绑定编辑模式事件
+  if (isRolesEditing) {
+    tbody.querySelectorAll(".delete-role-btn").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        const tr = e.target.closest("tr");
+        const idx = Number(tr?.dataset.roleIndex ?? -1);
+        if (idx >= 0) {
+          chapterRoles.splice(idx, 1);
+          renderRolesTable();
+        }
+      });
+    });
+  } else {
+    // 绑定加入角色库/替换角色库事件
+    tbody.querySelectorAll(".add-to-library-btn, .replace-library-btn").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        const tr = e.target.closest("tr");
+        const idx = Number(tr?.dataset.roleIndex ?? -1);
+        const role = idx >= 0 ? chapterRoles[idx] : null;
+        if (!role || !role.name) return;
+
+        btn.disabled = true;
+        try {
+          const res = await fetch(`/api/novels/${activeNovel.id}/roles`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: role.name,
+              instruct: role.instruct,
+              sample_text: role.text,
+            }),
+          });
+          if (res.ok) {
+            toast("已保存到角色库");
+            await loadGlobalRoleDefaults();
+            renderRolesTable();
+          } else {
+            toast("保存失败");
+          }
+        } catch {
+          toast("保存失败");
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    });
+  }
+}
+
+async function openRolesDialog() {
+  const parsed = parseChapterJson();
+  if (!parsed) {
+    toast("请先完成JSON转换");
+    return;
+  }
+
+  isRolesEditing = false;
+  chapterRoles = getRoleListFromJson(parsed);
+  await loadGlobalRoleDefaults();
+  setRolesModalError("");
+  updateRolesToolbarState();
+  renderRolesTable();
+  
+  const dialog = document.getElementById("rolesDialog");
+  dialog.showModal();
+}
+
+async function saveRolesEdit() {
+  if (!activeNovel || !activeChapterNum) return;
+
+  const rows = [];
+  const names = new Set();
+  const trs = Array.from(document.querySelectorAll("#rolesTableBody tr[data-role-index]"));
+  
+  for (const tr of trs) {
+    const name = tr.querySelector('[data-field="name"]')?.value?.trim() || "";
+    const instruct = tr.querySelector('[data-field="instruct"]')?.value?.trim() || "";
+    const text = tr.querySelector('[data-field="text"]')?.value?.trim() || "";
+
+    if (!name && !instruct && !text) continue;
+    if (!name) {
+      setRolesModalError("角色名不能为空");
+      return;
+    }
+    if (names.has(name)) {
+      setRolesModalError(`角色名重复: ${name}`);
+      return;
+    }
+    names.add(name);
+    rows.push({ name, instruct, text });
+  }
+
+  const saveBtn = document.getElementById("saveRolesBtn");
+  saveBtn.disabled = true;
+  try {
+    // 更新本地JSON
+    const parsed = parseChapterJson();
+    if (parsed) {
+      parsed.role_list = rows;
+      jsonViewRawText = JSON.stringify(parsed, null, 2);
+      
+      // 保存到服务器
+      await saveChapterJsonOutput(activeNovel.id, activeChapterNum, jsonViewRawText);
+      
+      chapterRoles = rows;
+      isRolesEditing = false;
+      setRolesModalError("");
+      updateRolesToolbarState();
+      renderRolesTable();
+      toast("角色已保存");
+    }
+  } catch (err) {
+    setRolesModalError("保存失败: " + err.message);
+  } finally {
+    saveBtn.disabled = false;
+  }
+}
+
+function bindRolesEvents() {
+  document.getElementById("viewRolesBtn")?.addEventListener("click", openRolesDialog);
+  
+  document.getElementById("editRolesBtn")?.addEventListener("click", () => {
+    isRolesEditing = true;
+    updateRolesToolbarState();
+    renderRolesTable();
+  });
+  
+  document.getElementById("cancelRolesEditBtn")?.addEventListener("click", () => {
+    isRolesEditing = false;
+    chapterRoles = getRoleListFromJson(parseChapterJson());
+    setRolesModalError("");
+    updateRolesToolbarState();
+    renderRolesTable();
+  });
+  
+  document.getElementById("saveRolesBtn")?.addEventListener("click", saveRolesEdit);
+}
+
 function openChapterModal(mode) {
   if (!activeNovel) return;
   const form = document.getElementById("chapterForm");
@@ -826,6 +1063,7 @@ async function init() {
   setHeader(activeNovel);
   renderNovelSelect();
   bindActions();
+  bindRolesEvents();
   await refreshChapters();
   localizeDocumentText(document);
 }

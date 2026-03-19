@@ -44,6 +44,7 @@
                 <button id="downloadChapterBtn" class="ghost-btn" type="button">下载文本</button>
                 <button id="convertJsonBtn" class="primary-btn" type="button">AI转JSON</button>
                 <button id="viewJsonBtn" class="ghost-btn" type="button">查看JSON</button>
+                <button id="viewRolesBtn" class="ghost-btn" type="button">查看角色</button>
                 <button id="viewLineAudioBtn" class="ghost-btn" type="button">台词预览</button>
                 <span id="audioScheduleWrap" class="audio-schedule-wrap">
                   <label class="audio-schedule-inline" for="audioScheduleMode"><span id="audioScheduleLabel">有声执行</span>
@@ -102,6 +103,35 @@
         <menu>
           <button id="chapterCancelBtn" class="ghost-btn" type="button">取消</button>
           <button class="primary-btn" type="submit">保存</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <!-- 角色列表弹窗 -->
+    <dialog id="rolesDialog" class="modal modal-large">
+      <form method="dialog" class="roles-form">
+        <h3>角色列表</h3>
+        <div class="roles-toolbar">
+          <button id="editRolesBtn" class="ghost-btn" type="button">编辑角色</button>
+          <button id="saveRolesBtn" class="primary-btn hidden" type="button">保存角色</button>
+          <button id="cancelRolesEditBtn" class="ghost-btn hidden" type="button">取消编辑</button>
+          <span id="rolesModalError" class="error-message"></span>
+        </div>
+        <div class="roles-list-container">
+          <table class="roles-table">
+            <thead>
+              <tr>
+                <th>角色名</th>
+                <th>音色描述(instruct)</th>
+                <th>示例台词(text)</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="rolesTableBody"></tbody>
+          </table>
+        </div>
+        <menu>
+          <button class="primary-btn" type="submit">关闭</button>
         </menu>
       </form>
     </dialog>
