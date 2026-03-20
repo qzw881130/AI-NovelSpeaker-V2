@@ -33,6 +33,21 @@ ROLE_LEVEL_LABELS = {
 }
 
 
+def _temp_role_voices_dir(english_dir: str) -> Path:
+    return ROOT_DIR / "temp" / english_dir / "voices"
+
+
+def _temp_role_voices_rel_dir(english_dir: str) -> str:
+    return f"temp/{english_dir}/voices"
+
+
+def _get_novel_english_dir(conn, novel_id: int) -> str:
+    row = conn.execute(
+        "SELECT english_dir FROM novels WHERE id=?", (novel_id,)
+    ).fetchone()
+    return str(row["english_dir"] or "").strip() if row else ""
+
+
 def _normalize_role_level(level: object) -> int:
     try:
         value = int(str(level))
@@ -189,9 +204,11 @@ def update_role_fields(
     old_sample_text = str(row["sample_text"] or "").strip()
     new_sample_text = str(sample_text or "").strip()
     old_audio_path = str(row["sample_audio_path"] or "").strip()
+    old_audio_source = str(row["sample_audio_source"] or "").strip()
     sample_text_changed = old_sample_text != new_sample_text
+    should_clear_audio = sample_text_changed and old_audio_source != "uploaded"
 
-    if sample_text_changed:
+    if should_clear_audio:
         # Clear audio path and source when sample text changes
         conn.execute(
             """
@@ -215,7 +232,7 @@ def update_role_fields(
     conn.close()
 
     # Delete old audio file if sample text changed
-    if sample_text_changed and old_audio_path:
+    if should_clear_audio and old_audio_path:
         old_full_path = (ROOT_DIR / old_audio_path).resolve()
         _remove_cached_playable_variants(old_full_path)
 
@@ -308,10 +325,14 @@ def save_role_sample_audio(
     novel_id = int(row["novel_id"])
     role_name = str(row["name"] or "").strip()
     old_audio_path = str(row["sample_audio_path"] or "").strip()
+    english_dir = _get_novel_english_dir(conn, novel_id)
+    if not english_dir:
+        conn.close()
+        return False, "Novel not found", None
 
     file_name = f"role-{role_id}-{int(time.time())}.flac"
-    rel_dir = f"novel/{novel_id}/voices"
-    abs_dir = ROOT_DIR / rel_dir
+    rel_dir = _temp_role_voices_rel_dir(english_dir)
+    abs_dir = _temp_role_voices_dir(english_dir)
     abs_dir.mkdir(parents=True, exist_ok=True)
     abs_path = abs_dir / file_name
     rel_path = f"{rel_dir}/{file_name}"
@@ -416,6 +437,7 @@ def generate_role_sample_audio(
     instruct = str(row["instruct"] or "").strip()
     sample_text = str(row["sample_text"] or "").strip()
     old_audio_path = str(row["sample_audio_path"] or "").strip()
+    english_dir = _get_novel_english_dir(conn, novel_id)
     conn.close()
 
     if not role_name:
@@ -424,6 +446,8 @@ def generate_role_sample_audio(
         return False, "Role instruct is empty", None, None
     if not sample_text:
         return False, "Role sample text is empty", None, None
+    if not english_dir:
+        return False, "Novel not found", None, None
 
     # 获取voice_sample工作流
     workflow = _get_voice_sample_workflow(novel_id)
@@ -540,8 +564,8 @@ def generate_role_sample_audio(
 
         # 保存文件
         suffix = Path(filename).suffix or ".flac"
-        rel_dir = f"novel/{novel_id}/voices"
-        abs_dir = ROOT_DIR / rel_dir
+        rel_dir = _temp_role_voices_rel_dir(english_dir)
+        abs_dir = _temp_role_voices_dir(english_dir)
         abs_dir.mkdir(parents=True, exist_ok=True)
 
         file_name = f"role-{role_id}-{int(time.time())}{suffix}"

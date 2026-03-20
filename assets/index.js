@@ -105,10 +105,16 @@ function openNovelModal(novel) {
     .map((p) => `<option value="${p.id}">${p.name}</option>`)
     .join("");
   
-  // 按类型筛选工作流
-  const voiceSampleWorkflows = currentData.workflows.filter(w => w.workflowType === 'voice_sample' || w.type === 'system');
-  const lineAudioWorkflows = currentData.workflows.filter(w => w.workflowType === 'line_audio' || w.type === 'system');
-  const voiceTranscribeWorkflows = currentData.workflows.filter(w => w.workflowType === 'voice_transcribe' || w.type === 'system');
+  // 仅按 workflowType 精确筛选，避免不同类型工作流串到错误下拉里
+  const voiceSampleWorkflows = currentData.workflows.filter(
+    (w) => String(w.workflowType || "").trim() === "voice_sample"
+  );
+  const lineAudioWorkflows = currentData.workflows.filter(
+    (w) => String(w.workflowType || "").trim() === "line_audio"
+  );
+  const voiceTranscribeWorkflows = currentData.workflows.filter(
+    (w) => String(w.workflowType || "").trim() === "voice_transcribe"
+  );
   
   document.getElementById("voiceSampleWorkflowSelect").innerHTML = voiceSampleWorkflows
     .map((w) => `<option value="${w.id}">${w.name}</option>`)

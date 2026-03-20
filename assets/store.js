@@ -332,8 +332,18 @@ async function downloadChapterAudio(novelId, chapterNum) {
   }
   const blob = await res.blob();
   const cd = res.headers.get("Content-Disposition") || "";
+  const mUtf = cd.match(/filename\*=UTF-8''([^;]+)/i);
   const m = cd.match(/filename=([^;]+)/i);
-  const filename = (m ? m[1] : `chapter-${chapterNum}.audio`).replace(/"/g, "");
+  let filename = `chapter-${chapterNum}.audio`;
+  if (mUtf) {
+    try {
+      filename = decodeURIComponent(mUtf[1]);
+    } catch {
+      filename = mUtf[1];
+    }
+  } else if (m) {
+    filename = m[1].replace(/"/g, "");
+  }
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = filename;

@@ -168,6 +168,7 @@ def next_prompt_copy_name(conn: sqlite3.Connection, src_name: str) -> str:
 
 
 def fetch_workflows(conn: sqlite3.Connection) -> list[dict]:
+    system_workflow_names = {str(item["name"]) for item in SYSTEM_WORKFLOWS}
     rows = conn.execute(
         """
         SELECT id,name,workflow_type,description,json_text,created_at,updated_at
@@ -178,10 +179,7 @@ def fetch_workflows(conn: sqlite3.Connection) -> list[dict]:
     return [
         {
             "id": int(r["id"]),
-            "type": "system"
-            if str(r["workflow_type"])
-            in ["system", "voice_transcribe", "line_audio", "voice_sample"]
-            else "user",
+            "type": "system" if str(r["name"]) in system_workflow_names else "user",
             "workflowType": str(r["workflow_type"]),
             "name": str(r["name"]),
             "description": str(r["description"] or ""),

@@ -33,6 +33,7 @@ const NAV_ITEMS = [
 
 const NAV_BADGE_KEYS = {
   json: "ai_novel_nav_badge_json",
+  lineAudio: "ai_novel_nav_badge_line_audio",
 };
 
 function getNavBadgeCount(type) {
@@ -65,6 +66,9 @@ function clearNavBadge(type) {
 function navBadgeForHref(href) {
   if (href === "./json-tasks.html") {
     return getNavBadgeCount("json");
+  }
+  if (href === "./line-audio-tasks.html") {
+    return getNavBadgeCount("lineAudio");
   }
   return 0;
 }

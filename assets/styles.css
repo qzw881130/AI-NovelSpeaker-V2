@@ -729,10 +729,44 @@ textarea {
   padding-top: 8px;
   display: flex;
   gap: 8px;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   align-items: center;
-  overflow-x: auto;
+  overflow-x: visible;
   overflow-y: visible;
+  row-gap: 10px;
+}
+
+.chapter-actions > .ghost-btn,
+.chapter-actions > .primary-btn {
+  flex: 0 0 auto;
+}
+
+.reader-font-controls,
+.chapter-nav-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+
+#chapterStatus {
+  flex: 0 0 auto;
+}
+
+.reader-font-controls label {
+  color: var(--muted);
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+#chapterFontSizeRange {
+  width: 220px;
+  accent-color: var(--primary);
+}
+
+.chapter-nav-controls .ghost-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .audio-schedule-inline {
@@ -1099,6 +1133,19 @@ menu {
   font: 13px/1.5 Menlo, Monaco, Consolas, "Courier New", monospace;
 }
 
+.json-find-replace {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 10px 0;
+}
+
+.json-find-replace input {
+  min-width: 160px;
+  flex: 1 1 180px;
+}
+
 .json-view-tabs {
   display: flex;
   gap: 8px;
@@ -1112,6 +1159,7 @@ menu {
 }
 
 #chapterJsonPreview,
+#chapterJsonReadOnly,
 #chapterJsonEditor {
   white-space: pre-wrap;
   word-break: break-word;
@@ -1290,6 +1338,16 @@ menu {
   .chapter-reading {
     max-height: 46vh;
     flex: initial;
+  }
+
+  .reader-font-controls,
+  .chapter-nav-controls,
+  #chapterStatus {
+    order: 2;
+  }
+
+  .reader-font-controls {
+    margin-left: auto;
   }
 
   .storage-row {
@@ -1932,6 +1990,24 @@ menu {
 }
 
 @media (max-width: 768px) {
+  .chapter-actions {
+    gap: 8px;
+  }
+
+  .reader-font-controls {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  #chapterFontSizeRange {
+    width: min(220px, 100%);
+  }
+
+  .chapter-nav-controls {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
   .tasks-layout {
     grid-template-columns: 1fr;
   }

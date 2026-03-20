@@ -52,6 +52,15 @@
                 <button id="downloadAudioBtn" class="ghost-btn" type="button">下载音频</button>
                 <button id="editChapterBtn" class="ghost-btn" type="button">编辑章回</button>
                 <button id="deleteChapterBtn" class="ghost-btn" type="button">删除章回</button>
+                <span class="reader-font-controls">
+                  <label for="chapterFontSizeRange">字号</label>
+                  <input id="chapterFontSizeRange" type="range" min="14" max="30" step="1" value="18" />
+                  <span id="chapterFontSizeValue" class="reader-status">18px</span>
+                </span>
+                <span class="chapter-nav-controls">
+                  <button id="prevChapterBtn" class="ghost-btn" type="button">上一回</button>
+                  <button id="nextChapterBtn" class="ghost-btn" type="button">下一回</button>
+                </span>
                 <span id="chapterStatus" class="reader-status">就绪</span>
               </div>
               <div id="chapterAudioBox" class="chapter-audio-box hidden">
@@ -74,9 +83,17 @@
           <button id="viewJsonRolesBtn" class="ghost-btn" type="button">查看角色</button>
         </div>
         <pre id="chapterJsonPreview" class="code-block"></pre>
+        <div id="jsonFindReplaceWrap" class="json-find-replace hidden">
+          <input id="jsonFindInput" type="text" placeholder="查找" />
+          <input id="jsonReplaceInput" type="text" placeholder="替换为" />
+          <button id="jsonFindNextBtn" class="ghost-btn" type="button">查找下一个</button>
+          <button id="jsonReplaceBtn" class="ghost-btn hidden" type="button">替换当前</button>
+          <button id="jsonReplaceAllBtn" class="ghost-btn hidden" type="button">全部替换</button>
+        </div>
+        <textarea id="chapterJsonReadOnly" class="code-block hidden" rows="16" readonly></textarea>
         <textarea id="chapterJsonEditor" class="code-block hidden" rows="16"></textarea>
         <menu>
-          <button id="editJsonViewBtn" class="ghost-btn" type="button">编辑</button>
+          <button id="editJsonViewBtn" class="ghost-btn" type="button">编辑JSON</button>
           <button id="saveJsonViewBtn" class="primary-btn hidden" type="button">保存</button>
           <button id="copyJsonBtn" class="ghost-btn" type="button">复制JSON</button>
           <button class="primary-btn" type="submit">关闭</button>

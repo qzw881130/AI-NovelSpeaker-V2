@@ -5,7 +5,7 @@ import {
   fetchLineAudioTasks,
   deleteLineAudioTask,
 } from "./store.js";
-import { renderNav, toast, fmtDateTime } from "./ui.js";
+import { clearNavBadge, renderNav, toast, fmtDateTime } from "./ui.js";
 import { t } from "./i18n.js";
 
 let allNovels = [];
@@ -279,6 +279,7 @@ function bindActions() {
 }
 
 async function init() {
+  clearNavBadge("lineAudio");
   renderNav();
   const data = await getData();
   allNovels = data.novels || [];

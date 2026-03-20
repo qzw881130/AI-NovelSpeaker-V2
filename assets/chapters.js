@@ -32,6 +32,9 @@ let jsonViewMode = "raw";
 let jsonViewRawText = "";
 let jsonViewParsed = null;
 let jsonViewEditing = false;
+let lastJsonFindQuery = "";
+let lastJsonFindIndex = -1;
+const CHAPTER_FONT_SIZE_KEY = "ai_novel_reader_font_size";
 
 // 台词音频状态
 let lineAudioEntries = [];
@@ -104,6 +107,34 @@ function fmtDuration(seconds) {
 
 function calcWordCount(text) {
   return String(text || "").replace(/\s+/g, "").length;
+}
+
+function getSavedChapterFontSize() {
+  const raw = Number(localStorage.getItem(CHAPTER_FONT_SIZE_KEY) || 18);
+  if (!Number.isFinite(raw)) return 18;
+  return Math.min(30, Math.max(14, Math.round(raw)));
+}
+
+function applyChapterFontSize(px) {
+  const size = Math.min(30, Math.max(14, Math.round(Number(px) || 18)));
+  const content = document.getElementById("chapterContent");
+  const range = document.getElementById("chapterFontSizeRange");
+  const value = document.getElementById("chapterFontSizeValue");
+  if (content) {
+    content.style.fontSize = `${size}px`;
+  }
+  if (range) {
+    range.value = String(size);
+  }
+  if (value) {
+    value.textContent = `${size}px`;
+  }
+}
+
+function saveChapterFontSize(px) {
+  const size = Math.min(30, Math.max(14, Math.round(Number(px) || 18)));
+  localStorage.setItem(CHAPTER_FONT_SIZE_KEY, String(size));
+  applyChapterFontSize(size);
 }
 
 function getLineAudioQueueSchedule() {
@@ -200,6 +231,20 @@ function getCurrentChapterState() {
   return chapterState.find((c) => c.chapterNum === activeChapterNum) || null;
 }
 
+function updateChapterNavButtons() {
+  const prevBtn = document.getElementById("prevChapterBtn");
+  const nextBtn = document.getElementById("nextChapterBtn");
+  if (!prevBtn || !nextBtn) return;
+  if (!chapterState.length || activeChapterNum == null) {
+    prevBtn.disabled = true;
+    nextBtn.disabled = true;
+    return;
+  }
+  const idx = chapterState.findIndex((item) => item.chapterNum === activeChapterNum);
+  prevBtn.disabled = idx <= 0;
+  nextBtn.disabled = idx < 0 || idx >= chapterState.length - 1;
+}
+
 function resetChapterAudioPlayer() {
   const box = document.getElementById("chapterAudioBox");
   const player = document.getElementById("chapterAudioPlayer");
@@ -244,6 +289,7 @@ async function loadChapter(chapterNum) {
     await updateChapterActionWarnings();
     setStatus("就绪");
     renderChapterList();
+    updateChapterNavButtons();
     localizeDocumentText(document);
   } catch (err) {
     resetChapterAudioPlayer();
@@ -281,7 +327,11 @@ function downloadText(filename, content) {
 
 function renderJsonViewMode() {
   const preview = document.getElementById("chapterJsonPreview");
+  const readOnly = document.getElementById("chapterJsonReadOnly");
   const editor = document.getElementById("chapterJsonEditor");
+  const findWrap = document.getElementById("jsonFindReplaceWrap");
+  const replaceBtn = document.getElementById("jsonReplaceBtn");
+  const replaceAllBtn = document.getElementById("jsonReplaceAllBtn");
   const editBtn = document.getElementById("editJsonViewBtn");
   const saveBtn = document.getElementById("saveJsonViewBtn");
   const rawBtn = document.getElementById("viewJsonRawBtn");
@@ -291,15 +341,30 @@ function renderJsonViewMode() {
   jubenBtn.classList.toggle("active", jsonViewMode === "juben");
   rolesBtn.classList.toggle("active", jsonViewMode === "roles");
 
-  const canEdit = jsonViewMode === "juben" || jsonViewMode === "roles";
+  const canEdit = jsonViewMode === "raw" || jsonViewMode === "juben" || jsonViewMode === "roles";
   editBtn.classList.toggle("hidden", !canEdit);
   saveBtn.classList.toggle("hidden", !jsonViewEditing);
-  editBtn.textContent = jsonViewEditing ? t("common.cancelEdit") : t("common.edit");
-  preview.classList.toggle("hidden", jsonViewEditing);
+  editBtn.textContent = jsonViewEditing ? t("common.cancelEdit") : "编辑JSON";
+  const rawReadOnlyVisible = jsonViewMode === "raw" && !jsonViewEditing;
+  preview.classList.toggle("hidden", jsonViewEditing || rawReadOnlyVisible);
+  readOnly.classList.toggle("hidden", !rawReadOnlyVisible);
   editor.classList.toggle("hidden", !jsonViewEditing);
+  findWrap.classList.toggle("hidden", jsonViewMode !== "raw");
+  replaceBtn.classList.toggle("hidden", !(jsonViewMode === "raw" && jsonViewEditing));
+  replaceAllBtn.classList.toggle("hidden", !(jsonViewMode === "raw" && jsonViewEditing));
 
   if (jsonViewEditing) {
-    if (jsonViewMode === "juben") {
+    if (jsonViewMode === "raw") {
+      if (jsonViewParsed && typeof jsonViewParsed === "object") {
+        editor.value = JSON.stringify(jsonViewParsed, null, 2);
+      } else {
+        try {
+          editor.value = JSON.stringify(JSON.parse(jsonViewRawText || "{}"), null, 2);
+        } catch {
+          editor.value = jsonViewRawText || JSON.stringify({ role_list: [], juben: "" }, null, 2);
+        }
+      }
+    } else if (jsonViewMode === "juben") {
       editor.value = String(jsonViewParsed?.juben || "").trim();
     } else if (jsonViewMode === "roles") {
       const roles = Array.isArray(jsonViewParsed?.role_list) ? jsonViewParsed.role_list : [];
@@ -312,9 +377,9 @@ function renderJsonViewMode() {
 
   if (jsonViewMode === "raw") {
     if (jsonViewParsed && typeof jsonViewParsed === "object") {
-      preview.textContent = JSON.stringify(jsonViewParsed, null, 2);
+      readOnly.value = JSON.stringify(jsonViewParsed, null, 2);
     } else {
-      preview.textContent = jsonViewRawText || JSON.stringify({ role_list: [], juben: "" }, null, 2);
+      readOnly.value = jsonViewRawText || JSON.stringify({ role_list: [], juben: "" }, null, 2);
     }
     return;
   }
@@ -346,14 +411,26 @@ function renderJsonViewMode() {
 }
 
 async function saveJsonViewEdit() {
-  if (!activeNovel || !activeChapterNum || !jsonViewParsed || typeof jsonViewParsed !== "object") {
+  if (!activeNovel || !activeChapterNum) {
     toast("当前章节 JSON 不可编辑");
     return;
   }
   const editor = document.getElementById("chapterJsonEditor");
-  const draft = JSON.parse(JSON.stringify(jsonViewParsed));
+  let draft = jsonViewParsed && typeof jsonViewParsed === "object"
+    ? JSON.parse(JSON.stringify(jsonViewParsed))
+    : null;
 
-  if (jsonViewMode === "juben") {
+  if (jsonViewMode === "raw") {
+    try {
+      draft = JSON.parse(String(editor.value || "{}"));
+    } catch {
+      toast("JSON 内容不是合法格式");
+      return;
+    }
+  } else if (!draft || typeof draft !== "object") {
+    toast("当前章节 JSON 不可编辑");
+    return;
+  } else if (jsonViewMode === "juben") {
     draft.juben = String(editor.value || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
   } else if (jsonViewMode === "roles") {
     let roles;
@@ -388,6 +465,105 @@ async function saveJsonViewEdit() {
   toast(t("toast.saved"));
 }
 
+function getActiveJsonTextEl() {
+  if (jsonViewEditing) {
+    return document.getElementById("chapterJsonEditor");
+  }
+  if (jsonViewMode === "raw") {
+    return document.getElementById("chapterJsonReadOnly");
+  }
+  return null;
+}
+
+function selectJsonMatch(start, length) {
+  const input = getActiveJsonTextEl();
+  if (!input) return false;
+  input.focus();
+  input.setSelectionRange(start, start + length);
+  input.scrollTop = input.scrollHeight * (start / Math.max(input.value.length, 1));
+  lastJsonFindIndex = start;
+  return true;
+}
+
+function findNextInJsonEditor() {
+  const query = String(document.getElementById("jsonFindInput")?.value || "");
+  if (!query) {
+    toast("请输入要查找的内容");
+    return false;
+  }
+  const input = getActiveJsonTextEl();
+  if (!input) return false;
+  const text = input.value;
+  let startIndex = input.selectionEnd;
+  if (lastJsonFindQuery !== query) {
+    startIndex = 0;
+  }
+  let matchIndex = text.indexOf(query, startIndex);
+  if (matchIndex < 0 && startIndex > 0) {
+    matchIndex = text.indexOf(query, 0);
+  }
+  if (matchIndex < 0) {
+    lastJsonFindQuery = query;
+    lastJsonFindIndex = -1;
+    toast(`未找到：${query}`);
+    return false;
+  }
+  lastJsonFindQuery = query;
+  return selectJsonMatch(matchIndex, query.length);
+}
+
+function replaceCurrentInJsonEditor() {
+  if (!(jsonViewMode === "raw" && jsonViewEditing)) {
+    toast("请先进入 JSON 编辑再执行替换");
+    return;
+  }
+  const query = String(document.getElementById("jsonFindInput")?.value || "");
+  const replacement = String(document.getElementById("jsonReplaceInput")?.value || "");
+  if (!query) {
+    toast("请输入要查找的内容");
+    return;
+  }
+  const input = getActiveJsonTextEl();
+  if (!input) return;
+  const selected = input.value.slice(input.selectionStart, input.selectionEnd);
+  if (selected !== query) {
+    if (!findNextInJsonEditor()) return;
+  }
+  const start = input.selectionStart;
+  const end = input.selectionEnd;
+  input.setRangeText(replacement, start, end, "select");
+  lastJsonFindQuery = query;
+  lastJsonFindIndex = start;
+  input.focus();
+  toast("已替换当前匹配");
+}
+
+function replaceAllInJsonEditor() {
+  if (!(jsonViewMode === "raw" && jsonViewEditing)) {
+    toast("请先进入 JSON 编辑再执行替换");
+    return;
+  }
+  const query = String(document.getElementById("jsonFindInput")?.value || "");
+  const replacement = String(document.getElementById("jsonReplaceInput")?.value || "");
+  if (!query) {
+    toast("请输入要查找的内容");
+    return;
+  }
+  const input = getActiveJsonTextEl();
+  if (!input) return;
+  const text = input.value;
+  const count = text.split(query).length - 1;
+  if (count <= 0) {
+    toast(`未找到：${query}`);
+    return;
+  }
+  input.value = text.split(query).join(replacement);
+  lastJsonFindQuery = query;
+  lastJsonFindIndex = -1;
+  input.focus();
+  toast(`已全部替换 ${count} 处`);
+}
+
 async function refreshChapters() {
   if (!activeNovel) return;
   chapterState = await fetchNovelChapters(activeNovel.id);
@@ -407,6 +583,7 @@ async function refreshChapters() {
     activeChapterNum = chapterState[0].chapterNum;
   }
   renderChapterList();
+  updateChapterNavButtons();
   await loadChapter(activeChapterNum);
 }
 
@@ -455,6 +632,10 @@ function bindActions() {
     const text = jsonViewRawText || JSON.stringify({ role_list: [], juben: "" }, null, 2);
     jsonViewMode = "raw";
     jsonViewEditing = false;
+    lastJsonFindQuery = "";
+    lastJsonFindIndex = -1;
+    document.getElementById("jsonFindInput").value = "";
+    document.getElementById("jsonReplaceInput").value = "";
     renderJsonViewMode();
     localizeDocumentText(document);
     document.getElementById("jsonDialog").showModal();
@@ -463,24 +644,30 @@ function bindActions() {
   document.getElementById("viewJsonRawBtn").addEventListener("click", () => {
     jsonViewMode = "raw";
     jsonViewEditing = false;
+    lastJsonFindQuery = "";
+    lastJsonFindIndex = -1;
     renderJsonViewMode();
     localizeDocumentText(document);
   });
   document.getElementById("viewJsonJubenBtn").addEventListener("click", () => {
     jsonViewMode = "juben";
     jsonViewEditing = false;
+    lastJsonFindQuery = "";
+    lastJsonFindIndex = -1;
     renderJsonViewMode();
     localizeDocumentText(document);
   });
   document.getElementById("viewJsonRolesBtn").addEventListener("click", () => {
     jsonViewMode = "roles";
     jsonViewEditing = false;
+    lastJsonFindQuery = "";
+    lastJsonFindIndex = -1;
     renderJsonViewMode();
     localizeDocumentText(document);
   });
 
   document.getElementById("editJsonViewBtn").addEventListener("click", () => {
-    if (jsonViewMode !== "juben" && jsonViewMode !== "roles") return;
+    if (jsonViewMode !== "raw" && jsonViewMode !== "juben" && jsonViewMode !== "roles") return;
     jsonViewEditing = !jsonViewEditing;
     renderJsonViewMode();
     localizeDocumentText(document);
@@ -492,8 +679,26 @@ function bindActions() {
   document.getElementById("copyJsonBtn").addEventListener("click", () => {
     const text = jsonViewEditing
       ? document.getElementById("chapterJsonEditor").value || ""
-      : document.getElementById("chapterJsonPreview").textContent || "";
+      : jsonViewMode === "raw"
+        ? document.getElementById("chapterJsonReadOnly").value || ""
+        : document.getElementById("chapterJsonPreview").textContent || "";
     copyText(text, t("toast.copied"));
+  });
+
+  document.getElementById("jsonFindNextBtn").addEventListener("click", () => {
+    findNextInJsonEditor();
+  });
+  document.getElementById("jsonFindInput").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      findNextInJsonEditor();
+    }
+  });
+  document.getElementById("jsonReplaceBtn").addEventListener("click", () => {
+    replaceCurrentInJsonEditor();
+  });
+  document.getElementById("jsonReplaceAllBtn").addEventListener("click", () => {
+    replaceAllInJsonEditor();
   });
 
   document.getElementById("downloadAudioBtn").addEventListener("click", () => {
@@ -575,6 +780,21 @@ function bindActions() {
   }
 
   document.getElementById("chapterSearch").addEventListener("input", renderChapterList);
+  document.getElementById("prevChapterBtn").addEventListener("click", () => {
+    const idx = chapterState.findIndex((item) => item.chapterNum === activeChapterNum);
+    if (idx > 0) {
+      loadChapter(chapterState[idx - 1].chapterNum);
+    }
+  });
+  document.getElementById("nextChapterBtn").addEventListener("click", () => {
+    const idx = chapterState.findIndex((item) => item.chapterNum === activeChapterNum);
+    if (idx >= 0 && idx < chapterState.length - 1) {
+      loadChapter(chapterState[idx + 1].chapterNum);
+    }
+  });
+  document.getElementById("chapterFontSizeRange").addEventListener("input", (event) => {
+    saveChapterFontSize(Number(event.target.value));
+  });
   document.getElementById("chapterNovelSelect").addEventListener("change", async (event) => {
     const id = Number(event.target.value);
     setActiveNovelId(id);
@@ -596,6 +816,8 @@ function bindActions() {
       const result = await enqueueAllLineAudios(activeNovel.id, activeChapterNum, {
         scheduledAt: schedule.scheduledAt,
       });
+      incrementNavBadge("lineAudio", Number(result.queued || 0));
+      renderNav();
       toast(`已加入队列: ${result.queued || 0} 个, 跳过: ${result.skipped?.length || 0} 个`);
       setStatus(schedule.label);
       await loadLineAudios();
@@ -1022,6 +1244,8 @@ function bindLineAudioButtons(root) {
         await enqueueLineAudio(activeNovel.id, activeChapterNum, lineIndex, {
           scheduledAt: schedule.scheduledAt,
         });
+        incrementNavBadge("lineAudio", 1);
+        renderNav();
         setStatus(schedule.label);
         toast(schedule.label);
         await loadLineAudios({ partialLineIndex: lineIndex });
@@ -1515,6 +1739,8 @@ function openChapterModal(mode) {
 async function init() {
   renderNav();
   document.getElementById("downloadAudioBtn").disabled = true;
+  applyChapterFontSize(getSavedChapterFontSize());
+  updateChapterNavButtons();
   resetChapterAudioPlayer();
   const data = await getData();
   allNovels = data.novels || [];

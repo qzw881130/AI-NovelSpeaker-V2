@@ -1,4 +1,5 @@
 import zipfile
+from urllib.parse import quote
 
 from .services import *  # noqa: F401,F403
 from .roles import (
@@ -263,10 +264,16 @@ class Handler(BaseHTTPRequestHandler):
             download_name = safe_chapter_file_name(
                 chapter_num, str(row["title"] or f"chapter_{chapter_num}")
             ).replace(".txt", ".flac")
+            ascii_download_name = re.sub(r"[^A-Za-z0-9._-]+", "_", download_name).strip(
+                "_"
+            )
+            if not ascii_download_name:
+                ascii_download_name = f"{chapter_num:03d}.flac"
             self.send_response(200)
             self.send_header("Content-Type", ctype)
             self.send_header(
-                "Content-Disposition", f"attachment; filename={download_name}"
+                "Content-Disposition",
+                f"attachment; filename=\"{ascii_download_name}\"; filename*=UTF-8''{quote(download_name)}",
             )
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
@@ -993,10 +1000,20 @@ class Handler(BaseHTTPRequestHandler):
             body = self.read_json()
             conn = db_conn()
             try:
+                workflow_type = str(body.get("workflowType") or "").strip()
+                if workflow_type not in {
+                    "voice_sample",
+                    "line_audio",
+                    "voice_transcribe",
+                }:
+                    conn.close()
+                    self.send_json({"error": "invalid workflowType"}, 400)
+                    return
                 conn.execute(
-                    "INSERT INTO comfy_workflows (name,workflow_type,description,json_text) VALUES (?, 'user', ?, ?)",
+                    "INSERT INTO comfy_workflows (name,workflow_type,description,json_text) VALUES (?, ?, ?, ?)",
                     (
                         str(body.get("name") or ""),
+                        workflow_type,
                         str(body.get("description") or ""),
                         str(body.get("jsonText") or ""),
                     ),
@@ -1017,7 +1034,8 @@ class Handler(BaseHTTPRequestHandler):
             workflow_id = int(m_copy_workflow.group(1))
             conn = db_conn()
             src = conn.execute(
-                "SELECT name,json_text FROM comfy_workflows WHERE id=?", (workflow_id,)
+                "SELECT name,json_text,workflow_type FROM comfy_workflows WHERE id=?",
+                (workflow_id,),
             ).fetchone()
             if not src:
                 conn.close()
@@ -1025,11 +1043,13 @@ class Handler(BaseHTTPRequestHandler):
                 return
             try:
                 src_name = str(src["name"])
+                src_workflow_type = str(src["workflow_type"] or "").strip()
                 new_name = next_workflow_copy_name(conn, src_name)
                 conn.execute(
-                    "INSERT INTO comfy_workflows (name,workflow_type,description,json_text) VALUES (?, 'user', ?, ?)",
+                    "INSERT INTO comfy_workflows (name,workflow_type,description,json_text) VALUES (?, ?, ?, ?)",
                     (
                         new_name,
+                        src_workflow_type,
                         f"基于 {src_name} 复制",
                         str(src["json_text"]),
                     ),
