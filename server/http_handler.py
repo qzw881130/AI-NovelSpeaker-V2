@@ -146,8 +146,9 @@ class Handler(BaseHTTPRequestHandler):
                 return
             chapters = conn.execute(
                 """
-                SELECT chapter_num,title,text_file_path,audio_file_path
-                FROM chapters
+                SELECT c.id,c.novel_id,c.chapter_num,c.title,c.text_file_path,c.audio_file_path,n.english_dir
+                FROM chapters c
+                JOIN novels n ON n.id = c.novel_id
                 WHERE novel_id=?
                 ORDER BY chapter_num ASC
                 """,
@@ -184,7 +185,7 @@ class Handler(BaseHTTPRequestHandler):
                     arc = Path(english_dir) / "text" / text_name
                     bundle_entries.append((text_src, arc))
 
-                audio_src = resolve_storage_path(str(chapter["audio_file_path"] or ""))
+                audio_src = resolve_audio_file(chapter)
                 if audio_src and audio_src.exists() and audio_src.is_file():
                     arc = Path(english_dir) / "audio" / audio_name
                     bundle_entries.append((audio_src, arc))
@@ -230,7 +231,7 @@ class Handler(BaseHTTPRequestHandler):
             conn = db_conn()
             row = conn.execute(
                 """
-                SELECT c.id,c.novel_id,c.chapter_num,c.audio_file_path,n.english_dir
+                SELECT c.id,c.novel_id,c.chapter_num,c.title,c.audio_file_path,n.english_dir
                 FROM chapters c
                 JOIN novels n ON n.id=c.novel_id
                 WHERE c.novel_id=? AND c.chapter_num=?
@@ -259,9 +260,9 @@ class Handler(BaseHTTPRequestHandler):
             ctype = (
                 mimetypes.guess_type(abs_audio.name)[0] or "application/octet-stream"
             )
-            download_name = abs_audio.name
-            if download_name == "merged.flac":
-                download_name = f"chapter-{chapter_num:03d}-merged.flac"
+            download_name = safe_chapter_file_name(
+                chapter_num, str(row["title"] or f"chapter_{chapter_num}")
+            ).replace(".txt", ".flac")
             self.send_response(200)
             self.send_header("Content-Type", ctype)
             self.send_header(

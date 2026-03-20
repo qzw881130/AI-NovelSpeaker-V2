@@ -241,7 +241,7 @@ async function loadChapter(chapterNum) {
     if (detail?.hasJson) {
       await loadChapterJsonCache();
     }
-    await updateRolesWarningBadge();
+    await updateChapterActionWarnings();
     setStatus("就绪");
     renderChapterList();
     localizeDocumentText(document);
@@ -383,7 +383,7 @@ async function saveJsonViewEdit() {
   jsonViewRawText = merged;
   jsonViewEditing = false;
   renderJsonViewMode();
-  await updateRolesWarningBadge();
+  await updateChapterActionWarnings();
   setStatus("JSON 已保存");
   toast(t("toast.saved"));
 }
@@ -1141,7 +1141,7 @@ async function saveLineText(lineIndex) {
     editingLineIndex = -1;
     editingLineOriginalText = "";
     await loadLineAudios();
-    await updateRolesWarningBadge();
+    await updateChapterActionWarnings();
     toast(`第 ${lineIndex + 1} 行台词已保存`);
     setStatus(`第 ${lineIndex + 1} 行台词已保存`);
   } catch (err) {
@@ -1273,7 +1273,7 @@ function renderRolesTable() {
             toast("已保存到角色库");
             await loadGlobalRoleDefaults();
             renderRolesTable();
-            await updateRolesWarningBadge();
+            await updateChapterActionWarnings();
           } else {
             toast("保存失败");
           }
@@ -1371,7 +1371,7 @@ async function saveRolesEdit() {
       updateRolesToolbarState();
       renderRolesTable();
       toast("角色已保存");
-      await updateRolesWarningBadge();
+      await updateChapterActionWarnings();
     }
   } catch (err) {
     setRolesModalError("保存失败: " + err.message);
@@ -1382,18 +1382,20 @@ async function saveRolesEdit() {
 
 // 检查角色库状态并更新警告图标
 async function updateRolesWarningBadge() {
-  const warningEl = document.getElementById("viewRolesWarning");
-  if (!warningEl) return;
+  const warningBtn = document.getElementById("viewRolesBtn");
+  if (!warningBtn) return;
 
   const parsed = parseChapterJson();
   if (!parsed || !activeNovel) {
-    warningEl.classList.add("hidden");
+    warningBtn.classList.remove("has-role-library-warning");
+    warningBtn.title = "";
     return;
   }
 
   const chapterRoleNames = (parsed.role_list || []).map(r => String(r.name || "").trim()).filter(Boolean);
   if (chapterRoleNames.length === 0) {
-    warningEl.classList.add("hidden");
+    warningBtn.classList.remove("has-role-library-warning");
+    warningBtn.title = "";
     return;
   }
 
@@ -1404,11 +1406,55 @@ async function updateRolesWarningBadge() {
     const libraryRoleNames = new Set((data.roles || []).map(r => String(r.name || "").trim()));
 
     // 检查是否有角色不在角色库中
-    const hasMissingRoles = chapterRoleNames.some(name => !libraryRoleNames.has(name));
-    warningEl.classList.toggle("hidden", !hasMissingRoles);
+    const missingNames = Array.from(new Set(chapterRoleNames.filter(name => !libraryRoleNames.has(name))));
+    const hasMissingRoles = missingNames.length > 0;
+    warningBtn.classList.toggle("has-role-library-warning", hasMissingRoles);
+    warningBtn.title = hasMissingRoles ? `有角色未加入角色库：${missingNames.join("、")}` : "";
   } catch {
-    warningEl.classList.add("hidden");
+    warningBtn.classList.remove("has-role-library-warning");
+    warningBtn.title = "";
   }
+}
+
+async function updateLineAudioWarningBadge() {
+  const warningBtn = document.getElementById("viewLineAudioBtn");
+  if (!warningBtn) return;
+
+  const parsed = parseChapterJson();
+  if (!parsed || !activeNovel || !activeChapterNum) {
+    warningBtn.classList.remove("has-line-audio-warning");
+    warningBtn.title = "";
+    return;
+  }
+
+  const rows = getJubenLinesFromParsed(parsed);
+  if (!rows.length) {
+    warningBtn.classList.remove("has-line-audio-warning");
+    warningBtn.title = "";
+    return;
+  }
+
+  try {
+    const entries = await fetchChapterLineAudios(activeNovel.id, activeChapterNum);
+    const incomplete = rows.filter((row) => {
+      const entry = entries.find((item) => Number(item.lineIndex) === Number(row.index));
+      return !(entry && entry.hasAudio && entry.streamUrl);
+    });
+    const hasWarning = incomplete.length > 0;
+    const sample = incomplete.slice(0, 5).map((item) => `${item.index + 1}:${item.line}`).join("；");
+    warningBtn.classList.toggle("has-line-audio-warning", hasWarning);
+    warningBtn.title = hasWarning
+      ? `以下台词尚未生成音频：${sample}${incomplete.length > 5 ? "..." : ""}`
+      : "";
+  } catch {
+    warningBtn.classList.remove("has-line-audio-warning");
+    warningBtn.title = "";
+  }
+}
+
+async function updateChapterActionWarnings() {
+  await updateRolesWarningBadge();
+  await updateLineAudioWarningBadge();
 }
 
 function bindRolesEvents() {

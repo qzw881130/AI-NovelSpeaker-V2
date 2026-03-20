@@ -50,21 +50,23 @@ p {
 
 .nav-toggle {
   position: absolute;
-  right: -12px;
-  top: 20px;
-  width: 24px;
-  height: 24px;
+  right: -14px;
+  top: 50%;
+  width: 28px;
+  height: 72px;
   border: 1px solid var(--line);
-  border-radius: 50%;
+  border-radius: 18px;
   background: var(--panel);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
+  font-size: 16px;
   color: var(--muted);
   z-index: 100;
   transition: all 0.2s ease;
+  box-shadow: 0 10px 24px rgba(80, 51, 25, 0.12);
+  transform: translateY(-50%);
 }
 
 .nav-toggle:hover {
@@ -73,7 +75,7 @@ p {
 }
 
 .app-shell.nav-collapsed .nav-toggle {
-  transform: rotate(180deg);
+  transform: translateY(-50%) rotate(180deg);
 }
 
 .app-shell.nav-collapsed .main-nav {
@@ -160,6 +162,29 @@ p {
   font-size: 12px;
   font-weight: 700;
   font-style: normal;
+}
+
+#viewRolesBtn,
+#viewLineAudioBtn {
+  position: relative;
+}
+
+#viewRolesBtn.has-role-library-warning::after,
+#viewLineAudioBtn.has-line-audio-warning::after {
+  content: "!";
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #df5a45 0%, #bb341d 100%);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+  box-shadow: 0 4px 10px rgba(141, 42, 25, 0.28);
 }
 
 .nav-link:hover {
@@ -701,11 +726,13 @@ textarea {
 
 .chapter-actions {
   margin-top: 10px;
+  padding-top: 8px;
   display: flex;
   gap: 8px;
   flex-wrap: nowrap;
   align-items: center;
   overflow-x: auto;
+  overflow-y: visible;
 }
 
 .audio-schedule-inline {
