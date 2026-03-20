@@ -153,6 +153,7 @@ function friendlyErrorText(raw, type) {
 function load(settings) {
   const llm = settings.llm || {};
   const ui = settings.ui || {};
+  const lineAudioQueue = settings.lineAudioQueue || {};
   document.getElementById("comfyUrl").value = settings.comfyUrl || "";
   document.getElementById("proxyUrl").value = settings.proxyUrl || "";
   document.getElementById("llmProvider").value = llm.provider || "grok";
@@ -171,6 +172,38 @@ function load(settings) {
   document.getElementById("uiTimezone").value = UI_TIMEZONE_OPTIONS.has(String(ui.timezone || ""))
     ? String(ui.timezone)
     : "Asia/Shanghai";
+  document.getElementById("lineAudioQueueMode").value = String(lineAudioQueue.mode || "immediate") === "scheduled"
+    ? "scheduled"
+    : "immediate";
+  document.getElementById("lineAudioQueueScheduledAt").value = toLocalDateTimeValue(lineAudioQueue.scheduledAt || "");
+  syncLineAudioQueueModeVisibility();
+}
+
+function toLocalDateTimeValue(raw) {
+  const text = String(raw || "").trim();
+  if (!text) return "";
+  const dt = new Date(text);
+  if (Number.isNaN(dt.getTime())) return "";
+  const y = dt.getFullYear();
+  const m = String(dt.getMonth() + 1).padStart(2, "0");
+  const d = String(dt.getDate()).padStart(2, "0");
+  const hh = String(dt.getHours()).padStart(2, "0");
+  const mm = String(dt.getMinutes()).padStart(2, "0");
+  return `${y}-${m}-${d}T${hh}:${mm}`;
+}
+
+function toUtcIso(raw) {
+  const text = String(raw || "").trim();
+  if (!text) return "";
+  const dt = new Date(text);
+  return Number.isNaN(dt.getTime()) ? "" : dt.toISOString();
+}
+
+function syncLineAudioQueueModeVisibility() {
+  const mode = document.getElementById("lineAudioQueueMode")?.value || "immediate";
+  const wrap = document.getElementById("lineAudioQueueTimeWrap");
+  if (!wrap) return;
+  wrap.classList.toggle("hidden", mode !== "scheduled");
 }
 
 function readSettingsForm() {
@@ -189,6 +222,12 @@ function readSettingsForm() {
     ui: {
       language: document.getElementById("uiLanguage").value,
       timezone: document.getElementById("uiTimezone").value,
+    },
+    lineAudioQueue: {
+      mode: document.getElementById("lineAudioQueueMode").value,
+      scheduledAt: document.getElementById("lineAudioQueueMode").value === "scheduled"
+        ? toUtcIso(document.getElementById("lineAudioQueueScheduledAt").value)
+        : "",
     },
   };
 }
@@ -278,9 +317,19 @@ function bindEvents() {
   document.getElementById("llmBatchChars").addEventListener("change", markLlmDirty);
   document.getElementById("uiLanguage").addEventListener("change", markLlmDirty);
   document.getElementById("uiTimezone").addEventListener("change", markLlmDirty);
+  document.getElementById("lineAudioQueueMode").addEventListener("change", () => {
+    syncLineAudioQueueModeVisibility();
+    markLlmDirty();
+  });
+  document.getElementById("lineAudioQueueScheduledAt").addEventListener("change", markLlmDirty);
 
   document.getElementById("saveSettingsBtn").addEventListener("click", async () => {
-    await saveSettings(readSettingsForm());
+    const payload = readSettingsForm();
+    if (payload.lineAudioQueue.mode === "scheduled" && !payload.lineAudioQueue.scheduledAt) {
+      toast("请先填写有效的台词队列执行时间");
+      return;
+    }
+    await saveSettings(payload);
     toast(t("toast.saved"));
     localizeDocumentText(document);
     applyTimezoneLabels();

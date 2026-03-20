@@ -278,6 +278,14 @@ a.ghost-btn {
   gap: 12px;
 }
 
+.roles-hero-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.roles-hero-grid .hero-metrics {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
 .hero-card,
 .panel {
   border: 1px solid var(--line);
@@ -684,6 +692,13 @@ textarea {
   margin-bottom: 12px;
 }
 
+.chapter-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .chapter-actions {
   margin-top: 10px;
   display: flex;
@@ -921,8 +936,31 @@ textarea {
 }
 
 .modal form {
+  position: relative;
   padding: 14px;
   background: #fffcf6;
+}
+
+.dialog-close-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fffaf1;
+  color: var(--ink);
+  font-size: 24px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.dialog-close-btn:hover {
+  background: #f5ead8;
 }
 
 .form-grid {
@@ -1363,6 +1401,136 @@ menu {
   display: flex;
   gap: 12px;
   margin-bottom: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.inline-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.line-audio-toolbar input[type="search"] {
+  flex: 1 1 260px;
+  min-width: 180px;
+}
+
+.line-audio-footer {
+  justify-content: flex-end;
+}
+
+.juben-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+}
+
+.juben-line-head {
+  display: grid;
+  grid-template-columns: 60px minmax(0, 1fr) 320px;
+  gap: 12px;
+  padding: 12px 14px 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.juben-line {
+  display: grid;
+  grid-template-columns: 60px minmax(0, 1fr) 320px;
+  gap: 12px;
+  align-items: start;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-strong);
+}
+
+.juben-line-no {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.8;
+}
+
+.juben-line-text-cell {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.juben-line-text {
+  line-height: 1.8;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.juben-line-edit-icon {
+  opacity: 0.72;
+  cursor: pointer;
+  color: var(--primary);
+  font-size: 14px;
+  line-height: 1;
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: rgba(164, 74, 28, 0.08);
+  flex-shrink: 0;
+}
+
+.juben-line-edit-icon:hover {
+  background: rgba(164, 74, 28, 0.15);
+}
+
+.juben-line-single-editing,
+.juben-line-search-hit {
+  background: #fff9ef;
+  border-color: #d9b898;
+}
+
+.juben-line-input {
+  width: 100%;
+  min-height: 64px;
+  resize: vertical;
+}
+
+.juben-line-single-input {
+  flex: 1;
+}
+
+.juben-line-save-btn {
+  border: 1px solid var(--ok);
+  background: #eef8f1;
+  color: var(--ok);
+  border-radius: 8px;
+  padding: 6px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.juben-line-audio {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.juben-line-audio audio {
+  width: 170px;
+}
+
+@media (max-width: 960px) {
+  .juben-line-head {
+    display: none;
+  }
+
+  .juben-line {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* 角色库独立页面样式 */
@@ -1394,6 +1562,17 @@ menu {
   margin-bottom: 16px;
 }
 
+.roles-filter-panel {
+  position: relative;
+  z-index: 30;
+  overflow: visible;
+}
+
+.roles-list-panel {
+  position: relative;
+  z-index: 1;
+}
+
 .filter-group {
   display: flex;
   flex-direction: column;
@@ -1420,6 +1599,7 @@ menu {
 
 .role-name-filter {
   position: relative;
+  overflow: visible;
 }
 
 .role-name-filter-tags {
@@ -1457,17 +1637,16 @@ menu {
 
 .role-name-filter-dropdown {
   position: absolute;
-  top: 100%;
+  top: calc(100% + 6px);
   left: 0;
   right: 0;
   max-height: 200px;
   overflow-y: auto;
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 6px;
-  margin-top: 4px;
-  z-index: 100;
-  box-shadow: var(--shadow);
+  border-radius: 12px;
+  z-index: 300;
+  box-shadow: 0 16px 36px rgba(70, 42, 20, 0.16);
 }
 
 .role-name-option {
@@ -1523,6 +1702,38 @@ menu {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.role-sample-player {
+  width: 160px;
+  height: 34px;
+}
+
+.role-sample-source {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: #fff7ea;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  flex: 0 0 24px;
+}
+
+.role-sample-source-uploaded {
+  color: #2f6db0;
+  border-color: #b8d1ea;
+  background: #eef6ff;
+}
+
+.role-sample-source-generated {
+  color: #9a5414;
+  border-color: #e9c59e;
+  background: #fff3e3;
 }
 
 .role-sample-actions {

@@ -234,6 +234,7 @@ DDL_STATEMENTS = [
         error_message TEXT,
         comfy_started_at DATETIME,
         comfy_finished_at DATETIME,
+        scheduled_at DATETIME,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY(novel_id) REFERENCES novels(id) ON DELETE CASCADE,

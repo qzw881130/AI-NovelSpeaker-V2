@@ -9,6 +9,7 @@ __pycache__/
 .DS_Store
 
 # Local runtime database
+tasks.db
 data/*.db
 data/*.db-*
 
@@ -19,3 +20,7 @@ novel/**
 # Keep output directory, ignore generated bundles/files
 output/*
 !output/.gitkeep
+
+# Keep temp directory, ignore generated temp files
+temp/*
+!temp/.gitkeep

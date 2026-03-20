@@ -18,6 +18,10 @@ const DEFAULT_SETTINGS = {
     language: "zh-CN",
     timezone: "Asia/Shanghai",
   },
+  lineAudioQueue: {
+    mode: "immediate",
+    scheduledAt: "",
+  },
 };
 
 let cache = {
@@ -25,7 +29,6 @@ let cache = {
   prompts: [],
   workflows: [],
   jsonTasks: [],
-  audioTasks: [],
   settings: DEFAULT_SETTINGS,
 };
 
@@ -41,6 +44,10 @@ function normalizeSettings(raw) {
     ui: {
       ...DEFAULT_SETTINGS.ui,
       ...(next.ui || {}),
+    },
+    lineAudioQueue: {
+      ...DEFAULT_SETTINGS.lineAudioQueue,
+      ...(next.lineAudioQueue || {}),
     },
   };
 }
@@ -80,7 +87,6 @@ function normalizeData(raw) {
     prompts: raw.prompts || [],
     workflows: raw.workflows || [],
     jsonTasks: raw.jsonTasks || [],
-    audioTasks: raw.audioTasks || [],
     settings: normalizeSettings(raw.settings || cache.settings),
   };
 }
@@ -191,38 +197,8 @@ async function fetchJsonTaskDetail(taskId) {
   return api(`/api/json-tasks/${Number(taskId)}`);
 }
 
-async function createAudioTask(input) {
-  await api("/api/audio-tasks", {
-    method: "POST",
-    body: JSON.stringify({
-      novelId: Number(input.novelId),
-      chapter: Number(input.chapter),
-      title: String(input.title || "").trim(),
-      scheduledAt: String(input.scheduledAt || ""),
-    }),
-  });
-  return refreshCache();
-}
-
-async function cancelAllAudioTasks() {
-  return api("/api/audio-tasks/cancel-all", {
-    method: "POST",
-    body: "{}",
-  });
-}
-
-async function deleteAudioTask(taskId) {
-  await api(`/api/audio-tasks/${Number(taskId)}`, { method: "DELETE" });
-  return refreshCache();
-}
-
 async function advanceJsonTasks() {
   await api("/api/json-tasks/simulate", { method: "POST", body: "{}" });
-  return refreshCache();
-}
-
-async function advanceAudioTasks() {
-  await api("/api/audio-tasks/simulate", { method: "POST", body: "{}" });
   return refreshCache();
 }
 
@@ -297,15 +273,6 @@ async function requestConvertJson(novelId, chapterNum) {
   return api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/convert-json`, {
     method: "POST",
     body: "{}",
-  });
-}
-
-async function requestGenerateAudio(novelId, chapterNum, options = {}) {
-  return api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/generate-audio`, {
-    method: "POST",
-    body: JSON.stringify({
-      scheduledAt: String(options.scheduledAt || ""),
-    }),
   });
 }
 
@@ -444,18 +411,23 @@ async function fetchChapterLineAudios(novelId, chapterNum) {
   return data.lineAudios || [];
 }
 
-async function enqueueLineAudio(novelId, chapterNum, lineIndex) {
+async function enqueueLineAudio(novelId, chapterNum, lineIndex, options = {}) {
   const res = await api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/line-audio/enqueue`, {
     method: "POST",
-    body: JSON.stringify({ lineIndex: Number(lineIndex) }),
+    body: JSON.stringify({
+      lineIndex: Number(lineIndex),
+      scheduledAt: String(options.scheduledAt || ""),
+    }),
   });
   return res;
 }
 
-async function enqueueAllLineAudios(novelId, chapterNum) {
+async function enqueueAllLineAudios(novelId, chapterNum, options = {}) {
   const res = await api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/line-audio/enqueue-all`, {
     method: "POST",
-    body: "{}",
+    body: JSON.stringify({
+      scheduledAt: String(options.scheduledAt || ""),
+    }),
   });
   return res;
 }
@@ -486,11 +458,8 @@ async function getMergedAudioUrl(novelId, chapterNum) {
 }
 
 export {
-  advanceAudioTasks,
   advanceJsonTasks,
   bytesToText,
-  cancelAllAudioTasks,
-  createAudioTask,
   createJsonTask,
   deleteNovel,
   deletePrompt,
@@ -506,7 +475,6 @@ export {
   getCachedData,
   getData,
   requestConvertJson,
-  requestGenerateAudio,
   saveChapterJsonOutput,
   retryJsonTask,
   deleteJsonTask,
@@ -515,7 +483,6 @@ export {
   createChapter,
   updateChapter,
   deleteChapter,
-  deleteAudioTask,
   saveNovel,
   savePrompt,
   saveSettings,

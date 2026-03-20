@@ -20,7 +20,6 @@
             </label>
             <a class="ghost-btn" href="./index.html">返回小说管理</a>
             <a class="ghost-btn" href="./json-tasks.html">任务管理</a>
-            <a class="ghost-btn" href="./audio-queue.html">有声队列</a>
           </div>
         </header>
 
@@ -37,7 +36,10 @@
 
           <section class="chapter-main panel">
             <div class="chapter-main-head">
-              <h2 id="chapterTitle">请选择章节</h2>
+              <div class="chapter-title-row">
+                <h2 id="chapterTitle">请选择章节</h2>
+                <button id="refreshChapterBtn" class="ghost-btn" type="button">刷新</button>
+              </div>
               <div id="chapterMeta" class="meta"></div>
               <div class="chapter-actions">
                 <button id="copyChapterBtn" class="ghost-btn" type="button">复制正文</button>
@@ -46,16 +48,7 @@
                 <button id="viewJsonBtn" class="ghost-btn" type="button">查看JSON</button>
                 <button id="viewRolesBtn" class="ghost-btn" type="button">查看角色<span id="viewRolesWarning" class="nav-badge hidden">!</span></button>
                 <button id="viewLineAudioBtn" class="ghost-btn" type="button">台词预览</button>
-                <span id="audioScheduleWrap" class="audio-schedule-wrap">
-                  <label class="audio-schedule-inline" for="audioScheduleMode"><span id="audioScheduleLabel">有声执行</span>
-                    <select id="audioScheduleMode">
-                      <option value="immediate">立即</option>
-                      <option value="scheduled">指定时间</option>
-                    </select>
-                  </label>
-                  <input id="audioScheduleAt" class="hidden" type="datetime-local" />
-                </span>
-                <button id="generateAudioBtn" class="primary-btn" type="button">生成有声</button>
+                <button id="mergeLineAudioBtn" class="ghost-btn" type="button">合并音频</button>
                 <button id="downloadAudioBtn" class="ghost-btn" type="button">下载音频</button>
                 <button id="editChapterBtn" class="ghost-btn" type="button">编辑章回</button>
                 <button id="deleteChapterBtn" class="ghost-btn" type="button">删除章回</button>
@@ -139,28 +132,30 @@
     <!-- 台词预览弹窗 -->
     <dialog id="lineAudioDialog" class="modal modal-large">
       <form method="dialog" class="line-audio-form">
+        <button class="dialog-close-btn" type="submit" aria-label="关闭">×</button>
         <h3>台词预览与生成</h3>
         <div class="line-audio-toolbar">
-          <button id="enqueueAllLineAudioBtn" class="primary-btn" type="button">批量生成所有</button>
-          <button id="mergeLineAudioBtn" class="ghost-btn" type="button">合并音频</button>
+          <label class="inline-filter">角色筛选
+            <select id="lineRoleFilter">
+              <option value="__all">全部</option>
+            </select>
+          </label>
+          <label class="inline-filter">是否有音频
+            <select id="lineHasAudioFilter">
+              <option value="__all">全部</option>
+              <option value="with">有音频</option>
+              <option value="without">无音频</option>
+            </select>
+          </label>
+          <input id="lineSearchInput" type="search" placeholder="查找台词" />
+          <button id="lineSearchNextBtn" class="ghost-btn" type="button">查找下一个</button>
+          <button id="toggleLineEditBtn" class="ghost-btn" type="button">编辑台词</button>
         </div>
         <div class="line-audio-list-container">
-          <table class="line-audio-table">
-            <thead>
-              <tr>
-                <th>行号</th>
-                <th>角色</th>
-                <th>台词</th>
-                <th>状态</th>
-                <th>音频</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody id="lineAudioTableBody"></tbody>
-          </table>
+          <div id="lineAudioTableBody"></div>
         </div>
-        <menu>
-          <button class="primary-btn" type="submit">关闭</button>
+        <menu class="line-audio-footer">
+          <button id="enqueueAllLineAudioBtn" class="primary-btn" type="button">批量生成所有</button>
         </menu>
       </form>
     </dialog>

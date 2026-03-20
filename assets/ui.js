@@ -23,7 +23,6 @@ const NAV_ITEMS = [
   { href: "./index.html", labelKey: "nav.novels" },
   { href: "./chapters.html", labelKey: "nav.chapters" },
   { href: "./json-tasks.html", labelKey: "nav.jsonTasks" },
-  { href: "./audio-queue.html", labelKey: "nav.audioQueue" },
   { href: "./line-audio-tasks.html", labelKey: "nav.lineAudioTasks" },
   { href: "./roles.html", labelKey: "nav.roles" },
   { href: "./prompts.html", labelKey: "nav.prompts" },
@@ -34,7 +33,6 @@ const NAV_ITEMS = [
 
 const NAV_BADGE_KEYS = {
   json: "ai_novel_nav_badge_json",
-  audio: "ai_novel_nav_badge_audio",
 };
 
 function getNavBadgeCount(type) {
@@ -67,9 +65,6 @@ function clearNavBadge(type) {
 function navBadgeForHref(href) {
   if (href === "./json-tasks.html") {
     return getNavBadgeCount("json");
-  }
-  if (href === "./audio-queue.html") {
-    return getNavBadgeCount("audio");
   }
   return 0;
 }

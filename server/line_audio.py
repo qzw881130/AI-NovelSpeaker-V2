@@ -18,6 +18,7 @@ from .services import (
     comfy_upload_input_file,
     extract_audio_output_from_history,
     fetch_settings,
+    parse_datetime_utc,
 )
 
 
@@ -29,6 +30,26 @@ def _safe_filename(text: str) -> str:
 def _normalize_role_name(name: str) -> str:
     """规范化角色名，用于匹配"""
     return str(name or "").strip()
+
+
+def _chapter_temp_dir(english_dir: str, chapter_num: int) -> Path:
+    return ROOT_DIR / "temp" / english_dir / "audio" / str(chapter_num)
+
+
+def _chapter_line_audio_path(
+    english_dir: str, chapter_num: int, line_hash: str
+) -> Path:
+    return _chapter_temp_dir(english_dir, chapter_num) / f"{line_hash}.flac"
+
+
+def _novel_audio_output_dir(english_dir: str) -> Path:
+    return NOVEL_DIR / english_dir / "audio"
+
+
+def _chapter_merged_output_path(english_dir: str, chapter_num: int) -> Path:
+    return (
+        _novel_audio_output_dir(english_dir) / f"chapter-{chapter_num:03d}-merged.flac"
+    )
 
 
 def parse_juben_lines_from_json_text(json_text: str) -> list[dict]:
@@ -122,6 +143,7 @@ def _line_audio_task_row_to_dict(row: Any) -> dict:
         "updatedAt": str(row["updated_at"] or ""),
         "comfyStartedAt": str(row["comfy_started_at"] or ""),
         "comfyFinishedAt": str(row["comfy_finished_at"] or ""),
+        "scheduledAt": str(row["scheduled_at"] or ""),
     }
 
 
@@ -261,7 +283,7 @@ def get_chapter_line_audio_entries(novel_id: int, chapter_id: int) -> list[dict]
 
 
 def enqueue_line_audio_task(
-    novel_id: int, chapter_id: int, line_index: int
+    novel_id: int, chapter_id: int, line_index: int, scheduled_at: str = ""
 ) -> tuple[bool, str, int | None]:
     """将单个台词加入音频生成队列"""
     conn = db_conn()
@@ -329,6 +351,7 @@ def enqueue_line_audio_task(
 
     line_hash = str(line["line_hash"])
     existing = _get_existing_line_task(novel_id, chapter_id, line_hash)
+    schedule_text = str(scheduled_at or "").strip()
 
     if existing:
         # 更新现有任务
@@ -339,6 +362,7 @@ def enqueue_line_audio_task(
                 reference_text=?, reference_audio_path=?, status='pending', comfy_status='queued',
                 comfy_prompt_id=NULL, output_filename='', output_subfolder='', output_type='',
                 downloaded_file_path='', error_message=NULL, comfy_started_at=NULL,
+                scheduled_at=?,
                 comfy_finished_at=NULL, updated_at=CURRENT_TIMESTAMP
             WHERE id=?
             """,
@@ -349,6 +373,7 @@ def enqueue_line_audio_task(
                 line_text,
                 sample_text,
                 sample_audio_path,
+                schedule_text,
                 int(existing["id"]),
             ),
         )
@@ -360,8 +385,8 @@ def enqueue_line_audio_task(
             INSERT INTO line_audio_tasks(
                 novel_id, chapter_id, chapter_num, chapter_title,
                 line_index, role_name, line_text,
-                reference_text, reference_audio_path, line_hash, status, comfy_status
-            ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'queued')
+                reference_text, reference_audio_path, line_hash, status, comfy_status, scheduled_at
+            ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'queued', ?)
             """,
             (
                 novel_id,
@@ -374,6 +399,7 @@ def enqueue_line_audio_task(
                 sample_text,
                 sample_audio_path,
                 line_hash,
+                schedule_text,
             ),
         )
         task_id = int(cur.lastrowid or 0)
@@ -387,7 +413,7 @@ def enqueue_line_audio_task(
 
 
 def enqueue_all_line_audio_tasks(
-    novel_id: int, chapter_id: int
+    novel_id: int, chapter_id: int, scheduled_at: str = ""
 ) -> tuple[bool, str, dict]:
     """将章节所有可生成的台词加入音频生成队列"""
     entries = get_chapter_line_audio_entries(novel_id, chapter_id)
@@ -413,7 +439,7 @@ def enqueue_all_line_audio_tasks(
             continue
 
         ok, msg, task_id = enqueue_line_audio_task(
-            novel_id, chapter_id, entry["lineIndex"]
+            novel_id, chapter_id, entry["lineIndex"], scheduled_at=scheduled_at
         )
         if ok and task_id:
             queued += 1
@@ -457,15 +483,19 @@ def process_line_audio_task(task_id: int) -> None:
     if not row:
         return
 
-    if str(row["status"]) != "running":
+    current_status = str(row["status"] or "")
+    if current_status not in {"running", "processing"}:
         return
 
     novel_id = int(row["novel_id"])
     chapter_id = int(row["chapter_id"])
+    chapter_num = int(row["chapter_num"])
     reference_audio_path = str(row["reference_audio_path"] or "").strip()
     line_text = str(row["line_text"] or "").strip()
     reference_text = str(row["reference_text"] or "").strip()
     line_hash = str(row["line_hash"] or "").strip()
+    existing_prompt_id = str(row["comfy_prompt_id"] or "").strip()
+    existing_comfy_status = str(row["comfy_status"] or "").strip()
 
     if not reference_audio_path or not line_text or not reference_text or not line_hash:
         conn = db_conn()
@@ -482,25 +512,23 @@ def process_line_audio_task(task_id: int) -> None:
         conn.close()
         return
 
-    # 更新状态为提交中
-    conn = db_conn()
-    conn.execute(
-        """
-        UPDATE line_audio_tasks
-        SET status='processing', comfy_status='submitting', error_message=NULL,
-            comfy_started_at=NULL, comfy_finished_at=NULL, updated_at=CURRENT_TIMESTAMP
-        WHERE id=?
-        """,
-        (task_id,),
-    )
-    conn.commit()
-    conn.close()
-
     try:
         settings = fetch_settings(db_conn())
         comfy_url = str(settings.get("comfyUrl") or "").strip()
         if not comfy_url:
             raise RuntimeError("ComfyUI URL 未配置")
+
+        conn = db_conn()
+        chapter_row = conn.execute(
+            "SELECT n.english_dir FROM chapters c JOIN novels n ON n.id = c.novel_id WHERE c.id=?",
+            (chapter_id,),
+        ).fetchone()
+        conn.close()
+        if not chapter_row:
+            raise RuntimeError("章节不存在")
+        english_dir = str(chapter_row["english_dir"] or "").strip()
+        if not english_dir:
+            raise RuntimeError("小说目录未配置")
 
         # 检查参考音频文件
         ref_path = (ROOT_DIR / reference_audio_path).resolve()
@@ -510,87 +538,101 @@ def process_line_audio_task(task_id: int) -> None:
         if not ref_path.exists() or not ref_path.is_file():
             raise RuntimeError("参考声音文件不存在")
 
-        # 上传参考音频
-        upload_info = comfy_upload_input_file(ref_path.name, ref_path.read_bytes())
-        filename = (
-            str(upload_info.get("name") or ref_path.name).strip() or ref_path.name
-        )
-        subfolder = str(upload_info.get("subfolder") or "").strip()
-        file_type = str(upload_info.get("type") or "input").strip() or "input"
+        output_node = "41"
+        prompt_id = existing_prompt_id
+        if not (
+            current_status == "processing"
+            and existing_prompt_id
+            and existing_comfy_status == "running"
+        ):
+            conn = db_conn()
+            conn.execute(
+                """
+                UPDATE line_audio_tasks
+                SET status='processing', comfy_status='submitting', error_message=NULL,
+                    comfy_started_at=NULL, comfy_finished_at=NULL, updated_at=CURRENT_TIMESTAMP
+                WHERE id=?
+                """,
+                (task_id,),
+            )
+            conn.commit()
+            conn.close()
 
-        # 获取工作流并填充
-        workflow = deepcopy(_get_line_audio_workflow_json(novel_id))
-        if not workflow:
-            raise RuntimeError("台词音频工作流未配置")
+            # 上传参考音频
+            upload_info = comfy_upload_input_file(ref_path.name, ref_path.read_bytes())
+            filename = (
+                str(upload_info.get("name") or ref_path.name).strip() or ref_path.name
+            )
+            subfolder = str(upload_info.get("subfolder") or "").strip()
+            file_type = str(upload_info.get("type") or "input").strip() or "input"
 
-        # 查找并填充节点（支持常见的节点ID模式）
-        # 这里需要根据实际工作流模板调整节点ID
-        audio_input_node = None
-        text_prompt_node = None
-        ref_text_node = None
-        output_node = None
+            # 获取工作流并填充
+            workflow = deepcopy(_get_line_audio_workflow_json(novel_id))
+            if not workflow:
+                raise RuntimeError("台词音频工作流未配置")
 
-        for node_id, node in workflow.items():
-            if not isinstance(node, dict):
-                continue
-            inputs = node.get("inputs", {})
-            # 查找音频输入节点（通常有audio输入）
-            if "audio" in inputs and audio_input_node is None:
-                audio_input_node = node_id
-            # 查找文本提示节点（通常有prompt输入）
-            if "prompt" in inputs and text_prompt_node is None:
-                text_prompt_node = node_id
-            # 查找参考文本节点
-            if "text" in inputs and ref_text_node is None:
-                ref_text_node = node_id
-            # 查找输出节点（通常有filename_prefix）
-            if "filename_prefix" in inputs and output_node is None:
-                output_node = node_id
+            # 优先兼容旧项目工作流节点ID，再回退到启发式匹配
+            audio_input_node = "27" if "27" in workflow else None
+            text_prompt_node = "33" if "33" in workflow else None
+            ref_text_node = "40" if "40" in workflow else None
+            output_node = "41" if "41" in workflow else None
 
-        # 填充节点输入
-        if audio_input_node:
+            for node_id, node in workflow.items():
+                if not isinstance(node, dict):
+                    continue
+                inputs = node.get("inputs", {})
+                if "audio" in inputs and audio_input_node is None:
+                    audio_input_node = node_id
+                if "prompt" in inputs and text_prompt_node is None:
+                    text_prompt_node = node_id
+                if "text" in inputs and ref_text_node is None:
+                    ref_text_node = node_id
+                if "filename_prefix" in inputs and output_node is None:
+                    output_node = node_id
+
+            if not audio_input_node:
+                raise RuntimeError("台词音频工作流缺少音频输入节点")
+            if not text_prompt_node:
+                raise RuntimeError("台词音频工作流缺少目标文本节点")
+            if not ref_text_node:
+                raise RuntimeError("台词音频工作流缺少参考文本节点")
+            if not output_node:
+                raise RuntimeError("台词音频工作流缺少音频输出节点")
+
             workflow[audio_input_node]["inputs"]["audio"] = filename
             if "audioUI" in workflow[audio_input_node]["inputs"]:
                 workflow[audio_input_node]["inputs"]["audioUI"] = (
                     f"/api/view?filename={filename}&type={file_type}&subfolder={subfolder}&rand={time.time():.6f}"
                 )
-
-        if text_prompt_node:
             workflow[text_prompt_node]["inputs"]["prompt"] = line_text
-
-        if ref_text_node:
             workflow[ref_text_node]["inputs"]["text"] = reference_text
-
-        if output_node:
             workflow[output_node]["inputs"]["filename_prefix"] = (
                 f"temp/chapter-{chapter_id:03d}"
             )
 
-        # 提交工作流
-        submit_result = comfy_request_json(
-            comfy_url=comfy_url,
-            path="/prompt",
-            method="POST",
-            payload={"prompt": workflow},
-        )
-        prompt_id = str(submit_result.get("prompt_id") or "").strip()
-        if not prompt_id:
-            raise RuntimeError("ComfyUI 未返回 prompt_id")
+            submit_result = comfy_request_json(
+                comfy_url=comfy_url,
+                path="/prompt",
+                method="POST",
+                payload={"prompt": workflow},
+            )
+            prompt_id = str(submit_result.get("prompt_id") or "").strip()
+            if not prompt_id:
+                raise RuntimeError("ComfyUI 未返回 prompt_id")
 
-        # 更新任务状态
-        conn = db_conn()
-        conn.execute(
-            """
-            UPDATE line_audio_tasks
-            SET comfy_prompt_id=?, comfy_status='running',
-                comfy_started_at=CURRENT_TIMESTAMP, comfy_finished_at=NULL,
-                updated_at=CURRENT_TIMESTAMP
-            WHERE id=?
-            """,
-            (prompt_id, task_id),
-        )
-        conn.commit()
-        conn.close()
+            conn = db_conn()
+            conn.execute(
+                """
+                UPDATE line_audio_tasks
+                SET comfy_prompt_id=?, comfy_status='running',
+                    comfy_started_at=CURRENT_TIMESTAMP, comfy_finished_at=NULL,
+                    updated_at=CURRENT_TIMESTAMP
+                WHERE id=?
+                """,
+                (prompt_id, task_id),
+            )
+            conn.commit()
+            conn.close()
 
         # 等待工作流完成
         started = time.time()
@@ -603,7 +645,9 @@ def process_line_audio_task(task_id: int) -> None:
                 path=f"/history/{prompt_id}",
                 method="GET",
             )
-            output_info = extract_audio_output_from_history(history, prompt_id)
+            output_info = extract_audio_output_from_history(
+                history, prompt_id, node_id=str(output_node)
+            )
             if output_info is not None:
                 break
             time.sleep(3)
@@ -621,9 +665,9 @@ def process_line_audio_task(task_id: int) -> None:
         )
 
         # 保存到临时目录
-        temp_dir = ROOT_DIR / "temp" / f"{novel_id}" / "audio" / f"{chapter_id}"
+        temp_dir = _chapter_temp_dir(english_dir, chapter_num)
         temp_dir.mkdir(parents=True, exist_ok=True)
-        local_path = temp_dir / f"{line_hash}.flac"
+        local_path = _chapter_line_audio_path(english_dir, chapter_num, line_hash)
         local_path.write_bytes(data)
 
         rel_path = str(local_path.relative_to(ROOT_DIR))
@@ -678,9 +722,19 @@ def get_chapter_merged_audio_path(novel_id: int, chapter_id: int) -> Path | None
     english_dir = str(row["english_dir"])
     chapter_num = int(row["chapter_num"])
 
-    path = ROOT_DIR / "temp" / english_dir / "audio" / str(chapter_num) / "merged.flac"
+    path = _chapter_merged_output_path(english_dir, chapter_num)
     if path.exists() and path.is_file() and path.stat().st_size > 0:
         return path
+
+    legacy_path = (
+        ROOT_DIR / "temp" / english_dir / "audio" / str(chapter_num) / "merged.flac"
+    )
+    if (
+        legacy_path.exists()
+        and legacy_path.is_file()
+        and legacy_path.stat().st_size > 0
+    ):
+        return legacy_path
     return None
 
 
@@ -770,7 +824,9 @@ def merge_chapter_line_audio(
                 fp.write(f"file '{str(silence_path)}'\n")
 
     # 执行合并
-    output_path = temp_dir / "merged.flac"
+    output_dir = _novel_audio_output_dir(english_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = _chapter_merged_output_path(english_dir, chapter_num)
     try:
         subprocess.run(
             [
@@ -801,9 +857,9 @@ def run_line_audio_queue_once() -> bool:
     """处理一次台词音频队列"""
     conn = db_conn()
 
-    # 检查是否有运行中的任务
+    # 检查是否有运行中或处理中任务；处理中任务在服务重启后也要能恢复
     running = conn.execute(
-        "SELECT id FROM line_audio_tasks WHERE status='running' ORDER BY id ASC LIMIT 1"
+        "SELECT id FROM line_audio_tasks WHERE status IN ('running','processing') ORDER BY id ASC LIMIT 1"
     ).fetchone()
     if running:
         task_id = int(running["id"])
@@ -812,14 +868,22 @@ def run_line_audio_queue_once() -> bool:
         return True
 
     # 获取待处理任务
-    pending = conn.execute(
-        "SELECT id FROM line_audio_tasks WHERE status='pending' ORDER BY id ASC LIMIT 1"
-    ).fetchone()
-    if not pending:
+    pending_rows = conn.execute(
+        "SELECT id,scheduled_at FROM line_audio_tasks WHERE status='pending' ORDER BY id ASC"
+    ).fetchall()
+    picked_id: int | None = None
+    now = time.time()
+    for pending in pending_rows:
+        scheduled = str(pending["scheduled_at"] or "").strip()
+        dt = parse_datetime_utc(scheduled)
+        if dt is None or dt.timestamp() <= now:
+            picked_id = int(pending["id"])
+            break
+    if picked_id is None:
         conn.close()
         return False
 
-    task_id = int(pending["id"])
+    task_id = int(picked_id)
     conn.execute(
         """
         UPDATE line_audio_tasks

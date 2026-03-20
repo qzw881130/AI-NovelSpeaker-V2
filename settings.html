@@ -96,6 +96,24 @@
           <p class="caption">保存后影响任务列表等页面的时间显示格式与时区。</p>
         </section>
 
+        <section class="panel form-panel">
+          <h2>台词队列任务执行设置</h2>
+          <div class="form-grid">
+            <label>
+              执行方式
+              <select id="lineAudioQueueMode">
+                <option value="immediate">立即执行</option>
+                <option value="scheduled">指定时间执行</option>
+              </select>
+            </label>
+            <label id="lineAudioQueueTimeWrap" class="hidden">
+              指定时间
+              <input id="lineAudioQueueScheduledAt" type="datetime-local" />
+            </label>
+          </div>
+          <p class="caption">台词预览页点击“生成音频 / 批量生成所有”时，将按这里的设置进入台词队列。</p>
+        </section>
+
         <section class="settings-actions-bottom">
           <button class="primary-btn" id="saveSettingsBtn" type="button">保存配置</button>
         </section>

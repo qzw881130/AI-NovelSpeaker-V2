@@ -20,13 +20,12 @@
             </label>
             <a class="ghost-btn" href="./chapters.html">返回章节管理</a>
             <a class="ghost-btn" href="./json-tasks.html">JSON任务</a>
-            <a class="ghost-btn" href="./audio-queue.html">有声队列</a>
             <a class="ghost-btn" href="./line-audio-tasks.html">台词队列</a>
             <button id="refreshRolesBtn" class="primary-btn" type="button">刷新</button>
           </div>
         </header>
 
-        <section class="hero-grid">
+        <section class="hero-grid roles-hero-grid">
           <article class="hero-card">
             <h2>角色统计</h2>
             <div class="hero-metrics" id="rolesStats">
@@ -39,11 +38,17 @@
           </article>
         </section>
 
-        <section class="panel">
+        <section class="panel roles-filter-panel">
           <div class="panel-head">
             <h2>过滤器</h2>
           </div>
           <div class="roles-filters">
+            <div class="filter-group">
+              <label for="chapterFilterSelect">章回筛选</label>
+              <select id="chapterFilterSelect">
+                <option value="all">全部</option>
+              </select>
+            </div>
             <div class="filter-group">
               <label for="sampleFilterSelect">是否有声音示例</label>
               <select id="sampleFilterSelect">
@@ -73,7 +78,7 @@
           </div>
         </section>
 
-        <section class="panel">
+        <section class="panel roles-list-panel">
           <div class="panel-head">
             <h2>角色列表</h2>
             <div class="toolbar">

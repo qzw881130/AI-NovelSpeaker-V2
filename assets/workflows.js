@@ -62,6 +62,16 @@ function setFormReadonly(readonly) {
   document.getElementById("workflowCancelBtn").textContent = readonly ? "关闭" : "取消";
 }
 
+function formatWorkflowJsonText(jsonText) {
+  const text = String(jsonText || "").trim();
+  if (!text) return '{"workflow":""}';
+  try {
+    return JSON.stringify(JSON.parse(text), null, 2);
+  } catch {
+    return text;
+  }
+}
+
 function openModal(item, mode = "create") {
   modalMode = mode;
   editingId = item?.id || "";
@@ -71,7 +81,7 @@ function openModal(item, mode = "create") {
   form.name.value = mode === "view" ? translateText(item?.name || "") : item?.name || "";
   form.workflowType.value = item?.workflowType || "";
   form.description.value = mode === "view" ? translateText(item?.description || "") : item?.description || "";
-  form.jsonText.value = item?.jsonText || '{"workflow":""}';
+  form.jsonText.value = formatWorkflowJsonText(item?.jsonText);
   setFormReadonly(mode === "view");
   localizeDocumentText(document);
   document.getElementById("workflowModal").showModal();

@@ -67,6 +67,19 @@ def migrate_novels_table(conn: sqlite3.Connection) -> None:
         )
 
 
+def migrate_line_audio_tasks_table(conn: sqlite3.Connection) -> None:
+    """迁移：为 line_audio_tasks 表添加调度字段"""
+    tables = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='line_audio_tasks'"
+    ).fetchone()
+    if not tables:
+        return
+    columns = conn.execute("PRAGMA table_info(line_audio_tasks)").fetchall()
+    column_names = [col[1] for col in columns]
+    if "scheduled_at" not in column_names:
+        conn.execute("ALTER TABLE line_audio_tasks ADD COLUMN scheduled_at DATETIME")
+
+
 def db_conn() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH, timeout=12.0)
     conn.row_factory = sqlite3.Row
@@ -89,4 +102,5 @@ def db_conn() -> sqlite3.Connection:
     )
     # 执行迁移
     migrate_novels_table(conn)
+    migrate_line_audio_tasks_table(conn)
     return conn

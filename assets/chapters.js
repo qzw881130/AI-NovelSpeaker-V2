@@ -7,7 +7,6 @@ import {
   fetchNovelChapters,
   getData,
   requestConvertJson,
-  requestGenerateAudio,
   saveChapterJsonOutput,
   setActiveNovelId,
   updateChapter,
@@ -22,6 +21,7 @@ import { localizeDocumentText, t, translateText } from "./i18n.js";
 
 let allNovels = [];
 let activeNovel = null;
+let currentSettings = null;
 let chapterState = [];
 let activeChapterNum = null;
 let activeChapterDetail = null;
@@ -35,61 +35,44 @@ let jsonViewEditing = false;
 
 // 台词音频状态
 let lineAudioEntries = [];
+let linePreviewRows = [];
+let activeLineRole = "__all";
+let activeLineAudioFilter = "__all";
+let lineSearchIndex = -1;
+let lineEditEnabled = false;
+let editingLineIndex = -1;
+let editingLineOriginalText = "";
+let lineAudioRefreshTimerId = null;
 
 // 角色列表状态
 let chapterRoles = [];
 let isRolesEditing = false;
 let globalRoleDefaults = [];
 
-function setGenerateAudioVisible(visible) {
-  document.getElementById("generateAudioBtn").classList.toggle("hidden", !visible);
-  document.getElementById("audioScheduleWrap").classList.toggle("hidden", !visible);
-  document.getElementById("downloadAudioBtn").classList.toggle("hidden", !visible);
-  const modeEl = document.getElementById("audioScheduleMode");
-  const atEl = document.getElementById("audioScheduleAt");
-  if (!visible) {
-    atEl.classList.add("hidden");
-    return;
-  }
-  const isScheduled = String(modeEl.value || "immediate") === "scheduled";
-  atEl.classList.toggle("hidden", !isScheduled);
-  if (isScheduled && !atEl.value) {
-    const dt = new Date(Date.now() + 10 * 60 * 1000);
-    dt.setSeconds(0, 0);
-    atEl.value = formatLocalDateTime(dt);
-  }
+function resetChapterJsonCache() {
+  jsonViewRawText = "";
+  jsonViewParsed = null;
+  jsonViewEditing = false;
 }
 
-function canGenerateAudioFromJsonText(jsonText) {
-  const raw = String(jsonText || "").trim();
-  if (!raw) return false;
-  let parsed;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return false;
-  }
-  const roleList = Array.isArray(parsed?.role_list) ? parsed.role_list : [];
-  const juben = String(parsed?.juben || "").trim();
-  return roleList.length > 0 && juben.length > 0;
-}
-
-async function syncGenerateAudioVisibility() {
+async function loadChapterJsonCache() {
   if (!activeNovel || !activeChapterNum) {
-    setGenerateAudioVisible(false);
-    return;
+    resetChapterJsonCache();
+    return null;
   }
-  const chapter = getCurrentChapterState();
-  if (!chapter?.hasJson) {
-    setGenerateAudioVisible(false);
-    return;
+  const output = await fetchChapterJsonOutput(activeNovel.id, activeChapterNum);
+  const text = String(output?.jsonText || "").trim();
+  jsonViewRawText = text;
+  if (!text) {
+    jsonViewParsed = null;
+    return null;
   }
   try {
-    const output = await fetchChapterJsonOutput(activeNovel.id, activeChapterNum);
-    setGenerateAudioVisible(canGenerateAudioFromJsonText(output?.jsonText || ""));
+    jsonViewParsed = JSON.parse(text);
   } catch {
-    setGenerateAudioVisible(false);
+    jsonViewParsed = null;
   }
+  return jsonViewParsed;
 }
 
 function fileToBase64(file) {
@@ -123,41 +106,21 @@ function calcWordCount(text) {
   return String(text || "").replace(/\s+/g, "").length;
 }
 
-function formatLocalDateTime(dt) {
-  const y = dt.getFullYear();
-  const m = String(dt.getMonth() + 1).padStart(2, "0");
-  const d = String(dt.getDate()).padStart(2, "0");
-  const hh = String(dt.getHours()).padStart(2, "0");
-  const mm = String(dt.getMinutes()).padStart(2, "0");
-  return `${y}-${m}-${d}T${hh}:${mm}`;
-}
-
-function parseScheduleToUtcIso(value) {
-  const raw = String(value || "").trim();
-  if (!raw) return "";
-  const dt = new Date(raw);
-  if (Number.isNaN(dt.getTime())) return "";
-  return dt.toISOString();
-}
-
-function bindAudioScheduleControl() {
-  const modeEl = document.getElementById("audioScheduleMode");
-  const atEl = document.getElementById("audioScheduleAt");
-  const syncScheduleInputVisibility = () => {
-    if (document.getElementById("audioScheduleWrap").classList.contains("hidden")) {
-      atEl.classList.add("hidden");
-      return;
-    }
-    const isScheduled = modeEl.value === "scheduled";
-    atEl.classList.toggle("hidden", !isScheduled);
-    if (isScheduled && !atEl.value) {
-      const dt = new Date(Date.now() + 10 * 60 * 1000);
-      dt.setSeconds(0, 0);
-      atEl.value = formatLocalDateTime(dt);
-    }
+function getLineAudioQueueSchedule() {
+  const queue = currentSettings?.lineAudioQueue || {};
+  const mode = String(queue.mode || "immediate").trim();
+  const scheduledAt = String(queue.scheduledAt || "").trim();
+  if (mode !== "scheduled") {
+    return { mode: "immediate", scheduledAt: "", label: "立即执行" };
+  }
+  if (!scheduledAt) {
+    return { mode: "immediate", scheduledAt: "", label: "立即执行" };
+  }
+  return {
+    mode: "scheduled",
+    scheduledAt,
+    label: `指定时间执行 ${fmtDateTime(scheduledAt) || scheduledAt}`,
   };
-  modeEl.addEventListener("change", syncScheduleInputVisibility);
-  syncScheduleInputVisibility();
 }
 
 function syncModalWordCount(form) {
@@ -267,6 +230,7 @@ function refreshChapterAudioState(detail) {
 async function loadChapter(chapterNum) {
   if (!activeNovel) return;
   activeChapterNum = chapterNum;
+  resetChapterJsonCache();
   try {
     const detail = await fetchChapterDetail(activeNovel.id, chapterNum);
     activeChapterDetail = detail;
@@ -274,13 +238,14 @@ async function loadChapter(chapterNum) {
     document.getElementById("chapterMeta").textContent = `${detail.novelName} · 章节 ${detail.chapterNum} · 字数 ${fmtNumber(detail.wordCount)}`;
     document.getElementById("chapterContent").textContent = detail.content;
     refreshChapterAudioState(detail);
-    await syncGenerateAudioVisibility();
+    if (detail?.hasJson) {
+      await loadChapterJsonCache();
+    }
     await updateRolesWarningBadge();
     setStatus("就绪");
     renderChapterList();
     localizeDocumentText(document);
   } catch (err) {
-    setGenerateAudioVisible(false);
     resetChapterAudioPlayer();
     document.getElementById("downloadAudioBtn").disabled = true;
     setStatus(t("error.loadFailed", { msg: err.message }));
@@ -380,17 +345,6 @@ function renderJsonViewMode() {
   localizeDocumentText(document);
 }
 
-function applyAudioScheduleLabels() {
-  const label = document.getElementById("audioScheduleLabel");
-  if (label) label.textContent = t("chapter.audioExecution");
-  const select = document.getElementById("audioScheduleMode");
-  if (!select) return;
-  const immediateOpt = select.querySelector('option[value="immediate"]');
-  const scheduledOpt = select.querySelector('option[value="scheduled"]');
-  if (immediateOpt) immediateOpt.textContent = t("common.immediate");
-  if (scheduledOpt) scheduledOpt.textContent = t("common.scheduled");
-}
-
 async function saveJsonViewEdit() {
   if (!activeNovel || !activeChapterNum || !jsonViewParsed || typeof jsonViewParsed !== "object") {
     toast("当前章节 JSON 不可编辑");
@@ -429,7 +383,6 @@ async function saveJsonViewEdit() {
   jsonViewRawText = merged;
   jsonViewEditing = false;
   renderJsonViewMode();
-  await syncGenerateAudioVisibility();
   await updateRolesWarningBadge();
   setStatus("JSON 已保存");
   toast(t("toast.saved"));
@@ -441,7 +394,6 @@ async function refreshChapters() {
   if (chapterState.length === 0) {
     activeChapterNum = null;
     activeChapterDetail = null;
-    setGenerateAudioVisible(false);
     resetChapterAudioPlayer();
     document.getElementById("downloadAudioBtn").disabled = true;
     document.getElementById("chapterTitle").textContent = "暂无章节";
@@ -459,6 +411,18 @@ async function refreshChapters() {
 }
 
 function bindActions() {
+  document.getElementById("refreshChapterBtn").addEventListener("click", async () => {
+    if (!activeNovel) return;
+    try {
+      await refreshChapters();
+      setStatus("章节数据已刷新");
+      toast("章节数据已刷新");
+    } catch (err) {
+      setStatus(t("error.loadFailed", { msg: err.message }));
+      toast(t("error.loadFailed", { msg: err.message }));
+    }
+  });
+
   document.getElementById("copyChapterBtn").addEventListener("click", () => {
     if (!activeChapterDetail) return;
     copyText(`${activeChapterDetail.title}\n\n${activeChapterDetail.content}`, t("toast.copied"));
@@ -487,15 +451,8 @@ function bindActions() {
 
   document.getElementById("viewJsonBtn").addEventListener("click", async () => {
     if (!activeNovel || !activeChapterNum) return;
-    const output = await fetchChapterJsonOutput(activeNovel.id, activeChapterNum);
-    const text = output.jsonText || JSON.stringify({ role_list: [], juben: "" }, null, 2);
-    jsonViewRawText = text;
-    jsonViewParsed = null;
-    try {
-      jsonViewParsed = JSON.parse(text);
-    } catch {
-      jsonViewParsed = null;
-    }
+    await loadChapterJsonCache();
+    const text = jsonViewRawText || JSON.stringify({ role_list: [], juben: "" }, null, 2);
     jsonViewMode = "raw";
     jsonViewEditing = false;
     renderJsonViewMode();
@@ -537,39 +494,6 @@ function bindActions() {
       ? document.getElementById("chapterJsonEditor").value || ""
       : document.getElementById("chapterJsonPreview").textContent || "";
     copyText(text, t("toast.copied"));
-  });
-
-  document.getElementById("generateAudioBtn").addEventListener("click", async () => {
-    if (!activeNovel || !activeChapterNum) return;
-    const scheduleMode = String(document.getElementById("audioScheduleMode").value || "immediate");
-    let scheduledAt = "";
-    let scheduledAtText = "";
-    if (scheduleMode === "scheduled") {
-      const rawLocal = document.getElementById("audioScheduleAt").value;
-      scheduledAt = parseScheduleToUtcIso(rawLocal);
-      if (!scheduledAt) {
-        setStatus(t("api.invalidScheduledAt"));
-        toast(t("api.invalidScheduledAt"));
-        return;
-      }
-      scheduledAtText = fmtDateTime(scheduledAt) || rawLocal;
-    }
-    try {
-      await requestGenerateAudio(activeNovel.id, activeChapterNum, { scheduledAt });
-      incrementNavBadge("audio", 1);
-      renderNav();
-      if (scheduleMode === "scheduled") {
-        setStatus(`${t("toast.created")} (${scheduledAtText})`);
-        toast(`${t("toast.created")} (${scheduledAtText})`);
-      } else {
-        setStatus("开始下载音频");
-        toast(t("toast.created"));
-      }
-      await refreshChapters();
-    } catch (err) {
-      setStatus(t("error.operationFailed", { msg: err.message }));
-      toast(t("error.operationFailed", { msg: err.message }));
-    }
   });
 
   document.getElementById("downloadAudioBtn").addEventListener("click", () => {
@@ -662,27 +586,20 @@ function bindActions() {
   });
 
   // 台词预览按钮
-  document.getElementById("viewLineAudioBtn")?.addEventListener("click", async () => {
-    if (!activeNovel || !activeChapterNum) {
-      toast("请先选择章节");
-      return;
-    }
-    const chapter = getCurrentChapterState();
-    if (!chapter?.hasJson) {
-      toast("当前章节没有JSON数据，请先转换");
-      return;
-    }
-    await loadLineAudios();
-    document.getElementById("lineAudioDialog")?.showModal();
-  });
+  document.getElementById("viewLineAudioBtn")?.addEventListener("click", openLineAudioDialog);
 
   // 台词音频弹窗内按钮
   document.getElementById("enqueueAllLineAudioBtn")?.addEventListener("click", async () => {
     if (!activeNovel || !activeChapterNum) return;
     try {
-      const result = await enqueueAllLineAudios(activeNovel.id, activeChapterNum);
+      const schedule = getLineAudioQueueSchedule();
+      const result = await enqueueAllLineAudios(activeNovel.id, activeChapterNum, {
+        scheduledAt: schedule.scheduledAt,
+      });
       toast(`已加入队列: ${result.queued || 0} 个, 跳过: ${result.skipped?.length || 0} 个`);
+      setStatus(schedule.label);
       await loadLineAudios();
+      startLineAudioRefreshLoop();
     } catch (err) {
       toast(err.message);
     }
@@ -692,6 +609,8 @@ function bindActions() {
     if (!activeNovel || !activeChapterNum) return;
     try {
       await mergeChapterLineAudio(activeNovel.id, activeChapterNum);
+      await refreshChapters();
+      setStatus("音频已合并");
       toast("音频已合并");
       const url = getMergedAudioUrl(activeNovel.id, activeChapterNum);
       const audio = new Audio(url);
@@ -699,6 +618,53 @@ function bindActions() {
     } catch (err) {
       toast(err.message);
     }
+  });
+
+  document.getElementById("lineRoleFilter")?.addEventListener("change", (event) => {
+    activeLineRole = String(event.target.value || "__all");
+    lineSearchIndex = -1;
+    renderLineAudioTable();
+  });
+
+  document.getElementById("lineHasAudioFilter")?.addEventListener("change", (event) => {
+    activeLineAudioFilter = String(event.target.value || "__all");
+    lineSearchIndex = -1;
+    renderLineAudioTable();
+  });
+
+  document.getElementById("lineSearchInput")?.addEventListener("input", () => {
+    lineSearchIndex = -1;
+    renderLineAudioTable();
+  });
+
+  document.getElementById("lineSearchInput")?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      focusNextLineSearchMatch();
+    }
+  });
+
+  document.getElementById("lineSearchNextBtn")?.addEventListener("click", () => {
+    focusNextLineSearchMatch();
+  });
+
+  document.getElementById("toggleLineEditBtn")?.addEventListener("click", () => {
+    lineEditEnabled = !lineEditEnabled;
+    editingLineIndex = -1;
+    editingLineOriginalText = "";
+    updateLineAudioToolbarState();
+    renderLineAudioTable();
+    if (lineEditEnabled) {
+      stopLineAudioRefreshLoop();
+    } else {
+      startLineAudioRefreshLoop();
+    }
+  });
+
+  document.getElementById("lineAudioDialog")?.addEventListener("close", () => {
+    stopLineAudioRefreshLoop();
+    editingLineIndex = -1;
+    editingLineOriginalText = "";
   });
 
   const player = document.getElementById("chapterAudioPlayer");
@@ -713,18 +679,231 @@ function bindActions() {
     duration.textContent = "时长：读取失败";
   });
 
-  bindAudioScheduleControl();
 }
 
 // ============ 台词音频功能 ============
 
-async function loadLineAudios() {
+function extractRoleName(line) {
+  const match = String(line || "").trim().match(/^([^:：\n]{1,20})[:：]/);
+  return match ? String(match[1] || "").trim() : "";
+}
+
+function getJubenLinesFromParsed(parsed) {
+  const juben = String(parsed?.juben || "").trim();
+  if (!juben) {
+    return [];
+  }
+  return juben
+    .split(/\r?\n/)
+    .map((line) => String(line || "").trim())
+    .filter(Boolean)
+    .map((line, index) => ({
+      index,
+      line,
+      roleName: extractRoleName(line),
+    }));
+}
+
+function syncLineRoleFilterOptions() {
+  const select = document.getElementById("lineRoleFilter");
+  if (!select) return;
+  const roleNames = Array.from(new Set(linePreviewRows.map((item) => item.roleName).filter(Boolean)));
+  select.innerHTML = "";
+  const allOpt = document.createElement("option");
+  allOpt.value = "__all";
+  allOpt.textContent = "全部";
+  select.appendChild(allOpt);
+  for (const name of roleNames) {
+    const opt = document.createElement("option");
+    opt.value = name;
+    opt.textContent = name;
+    select.appendChild(opt);
+  }
+  if (!roleNames.includes(activeLineRole)) {
+    activeLineRole = "__all";
+  }
+  select.value = activeLineRole;
+}
+
+function getLineAudioEntry(lineIndex) {
+  return lineAudioEntries.find((item) => Number(item.lineIndex) === Number(lineIndex)) || null;
+}
+
+function getLineAudioViewState(entry) {
+  let statusText = "未生成";
+  let statusClass = "text-muted";
+  let disabled = false;
+  let hasAudio = false;
+  let src = "";
+
+  if (entry) {
+    if (entry.hasAudio && entry.streamUrl) {
+      statusText = "已生成";
+      statusClass = "status-completed";
+      hasAudio = true;
+      const version = String(entry.task?.updatedAt || entry.lineHash || "0");
+      src = `${entry.streamUrl}?v=${encodeURIComponent(version)}`;
+    } else if (entry.task?.status === "pending") {
+      statusText = "待生成";
+      statusClass = "status-pending";
+      disabled = true;
+    } else if (entry.task?.status === "processing") {
+      statusText = "生成中";
+      statusClass = "status-processing";
+      disabled = true;
+    } else if (entry.task?.status === "failed") {
+      statusText = "生成失败";
+      statusClass = "status-failed";
+    } else if (!entry.roleInLibrary) {
+      statusText = "角色未加入角色库";
+      statusClass = "status-failed";
+      disabled = true;
+    } else if (!entry.roleHasSampleAudio) {
+      statusText = "缺少角色示例音频";
+      statusClass = "status-failed";
+      disabled = true;
+    }
+  }
+
+  return { statusText, statusClass, disabled, hasAudio, src };
+}
+
+function getFilteredLinePreviewRows() {
+  return linePreviewRows.filter((row) => {
+    if (activeLineRole !== "__all" && row.roleName !== activeLineRole) {
+      return false;
+    }
+    if (activeLineAudioFilter !== "__all") {
+      const entry = getLineAudioEntry(row.index);
+      const hasAudio = Boolean(entry && entry.hasAudio && entry.streamUrl);
+      if (activeLineAudioFilter === "with" && !hasAudio) {
+        return false;
+      }
+      if (activeLineAudioFilter === "without" && hasAudio) {
+        return false;
+      }
+    }
+    return true;
+  });
+}
+
+function getLineSearchMatches(rows) {
+  const query = String(document.getElementById("lineSearchInput")?.value || "").trim();
+  if (!query) {
+    return [];
+  }
+  return rows.filter((row) => row.line.includes(query));
+}
+
+function updateLineAudioToolbarState() {
+  const toggleBtn = document.getElementById("toggleLineEditBtn");
+  if (toggleBtn) {
+    toggleBtn.textContent = lineEditEnabled ? "结束编辑" : "编辑台词";
+  }
+  const roleFilter = document.getElementById("lineRoleFilter");
+  const audioFilter = document.getElementById("lineHasAudioFilter");
+  if (roleFilter) roleFilter.disabled = Boolean(lineEditEnabled);
+  if (audioFilter) audioFilter.disabled = Boolean(lineEditEnabled);
+}
+
+function stopLineAudioRefreshLoop() {
+  if (lineAudioRefreshTimerId) {
+    window.clearInterval(lineAudioRefreshTimerId);
+    lineAudioRefreshTimerId = null;
+  }
+}
+
+function hasPlayingLineAudio() {
+  const dialog = document.getElementById("lineAudioDialog");
+  if (!dialog) return false;
+  return Array.from(dialog.querySelectorAll("audio")).some(
+    (player) => !player.paused && !player.ended
+  );
+}
+
+function startLineAudioRefreshLoop() {
+  stopLineAudioRefreshLoop();
+  if (lineEditEnabled) return;
+  const dialog = document.getElementById("lineAudioDialog");
+  if (!dialog?.open || !activeNovel || !activeChapterNum) return;
+  lineAudioRefreshTimerId = window.setInterval(async () => {
+    if (!dialog.open || lineEditEnabled) {
+      stopLineAudioRefreshLoop();
+      return;
+    }
+    if (hasPlayingLineAudio()) {
+      return;
+    }
+    await loadLineAudios({ silent: true });
+  }, 3000);
+}
+
+function updateLineAudioRow(lineIndex) {
+  const rowEl = document.querySelector(`.juben-line[data-line-index="${lineIndex}"]`);
+  if (!rowEl) return;
+  const audioCell = rowEl.querySelector(".juben-line-audio");
+  if (!audioCell) return;
+
+  const entry = getLineAudioEntry(lineIndex);
+  const view = getLineAudioViewState(entry);
+  if (view.hasAudio) {
+    audioCell.innerHTML = `
+      <audio controls preload="metadata" src="${escapeHtml(view.src)}"></audio>
+      <span class="${view.statusClass}">${escapeHtml(view.statusText)}</span>
+      <button class="ghost-btn btn-sm enqueue-line-btn" data-line-index="${lineIndex}" type="button">生成音频</button>
+    `;
+  } else {
+    audioCell.innerHTML = `
+      <span class="${view.statusClass}">${escapeHtml(view.statusText)}</span>
+      <button class="ghost-btn btn-sm enqueue-line-btn" data-line-index="${lineIndex}" type="button"${view.disabled ? " disabled" : ""}>生成音频</button>
+    `;
+  }
+  bindLineAudioButtons(audioCell);
+}
+
+async function openLineAudioDialog() {
+  if (!activeNovel || !activeChapterNum) {
+    toast("请先选择章节");
+    return;
+  }
+  const parsed = await loadChapterJsonCache();
+  if (!jsonViewRawText) {
+    toast("请先完成JSON转换");
+    return;
+  }
+  if (!parsed) {
+    toast("JSON解析失败，无法查看台词");
+    return;
+  }
+  linePreviewRows = getJubenLinesFromParsed(parsed);
+  if (!linePreviewRows.length) {
+    toast("该 JSON 没有 juben 数据");
+    return;
+  }
+  lineEditEnabled = false;
+  editingLineIndex = -1;
+  editingLineOriginalText = "";
+  lineSearchIndex = -1;
+  syncLineRoleFilterOptions();
+  updateLineAudioToolbarState();
+  await loadLineAudios();
+  document.getElementById("lineAudioDialog")?.showModal();
+  startLineAudioRefreshLoop();
+}
+
+async function loadLineAudios(options = {}) {
   if (!activeNovel || !activeChapterNum) return;
   try {
     lineAudioEntries = await fetchChapterLineAudios(activeNovel.id, activeChapterNum);
+    if (options.partialLineIndex != null && hasPlayingLineAudio()) {
+      updateLineAudioRow(Number(options.partialLineIndex));
+      return;
+    }
     renderLineAudioTable();
   } catch (err) {
-    toast(t("error.loadFailed", { msg: err.message }));
+    if (!options.silent) {
+      toast(t("error.loadFailed", { msg: err.message }));
+    }
   }
 }
 
@@ -735,50 +914,239 @@ function escapeHtml(text) {
 }
 
 function renderLineAudioTable() {
-  const tbody = document.getElementById("lineAudioTableBody");
-  if (!tbody) return;
+  const root = document.getElementById("lineAudioTableBody");
+  if (!root) return;
 
-  tbody.innerHTML = lineAudioEntries.map(entry => `
-    <tr data-line-index="${entry.lineIndex}">
-      <td>${entry.lineNo}</td>
-      <td>
-        ${entry.roleName}
-        ${!entry.roleInLibrary ? '<span class="badge badge-warning">未入库</span>' : ""}
-        ${entry.roleInLibrary && !entry.roleHasSampleAudio ? '<span class="badge badge-warning">无音频</span>' : ""}
-      </td>
-      <td>${escapeHtml(entry.lineText)}</td>
-      <td>
-        ${entry.task
-          ? `<span class="status-${entry.task.status}">${entry.task.status}</span>`
-          : '<span class="text-muted">-</span>'
-        }
-      </td>
-      <td>
-        ${entry.hasAudio && entry.streamUrl
-          ? `<audio controls src="${entry.streamUrl}" style="width: 150px;"></audio>`
-          : '<span class="text-muted">未生成</span>'
-        }
-      </td>
-      <td>
-        <button class="ghost-btn btn-sm enqueue-line-btn" data-line-index="${entry.lineIndex}" ${!entry.canGenerate ? "disabled" : ""}>
-          生成
-        </button>
-      </td>
-    </tr>
-  `).join("");
+  syncLineRoleFilterOptions();
+  updateLineAudioToolbarState();
 
-  tbody.querySelectorAll(".enqueue-line-btn").forEach(btn => {
-    btn.addEventListener("click", async (e) => {
-      const lineIndex = Number(e.target.dataset.lineIndex);
+  const rows = getFilteredLinePreviewRows();
+  const matches = getLineSearchMatches(rows);
+  root.innerHTML = "";
+
+  if (!rows.length) {
+    root.innerHTML = '<p class="empty-text">当前筛选条件下暂无台词。</p>';
+    return;
+  }
+
+  const head = document.createElement("div");
+  head.className = "juben-line-head";
+  head.innerHTML = "<span>行号</span><span>台词</span><span>台词音频</span>";
+  root.appendChild(head);
+
+  const list = document.createElement("div");
+  list.className = "juben-lines";
+
+  for (const row of rows) {
+    const entry = getLineAudioEntry(row.index);
+    const view = getLineAudioViewState(entry);
+    const item = document.createElement("div");
+    const isEditing = editingLineIndex === row.index;
+    const isMatched = matches.some((match) => match.index === row.index);
+    item.className = `juben-line${isEditing ? " juben-line-single-editing" : ""}${isMatched ? " juben-line-search-hit" : ""}`;
+    item.dataset.lineIndex = String(row.index);
+
+    const no = document.createElement("span");
+    no.className = "juben-line-no";
+    no.textContent = String(row.index + 1).padStart(3, "0");
+    item.appendChild(no);
+
+    const textCell = document.createElement("div");
+    textCell.className = "juben-line-text-cell";
+
+    if (isEditing) {
+      const input = document.createElement("textarea");
+      input.className = "juben-line-input juben-line-single-input";
+      input.rows = 2;
+      input.value = row.line;
+      input.dataset.lineIndex = String(row.index);
+
+      const saveBtn = document.createElement("button");
+      saveBtn.className = "juben-line-save-btn";
+      saveBtn.type = "button";
+      saveBtn.textContent = "保存";
+      saveBtn.dataset.lineIndex = String(row.index);
+
+      textCell.appendChild(input);
+      textCell.appendChild(saveBtn);
+    } else {
+      const text = document.createElement("span");
+      text.className = "juben-line-text";
+      text.textContent = row.line;
+      textCell.appendChild(text);
+
+      if (lineEditEnabled) {
+        const editIcon = document.createElement("span");
+        editIcon.className = "juben-line-edit-icon";
+        editIcon.textContent = "✎";
+        editIcon.title = "编辑台词";
+        editIcon.dataset.lineIndex = String(row.index);
+        textCell.appendChild(editIcon);
+      }
+    }
+
+    item.appendChild(textCell);
+
+    const audioCell = document.createElement("div");
+    audioCell.className = "juben-line-audio";
+    if (view.hasAudio) {
+      audioCell.innerHTML = `
+        <audio controls preload="metadata" src="${escapeHtml(view.src)}"></audio>
+        <span class="${view.statusClass}">${escapeHtml(view.statusText)}</span>
+        <button class="ghost-btn btn-sm enqueue-line-btn" data-line-index="${row.index}" type="button">生成音频</button>
+      `;
+    } else {
+      audioCell.innerHTML = `
+        <span class="${view.statusClass}">${escapeHtml(view.statusText)}</span>
+        <button class="ghost-btn btn-sm enqueue-line-btn" data-line-index="${row.index}" type="button"${view.disabled ? " disabled" : ""}>生成音频</button>
+      `;
+    }
+    item.appendChild(audioCell);
+    list.appendChild(item);
+  }
+
+  root.appendChild(list);
+  bindLineAudioButtons(root);
+  bindLineEditingEvents(root);
+}
+
+function bindLineAudioButtons(root) {
+  root.querySelectorAll(".enqueue-line-btn").forEach((btn) => {
+    if (btn.dataset.bound === "1") return;
+    btn.dataset.bound = "1";
+    btn.addEventListener("click", async (event) => {
+      const lineIndex = Number(event.currentTarget.dataset.lineIndex || -1);
+      if (!activeNovel || !activeChapterNum || lineIndex < 0) return;
       try {
-        await enqueueLineAudio(activeNovel.id, activeChapterNum, lineIndex);
-        toast("已加入生成队列");
-        await loadLineAudios();
+        const schedule = getLineAudioQueueSchedule();
+        await enqueueLineAudio(activeNovel.id, activeChapterNum, lineIndex, {
+          scheduledAt: schedule.scheduledAt,
+        });
+        setStatus(schedule.label);
+        toast(schedule.label);
+        await loadLineAudios({ partialLineIndex: lineIndex });
+        startLineAudioRefreshLoop();
       } catch (err) {
         toast(err.message);
       }
     });
   });
+}
+
+function bindLineEditingEvents(root) {
+  root.querySelectorAll(".juben-line-edit-icon").forEach((icon) => {
+    icon.addEventListener("click", (event) => {
+      event.stopPropagation();
+      editingLineIndex = Number(icon.dataset.lineIndex || -1);
+      editingLineOriginalText = linePreviewRows[editingLineIndex]?.line || "";
+      renderLineAudioTable();
+      const input = document.querySelector(`.juben-line-single-input[data-line-index="${editingLineIndex}"]`);
+      input?.focus();
+    });
+  });
+
+  root.querySelectorAll(".juben-line-text-cell").forEach((cell) => {
+    cell.addEventListener("click", (event) => {
+      if (!lineEditEnabled || event.target.closest(".juben-line-save-btn")) return;
+      const row = cell.closest(".juben-line[data-line-index]");
+      const lineIndex = Number(row?.dataset.lineIndex || -1);
+      if (lineIndex < 0 || editingLineIndex === lineIndex) return;
+      if (editingLineIndex >= 0) {
+        saveLineText(editingLineIndex);
+        return;
+      }
+      editingLineIndex = lineIndex;
+      editingLineOriginalText = linePreviewRows[lineIndex]?.line || "";
+      renderLineAudioTable();
+      const input = document.querySelector(`.juben-line-single-input[data-line-index="${lineIndex}"]`);
+      input?.focus();
+    });
+  });
+
+  root.querySelectorAll(".juben-line-save-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const lineIndex = Number(btn.dataset.lineIndex || -1);
+      await saveLineText(lineIndex);
+    });
+  });
+
+  root.querySelectorAll(".juben-line-single-input").forEach((input) => {
+    input.addEventListener("keydown", async (event) => {
+      const lineIndex = Number(input.dataset.lineIndex || -1);
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        await saveLineText(lineIndex);
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        editingLineIndex = -1;
+        editingLineOriginalText = "";
+        renderLineAudioTable();
+      }
+    });
+  });
+}
+
+function focusNextLineSearchMatch() {
+  const rows = getFilteredLinePreviewRows();
+  const matches = getLineSearchMatches(rows);
+  if (!matches.length) {
+    toast("未找到匹配台词");
+    return;
+  }
+  lineSearchIndex = (lineSearchIndex + 1) % matches.length;
+  const match = matches[lineSearchIndex];
+  const target = document.querySelector(`.juben-line[data-line-index="${match.index}"]`);
+  target?.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+async function saveLineText(lineIndex) {
+  if (!activeNovel || !activeChapterNum || lineIndex < 0) return;
+  const input = document.querySelector(`.juben-line-single-input[data-line-index="${lineIndex}"]`);
+  if (!input) return;
+
+  const newText = String(input.value || "").trim();
+  if (!newText) {
+    toast("台词内容不能为空");
+    return;
+  }
+  const parsed = parseChapterJson();
+  if (!parsed) {
+    toast("JSON解析失败，无法保存台词");
+    return;
+  }
+
+  const roleList = Array.isArray(parsed.role_list) ? parsed.role_list : [];
+  const allowedRoles = new Set(roleList.map((item) => String(item?.name || "").trim()).filter(Boolean));
+  const nextRole = extractRoleName(newText);
+  if (nextRole && !allowedRoles.has(nextRole)) {
+    toast(`台词中的角色不存在于角色列表: ${nextRole}`);
+    return;
+  }
+
+  const nextRows = getJubenLinesFromParsed(parsed).map((item) => item.line);
+  if (lineIndex >= nextRows.length) {
+    toast("行号超出范围");
+    return;
+  }
+  nextRows[lineIndex] = newText;
+  parsed.juben = nextRows.join("\n");
+
+  try {
+    const nextJsonText = JSON.stringify(parsed, null, 2);
+    await saveChapterJsonOutput(activeNovel.id, activeChapterNum, nextJsonText);
+    jsonViewRawText = nextJsonText;
+    jsonViewParsed = parsed;
+    linePreviewRows = getJubenLinesFromParsed(parsed);
+    editingLineIndex = -1;
+    editingLineOriginalText = "";
+    await loadLineAudios();
+    await updateRolesWarningBadge();
+    toast(`第 ${lineIndex + 1} 行台词已保存`);
+    setStatus(`第 ${lineIndex + 1} 行台词已保存`);
+  } catch (err) {
+    toast(err.message || "保存台词失败");
+  }
 }
 
 // ============ 角色列表功能 ============
@@ -920,15 +1288,38 @@ function renderRolesTable() {
 }
 
 async function openRolesDialog() {
-  const parsed = parseChapterJson();
-  if (!parsed) {
+  if (!activeNovel || !activeChapterNum) {
+    toast("请先选择章节");
+    return;
+  }
+
+  const parsed = await loadChapterJsonCache();
+  if (!jsonViewRawText) {
     toast("请先完成JSON转换");
+    return;
+  }
+  if (!parsed) {
+    toast("JSON解析失败，无法查看角色");
     return;
   }
 
   isRolesEditing = false;
-  chapterRoles = getRoleListFromJson(parsed);
+  
+  // Load roles from JSON's role_list (like old jpm project)
+  const list = Array.isArray(parsed?.role_list) ? parsed.role_list : [];
+  chapterRoles = [];
+  for (const item of list) {
+    const name = String((item && item.name) || "").trim();
+    const instruct = String((item && item.instruct) || "").trim();
+    const text = String((item && item.text) || "").trim();
+    if (name) {
+      chapterRoles.push({ name, instruct, text });
+    }
+  }
+  
+  // Load global role defaults (role library) for comparison
   await loadGlobalRoleDefaults();
+  
   setRolesModalError("");
   updateRolesToolbarState();
   renderRolesTable();
@@ -965,14 +1356,14 @@ async function saveRolesEdit() {
   const saveBtn = document.getElementById("saveRolesBtn");
   saveBtn.disabled = true;
   try {
-    // 更新本地JSON
+    // Update JSON with new role_list
     const parsed = parseChapterJson();
     if (parsed) {
       parsed.role_list = rows;
-      jsonViewRawText = JSON.stringify(parsed, null, 2);
+      const jsonText = JSON.stringify(parsed, null, 2);
       
-      // 保存到服务器
-      await saveChapterJsonOutput(activeNovel.id, activeChapterNum, jsonViewRawText);
+      // Save to server
+      await saveChapterJsonOutput(activeNovel.id, activeChapterNum, jsonText);
       
       chapterRoles = rows;
       isRolesEditing = false;
@@ -1077,12 +1468,11 @@ function openChapterModal(mode) {
 
 async function init() {
   renderNav();
-  applyAudioScheduleLabels();
   document.getElementById("downloadAudioBtn").disabled = true;
-  setGenerateAudioVisible(false);
   resetChapterAudioPlayer();
   const data = await getData();
   allNovels = data.novels || [];
+  currentSettings = data.settings || null;
   activeNovel = getNovelByQueryOrActive();
   if (!activeNovel) {
     document.getElementById("chapterPageTitle").textContent = "暂无小说可管理";

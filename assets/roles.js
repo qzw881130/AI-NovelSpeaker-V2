@@ -3,6 +3,8 @@ import {
   getActiveNovelId,
   setActiveNovelId,
   fetchRoles,
+  fetchNovelChapters,
+  fetchChapterJsonOutput,
   createRole,
   updateRole,
   updateRoleLevel,
@@ -19,8 +21,12 @@ let roleItems = [];
 let roleModalMode = "create";
 let editingRoleId = null;
 let roleAudioBase64 = "";
+let chapterItems = [];
+let chapterRoleNamesCache = new Map();
+let roleNameDropdownShouldStayOpen = false;
 
 const rolesFilterState = {
+  chapter: "all",
   sample: "all",
   level: "all",
   names: new Set(),
@@ -77,12 +83,83 @@ function renderRoleStats(stats) {
   document.getElementById("roleNoSampleCount").textContent = String(stats?.without_sample || 0);
 }
 
+function parseRoleNamesFromJsonText(jsonText) {
+  const text = String(jsonText || "").trim();
+  if (!text) return [];
+  try {
+    const parsed = JSON.parse(text);
+    const roleList = Array.isArray(parsed?.role_list) ? parsed.role_list : [];
+    return Array.from(
+      new Set(
+        roleList
+          .map((item) => String(item?.name || "").trim())
+          .filter(Boolean)
+      )
+    );
+  } catch {
+    return [];
+  }
+}
+
+async function getSelectedChapterRoleNames() {
+  if (!activeNovel || rolesFilterState.chapter === "all") {
+    return null;
+  }
+  const chapterNum = Number(rolesFilterState.chapter);
+  if (!Number.isFinite(chapterNum) || chapterNum <= 0) {
+    return null;
+  }
+  if (chapterRoleNamesCache.has(chapterNum)) {
+    return chapterRoleNamesCache.get(chapterNum) || [];
+  }
+  try {
+    const output = await fetchChapterJsonOutput(activeNovel.id, chapterNum);
+    const names = parseRoleNamesFromJsonText(output?.jsonText);
+    chapterRoleNamesCache.set(chapterNum, names);
+    return names;
+  } catch {
+    chapterRoleNamesCache.set(chapterNum, []);
+    return [];
+  }
+}
+
+function renderChapterFilter() {
+  const select = document.getElementById("chapterFilterSelect");
+  if (!select) return;
+  const options = ['<option value="all">全部</option>'];
+  const validChapterValues = new Set(["all"]);
+  for (const chapter of chapterItems) {
+    const chapterNum = Number(chapter.chapterNum || 0);
+    const title = String(chapter.title || `第${chapterNum}回`).trim();
+    validChapterValues.add(String(chapterNum));
+    options.push(`<option value="${chapterNum}">第${chapterNum}回 ${escapeHtml(title)}</option>`);
+  }
+  select.innerHTML = options.join("");
+  if (!validChapterValues.has(String(rolesFilterState.chapter))) {
+    rolesFilterState.chapter = "all";
+  }
+  select.value = rolesFilterState.chapter;
+}
+
+function getChapterFilteredRoleItems() {
+  if (rolesFilterState.chapter === "all") {
+    return roleItems;
+  }
+  const chapterNum = Number(rolesFilterState.chapter);
+  const chapterRoleNames = chapterRoleNamesCache.get(chapterNum) || [];
+  if (!chapterRoleNames.length) {
+    return [];
+  }
+  const chapterRoleSet = new Set(chapterRoleNames);
+  return roleItems.filter((role) => chapterRoleSet.has(String(role.name || "").trim()));
+}
+
 function getAllRoleNames() {
-  return Array.from(new Set(roleItems.map((item) => String(item.name || "").trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b, "zh-CN"));
+  return Array.from(new Set(getChapterFilteredRoleItems().map((item) => String(item.name || "").trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b, "zh-CN"));
 }
 
 function getFilteredRoleItems() {
-  return roleItems.filter((role) => {
+  return getChapterFilteredRoleItems().filter((role) => {
     const hasAudio = Boolean(String(role.sampleAudioPath || "").trim());
     if (rolesFilterState.sample === "with" && !hasAudio) {
       return false;
@@ -104,6 +181,7 @@ function renderRoleNameFilter() {
   const roleNameFilterTagsEl = document.getElementById("roleNameFilterTags");
   const roleNameFilterDropdownEl = document.getElementById("roleNameFilterDropdown");
   const roleNameFilterInputEl = document.getElementById("roleNameFilterInput");
+  const roleNameFilterEl = document.getElementById("roleNameFilter");
 
   const selected = Array.from(rolesFilterState.names);
   roleNameFilterTagsEl.innerHTML = selected.map((name) => `
@@ -137,9 +215,13 @@ function renderRoleNameFilter() {
   }
 
   for (const option of roleNameFilterDropdownEl.querySelectorAll(".role-name-option")) {
+    option.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+    });
     option.addEventListener("click", () => {
       const name = String(option.dataset.roleName || "");
       if (!name) return;
+      roleNameDropdownShouldStayOpen = true;
       if (rolesFilterState.names.has(name)) {
         rolesFilterState.names.delete(name);
       } else {
@@ -147,16 +229,25 @@ function renderRoleNameFilter() {
       }
       roleNameFilterInputEl.focus();
       renderRoleNameFilter();
+      openRoleNameFilterDropdown();
       renderRolesTable();
     });
+  }
+
+  if (roleNameDropdownShouldStayOpen || roleNameFilterEl.contains(document.activeElement)) {
+    openRoleNameFilterDropdown();
+  } else {
+    closeRoleNameFilterDropdown();
   }
 }
 
 function openRoleNameFilterDropdown() {
+  roleNameDropdownShouldStayOpen = true;
   document.getElementById("roleNameFilterDropdown").classList.remove("hidden");
 }
 
 function closeRoleNameFilterDropdown() {
+  roleNameDropdownShouldStayOpen = false;
   document.getElementById("roleNameFilterDropdown").classList.add("hidden");
 }
 
@@ -185,16 +276,22 @@ function roleLevelOptions(value) {
 
 function buildSampleCell(role) {
   const hasAudio = String(role.sampleAudioPath || "").trim();
+  const source = String(role.sampleAudioSource || "").trim();
+  const sourceIcon = hasAudio
+    ? `<span class="role-sample-source role-sample-source-${escapeHtml(source || "unknown")}" title="${source === "uploaded" ? "本地上传" : source === "generated" ? "AI生成" : "未知来源"}">${source === "uploaded" ? "↑" : source === "generated" ? "AI" : "?"}</span>`
+    : "";
   const parts = [];
   if (hasAudio) {
     const cacheKey = encodeURIComponent(String(role.updatedAt || role.sampleAudioPath || "0"));
     parts.push('<div class="role-sample-main">');
-    parts.push(`<audio controls preload="metadata" src="/api/novels/${activeNovel.id}/roles/${role.id}/sample?v=${cacheKey}" style="width: 180px;"></audio>`);
+    parts.push(`<audio class="role-sample-player" controls preload="metadata" src="/api/novels/${activeNovel.id}/roles/${role.id}/sample?v=${cacheKey}"></audio>`);
+    parts.push(sourceIcon);
     parts.push(`
       <div class="role-sample-actions">
         <button class="ghost-btn btn-sm generate-sample-btn" data-role-id="${role.id}" type="button">重新生成</button>
         <input class="role-upload-input hidden" data-role-id="${role.id}" type="file" accept="audio/*,.flac,.wav,.mp3,.m4a,.aac" />
         <button class="ghost-btn btn-sm upload-sample-btn" data-role-id="${role.id}" type="button">本地上传</button>
+        <button class="ghost-btn btn-sm extract-text-btn" data-role-id="${role.id}" type="button">提取声音文本</button>
       </div>
     `);
     parts.push('</div>');
@@ -205,6 +302,7 @@ function buildSampleCell(role) {
         <button class="ghost-btn btn-sm generate-sample-btn" data-role-id="${role.id}" type="button">生成示例</button>
         <input class="role-upload-input hidden" data-role-id="${role.id}" type="file" accept="audio/*,.flac,.wav,.mp3,.m4a,.aac" />
         <button class="ghost-btn btn-sm upload-sample-btn" data-role-id="${role.id}" type="button">本地上传</button>
+        <button class="ghost-btn btn-sm extract-text-btn" data-role-id="${role.id}" type="button" disabled>提取声音文本</button>
       </div>
     `);
   }
@@ -275,6 +373,7 @@ function renderRolesTable() {
           level_3: roleItems.filter((item) => Number(item.roleLevel) === 3).length,
           without_sample: roleItems.filter((item) => !String(item.sampleAudioPath || "").trim()).length,
         });
+        renderRolesTable();
       } catch (err) {
         setRolesPageStatus(err.message || "保存角色失败", true);
       } finally {
@@ -382,6 +481,31 @@ function renderRolesTable() {
     });
   }
 
+  // 绑定提取声音文本按钮
+  for (const btn of tbody.querySelectorAll(".extract-text-btn")) {
+    btn.addEventListener("click", async () => {
+      const roleId = Number(btn.dataset.roleId || 0);
+      if (!roleId || btn.disabled) return;
+      btn.disabled = true;
+      const previousText = btn.textContent;
+      btn.textContent = "提取中...";
+      try {
+        const res = await fetch(`/api/novels/${activeNovel.id}/roles/${roleId}/extract-sample-text`, { method: "POST" });
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.error || "提取声音文本失败");
+        }
+        openRoleTextModal(data.text || "");
+        setRolesPageStatus("已提取声音文本");
+      } catch (err) {
+        setRolesPageStatus(err.message || "提取声音文本失败", true);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = previousText;
+      }
+    });
+  }
+
   // 绑定上传按钮
   for (const btn of tbody.querySelectorAll(".upload-sample-btn")) {
     btn.addEventListener("click", () => {
@@ -430,10 +554,19 @@ function renderRolesTable() {
 async function refreshRolesPage() {
   if (!activeNovel) return;
   try {
-    const result = await fetchRoles(activeNovel.id);
+    const [result, chapters] = await Promise.all([
+      fetchRoles(activeNovel.id),
+      fetchNovelChapters(activeNovel.id),
+    ]);
     roleItems = result.roles || [];
+    chapterItems = chapters || [];
+    chapterRoleNamesCache = new Map();
     const withoutSample = roleItems.filter((item) => !String(item.sampleAudioPath || "").trim()).length;
     renderRoleStats({ ...(result.stats || {}), without_sample: withoutSample });
+    renderChapterFilter();
+    if (rolesFilterState.chapter !== "all") {
+      await getSelectedChapterRoleNames();
+    }
     renderRoleNameFilter();
     renderRolesTable();
   } catch (err) {
@@ -558,6 +691,16 @@ function bindActions() {
     renderRolesTable();
   });
 
+  document.getElementById("chapterFilterSelect").addEventListener("change", async (e) => {
+    rolesFilterState.chapter = String(e.target.value || "all");
+    rolesFilterState.names.clear();
+    rolesFilterState.keyword = "";
+    document.getElementById("roleNameFilterInput").value = "";
+    await getSelectedChapterRoleNames();
+    renderRoleNameFilter();
+    renderRolesTable();
+  });
+
   document.getElementById("levelFilterSelect").addEventListener("change", (e) => {
     rolesFilterState.level = String(e.target.value || "all");
     renderRolesTable();
@@ -575,14 +718,26 @@ function bindActions() {
     renderRoleNameFilter();
   });
 
+  roleNameFilterInputEl.addEventListener("blur", () => {
+    window.setTimeout(() => {
+      const roleNameFilterEl = document.getElementById("roleNameFilter");
+      if (!roleNameFilterEl.contains(document.activeElement) && !roleNameDropdownShouldStayOpen) {
+        closeRoleNameFilterDropdown();
+      }
+    }, 0);
+  });
+
   document.getElementById("clearRoleFiltersBtn").addEventListener("click", () => {
+    rolesFilterState.chapter = "all";
     rolesFilterState.sample = "all";
     rolesFilterState.level = "all";
     rolesFilterState.names.clear();
     rolesFilterState.keyword = "";
+    document.getElementById("chapterFilterSelect").value = "all";
     document.getElementById("sampleFilterSelect").value = "all";
     document.getElementById("levelFilterSelect").value = "all";
     document.getElementById("roleNameFilterInput").value = "";
+    closeRoleNameFilterDropdown();
     renderRoleNameFilter();
     renderRolesTable();
     setRolesPageStatus("已清空筛选");
@@ -604,6 +759,17 @@ function bindActions() {
     await refreshRolesPage();
     toast(`${t("common.view")}: ${activeNovel.name}`);
   });
+}
+
+function openRoleTextModal(text) {
+  document.getElementById("roleTextModalContent").textContent = String(text || "").trim() || "未提取到文本";
+  document.getElementById("roleTextModal").classList.remove("hidden");
+  document.getElementById("roleTextModal").showModal();
+}
+
+function closeRoleTextModal() {
+  document.getElementById("roleTextModal").close();
+  document.getElementById("roleTextModal").classList.add("hidden");
 }
 
 async function init() {

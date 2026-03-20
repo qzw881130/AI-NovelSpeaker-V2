@@ -17,7 +17,13 @@ from .app_context import (
     WORKFLOWS_DIR,
     db_conn,
 )
-from .services import fetch_novels
+from .services import (
+    fetch_novels,
+    comfy_request_json,
+    comfy_download_file,
+    fetch_settings,
+    comfy_upload_input_file,
+)
 
 
 ROLE_LEVEL_LABELS = {
@@ -179,22 +185,40 @@ def update_role_fields(
         conn.close()
         return False, f"duplicate role name: {role_name}", None
 
-    conn.execute(
-        """
-        UPDATE roles
-        SET name=?, instruct=?, sample_text=?, updated_at=CURRENT_TIMESTAMP
-        WHERE id=?
-        """,
-        (
-            role_name,
-            str(instruct or "").strip(),
-            str(sample_text or "").strip(),
-            role_id,
-        ),
-    )
+    # Check if sample_text changed - if so, delete old audio
+    old_sample_text = str(row["sample_text"] or "").strip()
+    new_sample_text = str(sample_text or "").strip()
+    old_audio_path = str(row["sample_audio_path"] or "").strip()
+    sample_text_changed = old_sample_text != new_sample_text
+
+    if sample_text_changed:
+        # Clear audio path and source when sample text changes
+        conn.execute(
+            """
+            UPDATE roles
+            SET name=?, instruct=?, sample_text=?, sample_audio_path='', sample_audio_source='', updated_at=CURRENT_TIMESTAMP
+            WHERE id=?
+            """,
+            (role_name, str(instruct or "").strip(), new_sample_text, role_id),
+        )
+    else:
+        conn.execute(
+            """
+            UPDATE roles
+            SET name=?, instruct=?, sample_text=?, updated_at=CURRENT_TIMESTAMP
+            WHERE id=?
+            """,
+            (role_name, str(instruct or "").strip(), new_sample_text, role_id),
+        )
     conn.commit()
     saved = conn.execute("SELECT * FROM roles WHERE id=?", (role_id,)).fetchone()
     conn.close()
+
+    # Delete old audio file if sample text changed
+    if sample_text_changed and old_audio_path:
+        old_full_path = (ROOT_DIR / old_audio_path).resolve()
+        _remove_cached_playable_variants(old_full_path)
+
     return True, "saved", _row_to_role(saved)
 
 
@@ -351,3 +375,460 @@ def get_role_library_map(novel_id: int) -> dict[str, dict]:
                 "sample_audio_path": str(row["sample_audio_path"] or "").strip(),
             }
     return mapping
+
+
+def _get_voice_sample_workflow(novel_id: int) -> dict | None:
+    """获取小说的voice_sample工作流配置"""
+    conn = db_conn()
+    row = conn.execute(
+        """
+        SELECT json_text FROM comfy_workflows w
+        JOIN novels n ON n.voice_sample_workflow_id = w.id
+        WHERE n.id = ?
+        """,
+        (novel_id,),
+    ).fetchone()
+    conn.close()
+
+    if not row:
+        return None
+
+    try:
+        workflow = json.loads(str(row["json_text"] or "{}"))
+        return workflow if isinstance(workflow, dict) else None
+    except json.JSONDecodeError:
+        return None
+
+
+def generate_role_sample_audio(
+    role_id: int, novel_id: int
+) -> tuple[bool, str, dict | None, dict | None]:
+    """生成角色示例音频"""
+    conn = db_conn()
+    row = conn.execute(
+        "SELECT * FROM roles WHERE id=? AND novel_id=?", (role_id, novel_id)
+    ).fetchone()
+    if not row:
+        conn.close()
+        return False, "Role not found", None, None
+
+    role_name = str(row["name"] or "").strip()
+    instruct = str(row["instruct"] or "").strip()
+    sample_text = str(row["sample_text"] or "").strip()
+    old_audio_path = str(row["sample_audio_path"] or "").strip()
+    conn.close()
+
+    if not role_name:
+        return False, "Role name is empty", None, None
+    if not instruct:
+        return False, "Role instruct is empty", None, None
+    if not sample_text:
+        return False, "Role sample text is empty", None, None
+
+    # 获取voice_sample工作流
+    workflow = _get_voice_sample_workflow(novel_id)
+    if not workflow:
+        return False, "Voice sample workflow not configured for this novel", None, None
+
+    # 查找并修改工作流中的节点
+    # 假设工作流中有用于instruct和text的节点
+    workflow_copy = deepcopy(workflow)
+
+    # 尝试找到instruct节点（通常是描述音色的prompt）
+    # 尝试找到text节点（示例台词）
+    # 尝试找到保存音频的节点
+    instruct_node_found = False
+    text_node_found = False
+    save_node_found = False
+
+    for node_id, node in workflow_copy.items():
+        if not isinstance(node, dict) or "inputs" not in node:
+            continue
+        inputs = node.get("inputs", {})
+
+        # 查找包含特定关键词的节点
+        class_type = node.get("class_type", "")
+        if "instruct" in class_type.lower() or "prompt" in class_type.lower():
+            if not instruct_node_found and "text" in inputs or "prompt" in inputs:
+                for key in inputs:
+                    if isinstance(inputs[key], str) and len(inputs[key]) < 100:
+                        inputs[key] = instruct
+                        instruct_node_found = True
+                        break
+
+        if "text" in inputs and not text_node_found:
+            inputs["text"] = sample_text
+            text_node_found = True
+
+        # 查找保存音频的节点（SaveAudio）
+        if "SaveAudio" in class_type:
+            if "filename_prefix" in inputs:
+                inputs["filename_prefix"] = f"voices/role-{role_id:03d}"
+                save_node_found = True
+
+    if not save_node_found:
+        return False, "Workflow missing SaveAudio node", None, workflow_copy
+
+    # 获取ComfyUI配置
+    settings = fetch_settings(db_conn())
+    comfy_url = str(settings.get("comfyUrl") or "").strip()
+    if not comfy_url:
+        return False, "ComfyUI URL not configured", None, workflow_copy
+
+    # 提交工作流到ComfyUI
+    try:
+        result = comfy_request_json(
+            comfy_url=comfy_url,
+            path="/prompt",
+            method="POST",
+            payload={"prompt": workflow_copy},
+        )
+        prompt_id = result.get("prompt_id")
+        if not prompt_id:
+            return False, "Failed to submit workflow to ComfyUI", None, workflow_copy
+    except Exception as e:
+        return False, f"Failed to submit workflow: {str(e)}", None, workflow_copy
+
+    # 等待工作流完成
+    started = time.time()
+    timeout_seconds = 30 * 60  # 30分钟超时
+    output_info = None
+
+    while time.time() - started < timeout_seconds:
+        try:
+            history = comfy_request_json(
+                comfy_url=comfy_url, path=f"/history/{prompt_id}", method="GET"
+            )
+
+            # 从history中提取音频输出
+            for node_id, node_output in (
+                history.get(prompt_id, {}).get("outputs", {}).items()
+            ):
+                if "audio" in node_output and len(node_output["audio"]) > 0:
+                    audio_info = node_output["audio"][0]
+                    output_info = (
+                        audio_info.get("filename"),
+                        audio_info.get("subfolder", ""),
+                        audio_info.get("type", "output"),
+                    )
+                    break
+
+            if output_info:
+                break
+        except Exception:
+            pass
+
+        time.sleep(3)
+
+    if output_info is None:
+        return (
+            False,
+            "ComfyUI workflow timeout; sample audio output not found",
+            None,
+            workflow_copy,
+        )
+
+    # 下载生成的音频文件
+    try:
+        filename, subfolder, file_type = output_info
+        audio_data = comfy_download_file(
+            comfy_url=comfy_url,
+            filename=filename,
+            subfolder=subfolder,
+            file_type=file_type,
+        )
+
+        # 保存文件
+        suffix = Path(filename).suffix or ".flac"
+        rel_dir = f"novel/{novel_id}/voices"
+        abs_dir = ROOT_DIR / rel_dir
+        abs_dir.mkdir(parents=True, exist_ok=True)
+
+        file_name = f"role-{role_id}-{int(time.time())}{suffix}"
+        rel_path = f"{rel_dir}/{file_name}"
+        abs_path = abs_dir / file_name
+        abs_path.write_bytes(audio_data)
+
+        # 删除旧文件
+        if old_audio_path:
+            old_full_path = (ROOT_DIR / old_audio_path).resolve()
+            _remove_cached_playable_variants(old_full_path)
+
+        # 更新数据库
+        conn = db_conn()
+        conn.execute(
+            """
+            UPDATE roles
+            SET sample_audio_path=?, sample_audio_source='generated', updated_at=CURRENT_TIMESTAMP
+            WHERE id=?
+            """,
+            (rel_path, role_id),
+        )
+        conn.commit()
+        saved = conn.execute("SELECT * FROM roles WHERE id=?", (role_id,)).fetchone()
+        conn.close()
+
+        return True, "generated", _row_to_role(saved), workflow_copy
+
+    except Exception as e:
+        return False, f"Failed to save audio file: {str(e)}", None, workflow_copy
+
+
+def _get_voice_transcribe_workflow(novel_id: int) -> dict | None:
+    """获取小说的voice_transcribe工作流配置"""
+    conn = db_conn()
+    row = conn.execute(
+        """
+        SELECT json_text FROM comfy_workflows w
+        JOIN novels n ON n.voice_transcribe_workflow_id = w.id
+        WHERE n.id = ?
+        """,
+        (novel_id,),
+    ).fetchone()
+    conn.close()
+
+    if not row:
+        return None
+
+    try:
+        workflow = json.loads(str(row["json_text"] or "{}"))
+        return workflow if isinstance(workflow, dict) else None
+    except json.JSONDecodeError:
+        return None
+
+
+def _extract_text_output_from_history(
+    history: dict, prompt_id: str, node_id: str = "1"
+) -> str | None:
+    """从ComfyUI历史记录中提取文本输出"""
+    if not history:
+        return None
+
+    job = history.get(prompt_id)
+    if job is None and history:
+        job = next(iter(history.values()))
+    if not isinstance(job, dict):
+        return None
+
+    outputs = job.get("outputs")
+    if not isinstance(outputs, dict):
+        return None
+
+    def _read_node_text(node_output: dict) -> str | None:
+        for key in ("text", "string", "value"):
+            value = node_output.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+            if isinstance(value, list) and value:
+                text = "\n".join(str(x) for x in value if str(x).strip()).strip()
+                if text:
+                    return text
+
+        ui = node_output.get("ui")
+        if isinstance(ui, dict):
+            for key in ("text", "string", "value"):
+                value = ui.get(key)
+                if isinstance(value, list) and value:
+                    text = "\n".join(str(x) for x in value if str(x).strip()).strip()
+                    if text:
+                        return text
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+
+        return None
+
+    preferred_node_ids = []
+    for candidate in (str(node_id), "1", "4"):
+        if candidate not in preferred_node_ids:
+            preferred_node_ids.append(candidate)
+
+    for candidate in preferred_node_ids:
+        node_output = outputs.get(candidate)
+        if isinstance(node_output, dict):
+            text = _read_node_text(node_output)
+            if text:
+                return text
+
+    for node_output in outputs.values():
+        if isinstance(node_output, dict):
+            text = _read_node_text(node_output)
+            if text:
+                return text
+
+    return None
+
+
+def extract_role_sample_text(
+    role_id: int, novel_id: int
+) -> tuple[bool, str, str | None]:
+    """从角色示例音频中提取文本"""
+    conn = db_conn()
+    row = conn.execute(
+        "SELECT * FROM roles WHERE id=? AND novel_id=?", (role_id, novel_id)
+    ).fetchone()
+    if not row:
+        conn.close()
+        return False, "Role not found", None
+
+    file_path = str(row["sample_audio_path"] or "").strip()
+    conn.close()
+
+    if not file_path:
+        return False, "Role sample audio not found", None
+
+    media_path = (ROOT_DIR / file_path).resolve()
+    root_resolved = ROOT_DIR.resolve()
+    if root_resolved not in media_path.parents and media_path != root_resolved:
+        return False, "Invalid file path", None
+    if not media_path.exists() or not media_path.is_file():
+        return False, "Role sample audio not found", None
+
+    # 获取voice_transcribe工作流
+    workflow = _get_voice_transcribe_workflow(novel_id)
+    if not workflow:
+        return False, "Voice transcribe workflow not configured for this novel", None
+
+    # 上传音频文件到ComfyUI
+    try:
+        upload_info = comfy_upload_input_file(media_path.name, media_path.read_bytes())
+        filename = (
+            str(upload_info.get("name") or media_path.name).strip() or media_path.name
+        )
+        subfolder = str(upload_info.get("subfolder") or "").strip()
+        file_type = str(upload_info.get("type") or "input").strip() or "input"
+    except Exception as e:
+        return False, f"Failed to upload audio to ComfyUI: {str(e)}", None
+
+    # 修改工作流节点
+    workflow_copy = deepcopy(workflow)
+
+    if "2" not in workflow_copy:
+        return (
+            False,
+            f"Voice transcribe workflow missing node 2. Available nodes: {list(workflow_copy.keys())}",
+            None,
+        )
+    if "inputs" not in workflow_copy["2"]:
+        return False, f"Node 2 missing inputs. Node 2: {workflow_copy['2']}", None
+
+    workflow_copy["2"]["inputs"]["audio"] = filename
+    workflow_copy["2"]["inputs"]["audioUI"] = (
+        f"/api/view?filename={filename}&type={file_type}&subfolder={subfolder}&rand={time.time():.6f}"
+    )
+
+    # 获取ComfyUI配置
+    settings = fetch_settings(db_conn())
+    comfy_url = str(settings.get("comfyUrl") or "").strip()
+    if not comfy_url:
+        return False, "ComfyUI URL not configured", None
+
+    try:
+        result = comfy_request_json(
+            comfy_url=comfy_url,
+            path="/prompt",
+            method="POST",
+            payload={"prompt": workflow_copy},
+        )
+
+        prompt_id = result.get("prompt_id")
+        if not prompt_id:
+            return False, f"Failed to submit workflow to ComfyUI: {result}", None
+    except Exception as e:
+        return False, f"Failed to submit workflow: {str(e)}", None
+
+    # 等待工作流完成
+    started = time.time()
+    timeout_seconds = 10 * 60
+    output_text = None
+
+    while time.time() - started < timeout_seconds:
+        try:
+            history = comfy_request_json(
+                comfy_url=comfy_url, path=f"/history/{prompt_id}", method="GET"
+            )
+            output_text = _extract_text_output_from_history(
+                history, prompt_id, node_id="1"
+            )
+            if output_text:
+                break
+        except Exception:
+            pass
+
+        time.sleep(2)
+
+    if not output_text:
+        return False, "ComfyUI workflow timeout; extracted text not found", None
+
+    return True, "ok", output_text
+
+
+def apply_roles_to_all_chapters(
+    novel_id: int, source_chapter_num: int
+) -> tuple[bool, str, int]:
+    """Apply roles from source chapter to all chapters in the same novel"""
+    conn = db_conn()
+
+    # Get source chapter's role_list
+    source_row = conn.execute(
+        "SELECT json_output FROM chapters WHERE novel_id=? AND chapter_num=?",
+        (novel_id, source_chapter_num),
+    ).fetchone()
+
+    if not source_row:
+        conn.close()
+        return False, "Source chapter not found", 0
+
+    source_json_str = str(source_row["json_output"] or "").strip()
+    if not source_json_str:
+        conn.close()
+        return False, "Source chapter has no JSON output", 0
+
+    try:
+        source_json = json.loads(source_json_str)
+    except json.JSONDecodeError:
+        conn.close()
+        return False, "Invalid JSON in source chapter", 0
+
+    role_list = source_json.get("role_list", [])
+    if not isinstance(role_list, list):
+        conn.close()
+        return False, "Invalid role_list format", 0
+
+    # Get all chapters in the novel
+    chapters = conn.execute(
+        "SELECT chapter_num, json_output FROM chapters WHERE novel_id=?",
+        (novel_id,),
+    ).fetchall()
+
+    updated_count = 0
+    for chapter in chapters:
+        chapter_num = int(chapter["chapter_num"])
+        if chapter_num == source_chapter_num:
+            continue  # Skip source chapter
+
+        chapter_json_str = str(chapter["json_output"] or "").strip()
+        if not chapter_json_str:
+            continue
+
+        try:
+            chapter_json = json.loads(chapter_json_str)
+            chapter_json["role_list"] = role_list
+            updated_json_str = json.dumps(chapter_json, indent=2, ensure_ascii=False)
+
+            # Update the chapter
+            conn.execute(
+                """
+                UPDATE chapters
+                SET json_output=?, updated_at=CURRENT_TIMESTAMP
+                WHERE novel_id=? AND chapter_num=?
+                """,
+                (updated_json_str, novel_id, chapter_num),
+            )
+            updated_count += 1
+        except json.JSONDecodeError:
+            continue
+
+    conn.commit()
+    conn.close()
+
+    return True, "ok", updated_count

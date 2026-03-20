@@ -220,7 +220,7 @@ def load_system_workflow_json_text() -> str:
         raise ValueError(f"invalid system workflow json file: {exc}") from exc
     if not isinstance(parsed, dict):
         raise ValueError("system workflow json must be object")
-    return json.dumps(parsed, ensure_ascii=False)
+    return json.dumps(parsed, ensure_ascii=False, indent=2)
 
 
 def load_system_workflow_file(file_path: Path) -> str:
@@ -234,7 +234,7 @@ def load_system_workflow_file(file_path: Path) -> str:
         parsed = json.loads(text)
         if not isinstance(parsed, dict):
             return "{}"
-        return json.dumps(parsed, ensure_ascii=False)
+        return json.dumps(parsed, ensure_ascii=False, indent=2)
     except json.JSONDecodeError:
         return "{}"
 
@@ -482,46 +482,6 @@ def fetch_json_tasks(conn: sqlite3.Connection) -> list[dict]:
     ]
 
 
-def fetch_audio_tasks(conn: sqlite3.Connection) -> list[dict]:
-    rows = conn.execute(
-        """
-        SELECT t.id,t.novel_id,t.chapter_num,t.chapter_title,t.workflow_id,t.status,t.progress,
-               t.scheduled_at,t.created_at,t.updated_at,t.error_message,t.comfy_status,
-               t.comfy_started_at,t.comfy_finished_at,t.downloaded_file_path,
-               n.name AS novel_name,
-               c.word_count AS chapter_word_count
-        FROM audio_tasks t
-        JOIN novels n ON n.id=t.novel_id
-        LEFT JOIN chapters c ON c.novel_id=t.novel_id AND c.chapter_num=t.chapter_num
-        ORDER BY t.id DESC
-        """
-    ).fetchall()
-    return [
-        {
-            "id": int(r["id"]),
-            "novelId": int(r["novel_id"]),
-            "novelName": str(r["novel_name"]),
-            "chapter": int(r["chapter_num"]),
-            "title": str(r["chapter_title"]),
-            "wordCount": int(r["chapter_word_count"] or 0),
-            "workflowId": int(r["workflow_id"])
-            if r["workflow_id"] is not None
-            else None,
-            "status": str(r["status"]),
-            "progress": int(r["progress"] or 0),
-            "comfyStatus": str(r["comfy_status"] or ""),
-            "errorMessage": str(r["error_message"] or ""),
-            "downloadedFilePath": str(r["downloaded_file_path"] or ""),
-            "scheduledAt": str(r["scheduled_at"] or ""),
-            "createdAt": str(r["created_at"] or ""),
-            "comfyStartedAt": str(r["comfy_started_at"] or ""),
-            "comfyFinishedAt": str(r["comfy_finished_at"] or ""),
-            "updatedAt": str(r["updated_at"]),
-        }
-        for r in rows
-    ]
-
-
 def fetch_settings(conn: sqlite3.Connection) -> dict:
     rows = conn.execute("SELECT setting_key,setting_value FROM app_settings").fetchall()
     kv = {str(r["setting_key"]): str(r["setting_value"]) for r in rows}
@@ -556,36 +516,50 @@ def fetch_settings(conn: sqlite3.Connection) -> dict:
             "language": ui_language,
             "timezone": ui_timezone,
         },
+        "lineAudioQueue": {
+            "mode": str(
+                kv.get("line_audio_queue_mode", "immediate") or "immediate"
+            ).strip()
+            or "immediate",
+            "scheduledAt": str(
+                kv.get("line_audio_queue_scheduled_at", "") or ""
+            ).strip(),
+        },
     }
 
 
 def fetch_chapters(conn: sqlite3.Connection, novel_id: int) -> list[dict]:
     rows = conn.execute(
         """
-        SELECT c.id,c.chapter_num,c.title,c.word_count,c.text_file_path,c.audio_file_path,c.has_audio,
+        SELECT c.id,c.novel_id,c.chapter_num,c.title,c.word_count,c.text_file_path,c.audio_file_path,c.has_audio,
+               n.english_dir,
                (
                    SELECT t.merged_result_json
                    FROM json_tasks t
                    WHERE t.novel_id=c.novel_id AND t.chapter_num=c.chapter_num AND t.status='completed'
                    ORDER BY t.id DESC LIMIT 1
                ) AS latest_json
-        FROM chapters c WHERE c.novel_id=? ORDER BY c.chapter_num ASC
+        FROM chapters c
+        JOIN novels n ON n.id = c.novel_id
+        WHERE c.novel_id=? ORDER BY c.chapter_num ASC
         """,
         (novel_id,),
     ).fetchall()
-    return [
-        {
-            "id": int(r["id"]),
-            "chapterNum": int(r["chapter_num"]),
-            "title": str(r["title"]),
-            "wordCount": int(r["word_count"] or 0),
-            "textFilePath": str(r["text_file_path"] or ""),
-            "audioFilePath": str(r["audio_file_path"] or ""),
-            "hasJson": json_text_ready(str(r["latest_json"] or "")),
-            "hasAudio": bool(r["has_audio"]),
-        }
-        for r in rows
-    ]
+    result = []
+    for r in rows:
+        result.append(
+            {
+                "id": int(r["id"]),
+                "chapterNum": int(r["chapter_num"]),
+                "title": str(r["title"]),
+                "wordCount": int(r["word_count"] or 0),
+                "textFilePath": str(r["text_file_path"] or ""),
+                "audioFilePath": str(r["audio_file_path"] or ""),
+                "hasJson": json_text_ready(str(r["latest_json"] or "")),
+                "hasAudio": resolve_audio_file(r) is not None,
+            }
+        )
+    return result
 
 
 def chapter_content(
@@ -807,19 +781,45 @@ def create_or_update_chapter_record(
 
 
 def resolve_audio_file(chapter_row: sqlite3.Row) -> Path | None:
+    english_dir = str(chapter_row["english_dir"])
+    chapter_num = int(chapter_row["chapter_num"])
+
+    try:
+        from .line_audio import get_chapter_merged_audio_path
+
+        novel_id = int(chapter_row["novel_id"])
+        chapter_id = int(chapter_row["id"])
+        merged_path = get_chapter_merged_audio_path(novel_id, chapter_id)
+        if merged_path is not None:
+            return merged_path
+    except Exception:
+        pass
+
     audio_path = str(chapter_row["audio_file_path"] or "").strip()
     if audio_path:
         abs_path = (ROOT_DIR / audio_path).resolve()
-        if abs_path.exists() and abs_path.is_file():
+        file_name = abs_path.name.lower()
+        chapter_prefixes = (
+            f"{chapter_num:03d}_",
+            f"{chapter_num:03d}.",
+            f"chapter-{chapter_num:03d}-",
+        )
+        if (
+            abs_path.exists()
+            and abs_path.is_file()
+            and any(file_name.startswith(prefix) for prefix in chapter_prefixes)
+        ):
             return abs_path
 
-    english_dir = str(chapter_row["english_dir"])
-    chapter_num = int(chapter_row["chapter_num"])
     audio_dir = NOVEL_DIR / english_dir / "audio"
     if not audio_dir.exists():
         return None
 
-    patterns = [f"{chapter_num:03d}_*", f"{chapter_num:03d}.*", f"*{chapter_num}*"]
+    patterns = [
+        f"{chapter_num:03d}_*",
+        f"{chapter_num:03d}.*",
+        f"chapter-{chapter_num:03d}-*",
+    ]
     for pattern in patterns:
         candidates = sorted([p for p in audio_dir.glob(pattern) if p.is_file()])
         if candidates:
@@ -1443,7 +1443,7 @@ def parse_datetime_utc(raw: str) -> datetime | None:
 
 
 def extract_audio_output_from_history(
-    history: dict, prompt_id: str
+    history: dict, prompt_id: str, node_id: str = "21"
 ) -> tuple[str, str, str] | None:
     if not isinstance(history, dict) or not history:
         return None
@@ -1455,21 +1455,30 @@ def extract_audio_output_from_history(
     outputs = job.get("outputs")
     if not isinstance(outputs, dict):
         return None
-    node = outputs.get("21")
-    if not isinstance(node, dict):
-        return None
-    audio_items = node.get("audio")
-    if not isinstance(audio_items, list) or not audio_items:
-        return None
-    first = audio_items[0]
-    if not isinstance(first, dict):
-        return None
-    filename = str(first.get("filename") or "").strip()
-    if not filename:
-        return None
-    subfolder = str(first.get("subfolder") or "").strip()
-    file_type = str(first.get("type") or "output").strip() or "output"
-    return filename, subfolder, file_type
+    preferred_node_ids: list[str] = []
+    for candidate in (str(node_id), "21"):
+        if candidate not in preferred_node_ids:
+            preferred_node_ids.append(candidate)
+
+    candidate_nodes = [outputs.get(node_key) for node_key in preferred_node_ids]
+    candidate_nodes.extend(outputs.values())
+
+    for node in candidate_nodes:
+        if not isinstance(node, dict):
+            continue
+        audio_items = node.get("audio")
+        if not isinstance(audio_items, list) or not audio_items:
+            continue
+        first = audio_items[0]
+        if not isinstance(first, dict):
+            continue
+        filename = str(first.get("filename") or "").strip()
+        if not filename:
+            continue
+        subfolder = str(first.get("subfolder") or "").strip()
+        file_type = str(first.get("type") or "output").strip() or "output"
+        return filename, subfolder, file_type
+    return None
 
 
 def comfy_request_json(
@@ -1521,289 +1530,6 @@ def comfy_interrupt_execution(comfy_url: str) -> bool:
     req = request.Request(url, data=b"{}", method="POST")
     with opener.open(req, timeout=15) as resp:
         return int(resp.getcode() or 200) < 400
-
-
-def cancel_all_audio_tasks() -> dict:
-    conn = db_conn()
-    rows = conn.execute(
-        "SELECT id,status FROM audio_tasks WHERE status IN ('pending','running')"
-    ).fetchall()
-    if not rows:
-        conn.close()
-        return {
-            "cancelledCount": 0,
-            "queueCleared": False,
-            "interrupted": False,
-            "message": "没有需要终止的任务",
-        }
-
-    settings = fetch_settings(conn)
-    comfy_url = str(settings.get("comfyUrl") or "").strip()
-    has_running = any(str(r["status"]) == "running" for r in rows)
-    conn.close()
-
-    queue_cleared = False
-    interrupted = False
-
-    if comfy_url:
-        try:
-            queue_cleared = comfy_clear_queue(comfy_url)
-        except Exception:
-            queue_cleared = False
-        if has_running:
-            try:
-                interrupted = comfy_interrupt_execution(comfy_url)
-            except Exception:
-                interrupted = False
-
-    conn = db_conn()
-    conn.execute(
-        """
-        UPDATE audio_tasks
-        SET status='cancelled',progress=0,comfy_status='cancelled',error_message='任务被用户终止',
-            comfy_finished_at=COALESCE(comfy_finished_at, CURRENT_TIMESTAMP),updated_at=CURRENT_TIMESTAMP
-        WHERE status IN ('pending','running')
-        """
-    )
-    cancelled_count = int(conn.total_changes)
-    conn.commit()
-    conn.close()
-
-    parts: list[str] = []
-    if cancelled_count > 0:
-        parts.append(f"已终止 {cancelled_count} 个有声任务")
-    if queue_cleared:
-        parts.append("已清空 ComfyUI 队列")
-    if interrupted:
-        parts.append("已中断运行中任务")
-    return {
-        "cancelledCount": cancelled_count,
-        "queueCleared": queue_cleared,
-        "interrupted": interrupted,
-        "message": "；".join(parts) if parts else "终止操作完成",
-    }
-
-
-def process_audio_task(task_id: int) -> None:
-    try:
-        conn = db_conn()
-        task = conn.execute(
-            """
-            SELECT t.id,t.novel_id,t.chapter_id,t.chapter_num,t.chapter_title,t.workflow_id,t.json_task_id,t.status,
-                   n.english_dir,n.workflow_id AS novel_workflow_id
-            FROM audio_tasks t
-            JOIN novels n ON n.id=t.novel_id
-            WHERE t.id=?
-            """,
-            (task_id,),
-        ).fetchone()
-        if not task:
-            conn.close()
-            return
-        if str(task["status"]) != "running":
-            conn.close()
-            return
-
-        novel_id = int(task["novel_id"])
-        chapter_num = int(task["chapter_num"])
-        chapter_id = int(task["chapter_id"]) if task["chapter_id"] is not None else None
-        chapter_title = str(task["chapter_title"] or f"第{chapter_num}回")
-        english_dir = str(task["english_dir"])
-        workflow_id = (
-            int(task["workflow_id"])
-            if task["workflow_id"] is not None
-            else (
-                int(task["novel_workflow_id"])
-                if task["novel_workflow_id"] is not None
-                else None
-            )
-        )
-        if workflow_id is None:
-            raise RuntimeError("novel workflow is not configured")
-
-        workflow_row = conn.execute(
-            "SELECT json_text FROM comfy_workflows WHERE id=?", (workflow_id,)
-        ).fetchone()
-        if not workflow_row:
-            raise RuntimeError("workflow not found")
-        workflow_data = json.loads(str(workflow_row["json_text"] or "{}"))
-        if not isinstance(workflow_data, dict):
-            raise RuntimeError("workflow json is not object")
-
-        json_task = conn.execute(
-            """
-            SELECT id,merged_result_json FROM json_tasks
-            WHERE novel_id=? AND chapter_num=? AND status='completed' AND merged_result_json IS NOT NULL
-            ORDER BY id DESC LIMIT 1
-            """,
-            (novel_id, chapter_num),
-        ).fetchone()
-        if not json_task:
-            raise RuntimeError("chapter has no completed JSON result")
-        json_payload = str(json_task["merged_result_json"] or "").strip()
-        if not json_payload:
-            raise RuntimeError("chapter JSON result is empty")
-
-        settings = fetch_settings(conn)
-        comfy_url = str(settings.get("comfyUrl") or "").strip()
-        if not comfy_url:
-            raise RuntimeError("ComfyUI URL is empty")
-
-        conn.execute(
-            """
-            UPDATE audio_tasks
-            SET workflow_id=?,json_task_id=?,progress=20,comfy_status='submitting',error_message=NULL,updated_at=CURRENT_TIMESTAMP
-            WHERE id=?
-            """,
-            (workflow_id, int(json_task["id"]), task_id),
-        )
-        conn.commit()
-        conn.close()
-
-        workflow = deepcopy(workflow_data)
-        if "22" not in workflow or "inputs" not in workflow["22"]:
-            raise RuntimeError("workflow missing node 22 inputs")
-        if "21" not in workflow or "inputs" not in workflow["21"]:
-            raise RuntimeError("workflow missing node 21 inputs")
-        workflow["22"]["inputs"]["text"] = json_payload
-        workflow["21"]["inputs"]["filename_prefix"] = (
-            f"{english_dir}/chapter-{chapter_num:03d}"
-        )
-
-        submit = comfy_request_json(
-            comfy_url=comfy_url,
-            path="/prompt",
-            method="POST",
-            payload={"prompt": workflow},
-        )
-        prompt_id = str(submit.get("prompt_id") or "").strip()
-        if not prompt_id:
-            raise RuntimeError("ComfyUI /prompt missing prompt_id")
-
-        conn = db_conn()
-        conn.execute(
-            """
-            UPDATE audio_tasks
-            SET comfy_prompt_id=?,comfy_status='running',progress=45,
-                comfy_started_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP
-            WHERE id=?
-            """,
-            (prompt_id, task_id),
-        )
-        conn.commit()
-        conn.close()
-
-        started = time.time()
-        timeout_seconds = 4 * 60 * 60
-        output_info: tuple[str, str, str] | None = None
-        while time.time() - started < timeout_seconds:
-            history = comfy_request_json(
-                comfy_url=comfy_url, path=f"/history/{prompt_id}", method="GET"
-            )
-            output_info = extract_audio_output_from_history(history, prompt_id)
-            if output_info is not None:
-                break
-            time.sleep(5)
-
-        if output_info is None:
-            raise TimeoutError("ComfyUI workflow timeout; audio output not found")
-
-        filename, subfolder, file_type = output_info
-        data = comfy_download_file(
-            comfy_url=comfy_url,
-            filename=filename,
-            subfolder=subfolder,
-            file_type=file_type,
-        )
-
-        ensure_novel_dirs(english_dir)
-        suffix = Path(filename).suffix or ".flac"
-        local_rel = (
-            Path("novel")
-            / english_dir
-            / "audio"
-            / f"{chapter_num:03d}_{safe_chapter_file_name(chapter_num, chapter_title).replace('.txt', '')}_task{task_id}{suffix}"
-        )
-        local_abs = ROOT_DIR / local_rel
-        local_abs.write_bytes(data)
-
-        conn = db_conn()
-        conn.execute(
-            """
-            UPDATE audio_tasks
-            SET status='completed',progress=100,comfy_status='completed',
-                output_filename=?,output_subfolder=?,output_type=?,downloaded_file_path=?,
-                error_message=NULL,comfy_finished_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP
-            WHERE id=?
-            """,
-            (filename, subfolder, file_type, db_rel_path(local_rel), task_id),
-        )
-        if chapter_id is not None:
-            conn.execute(
-                """
-                UPDATE chapters
-                SET has_audio=1,audio_file_path=?,updated_at=CURRENT_TIMESTAMP
-                WHERE id=?
-                """,
-                (db_rel_path(local_rel), chapter_id),
-            )
-        conn.commit()
-        conn.close()
-    except Exception as exc:
-        conn = db_conn()
-        conn.execute(
-            """
-            UPDATE audio_tasks
-            SET status='failed',progress=0,comfy_status='failed',error_message=?,
-                comfy_finished_at=COALESCE(comfy_finished_at, CURRENT_TIMESTAMP),updated_at=CURRENT_TIMESTAMP
-            WHERE id=?
-            """,
-            (str(exc), task_id),
-        )
-        conn.commit()
-        conn.close()
-
-
-def run_audio_queue_once() -> bool:
-    conn = db_conn()
-    running = conn.execute(
-        "SELECT id FROM audio_tasks WHERE status='running' ORDER BY id ASC LIMIT 1"
-    ).fetchone()
-    if running:
-        task_id = int(running["id"])
-        conn.close()
-        process_audio_task(task_id)
-        return True
-
-    pending_rows = conn.execute(
-        "SELECT id,scheduled_at FROM audio_tasks WHERE status='pending' ORDER BY id ASC"
-    ).fetchall()
-    picked_id: int | None = None
-    now = datetime.utcnow()
-    for row in pending_rows:
-        scheduled = str(row["scheduled_at"] or "").strip()
-        dt = parse_datetime_utc(scheduled)
-        if dt is None or dt <= now:
-            picked_id = int(row["id"])
-            break
-
-    if picked_id is None:
-        conn.close()
-        return False
-
-    conn.execute(
-        """
-        UPDATE audio_tasks
-        SET status='running',progress=5,comfy_status='queued',error_message=NULL,updated_at=CURRENT_TIMESTAMP
-        WHERE id=?
-        """,
-        (picked_id,),
-    )
-    conn.commit()
-    conn.close()
-
-    process_audio_task(picked_id)
-    return True
 
 
 def save_capture_chapter(body: dict) -> tuple[int, dict]:
@@ -2039,11 +1765,6 @@ def advance_status(conn: sqlite3.Connection, table: str) -> None:
                     "UPDATE chapters SET has_json=1,updated_at=CURRENT_TIMESTAMP WHERE id=?",
                     (int(running["chapter_id"]),),
                 )
-            if table == "audio_tasks":
-                conn.execute(
-                    "UPDATE chapters SET has_audio=1,updated_at=CURRENT_TIMESTAMP WHERE id=?",
-                    (int(running["chapter_id"]),),
-                )
         return
 
     pending = conn.execute(
@@ -2061,11 +1782,8 @@ def task_worker_loop() -> None:
 
     while not TASK_WORKER_STOP.is_set():
         has_json_work = run_json_queue_once()
-        has_audio_work = run_audio_queue_once()
         has_line_audio_work = run_line_audio_queue_once()
-        TASK_WORKER_STOP.wait(
-            1.0 if (has_json_work or has_audio_work or has_line_audio_work) else 3.0
-        )
+        TASK_WORKER_STOP.wait(1.0 if (has_json_work or has_line_audio_work) else 3.0)
 
 
 def ensure_task_worker() -> None:
@@ -2086,32 +1804,52 @@ def comfy_upload_input_file(filename: str, data: bytes) -> dict:
     if not comfy_url:
         raise RuntimeError("ComfyUI URL is not configured")
 
-    url = f"{comfy_url.rstrip('/')}/upload/image"
-    boundary = f"----FormBoundary{int(time.time() * 1000)}"
+    # 使用与旧jpm相同的方式：绕过代理
+    import uuid
+
+    opener = request.build_opener(request.ProxyHandler({}))
+    boundary = f"----OpenCode{uuid.uuid4().hex}"
+    safe_name = Path(str(filename or "sample.flac")).name or "sample.flac"
+
+    def part(name: str, value: str) -> bytes:
+        return (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="{name}"\r\n\r\n'
+            f"{value}\r\n"
+        ).encode("utf-8")
 
     body = bytearray()
-    body.extend(f"--{boundary}\r\n".encode())
+    body.extend(part("type", "input"))
+    body.extend(part("overwrite", "true"))
     body.extend(
-        f'Content-Disposition: form-data; name="image"; filename="{filename}"\r\n'.encode()
+        (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="image"; filename="{safe_name}"\r\n'
+            f"Content-Type: application/octet-stream\r\n\r\n"
+        ).encode("utf-8")
     )
-    body.extend(b"Content-Type: application/octet-stream\r\n\r\n")
     body.extend(data)
-    body.extend(b"\r\n")
-    body.extend(f"--{boundary}--\r\n".encode())
+    body.extend(f"\r\n--{boundary}--\r\n".encode("utf-8"))
 
-    headers = {
-        "Content-Type": f"multipart/form-data; boundary={boundary}",
-    }
+    # 尝试多个上传端点
+    last_error: Exception | None = None
+    endpoints = ["/upload/image", "/upload/audio", "/upload"]
 
-    code, resp_body = http_json_request(
-        "POST", url, payload=None, headers=headers, timeout=60.0
-    )
-    if not (200 <= code < 300):
-        raise RuntimeError(f"Upload failed: HTTP {code}")
+    for path in endpoints:
+        req = request.Request(
+            f"{comfy_url.rstrip('/')}{path}",
+            data=bytes(body),
+            headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+            method="POST",
+        )
+        try:
+            with opener.open(req, timeout=300) as resp:
+                raw = resp.read().decode("utf-8", errors="ignore")
+            payload = json.loads(raw) if raw else {}
+            if isinstance(payload, dict):
+                return payload
+        except Exception as exc:
+            last_error = exc
+            continue
 
-    try:
-        result = json.loads(resp_body)
-    except json.JSONDecodeError:
-        result = {"name": filename, "subfolder": "", "type": "input"}
-
-    return result
+    raise RuntimeError(f"ComfyUI upload failed: {last_error}")

@@ -10,6 +10,9 @@ from .roles import (
     duplicate_role,
     delete_role,
     save_role_sample_audio,
+    generate_role_sample_audio,
+    extract_role_sample_text,
+    apply_roles_to_all_chapters,
 )
 from .line_audio import (
     list_line_audio_tasks,
@@ -117,7 +120,6 @@ class Handler(BaseHTTPRequestHandler):
                 "workflows": fetch_workflows(conn),
                 "settings": fetch_settings(conn),
                 "jsonTasks": fetch_json_tasks(conn),
-                "audioTasks": fetch_audio_tasks(conn),
             }
             conn.close()
             self.send_json(data)
@@ -228,7 +230,7 @@ class Handler(BaseHTTPRequestHandler):
             conn = db_conn()
             row = conn.execute(
                 """
-                SELECT c.chapter_num,c.audio_file_path,n.english_dir
+                SELECT c.id,c.novel_id,c.chapter_num,c.audio_file_path,n.english_dir
                 FROM chapters c
                 JOIN novels n ON n.id=c.novel_id
                 WHERE c.novel_id=? AND c.chapter_num=?
@@ -257,10 +259,13 @@ class Handler(BaseHTTPRequestHandler):
             ctype = (
                 mimetypes.guess_type(abs_audio.name)[0] or "application/octet-stream"
             )
+            download_name = abs_audio.name
+            if download_name == "merged.flac":
+                download_name = f"chapter-{chapter_num:03d}-merged.flac"
             self.send_response(200)
             self.send_header("Content-Type", ctype)
             self.send_header(
-                "Content-Disposition", f"attachment; filename={abs_audio.name}"
+                "Content-Disposition", f"attachment; filename={download_name}"
             )
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
@@ -276,7 +281,7 @@ class Handler(BaseHTTPRequestHandler):
             conn = db_conn()
             row = conn.execute(
                 """
-                SELECT c.chapter_num,c.audio_file_path,n.english_dir
+                SELECT c.id,c.novel_id,c.chapter_num,c.audio_file_path,n.english_dir
                 FROM chapters c
                 JOIN novels n ON n.id=c.novel_id
                 WHERE c.novel_id=? AND c.chapter_num=?
@@ -320,7 +325,7 @@ class Handler(BaseHTTPRequestHandler):
             conn = db_conn()
             row = conn.execute(
                 """
-                SELECT c.id,c.chapter_num,c.title,c.word_count,c.text_file_path,c.audio_file_path,c.has_json,c.has_audio,
+                SELECT c.id,c.novel_id,c.chapter_num,c.title,c.word_count,c.text_file_path,c.audio_file_path,c.has_json,c.has_audio,
                        n.name AS novel_name,n.english_dir
                 FROM chapters c
                 JOIN novels n ON n.id=c.novel_id
@@ -339,7 +344,7 @@ class Handler(BaseHTTPRequestHandler):
                     "title": str(row["title"]),
                     "wordCount": int(row["word_count"] or 0),
                     "hasJson": bool(row["has_json"]),
-                    "hasAudio": bool(row["has_audio"]),
+                    "hasAudio": resolve_audio_file(row) is not None,
                     "content": chapter_content(
                         str(row["english_dir"]),
                         chapter_num,
@@ -460,13 +465,6 @@ class Handler(BaseHTTPRequestHandler):
                     ],
                 }
             )
-            return
-
-        if route == "/api/audio-tasks":
-            conn = db_conn()
-            data = fetch_audio_tasks(conn)
-            conn.close()
-            self.send_json({"audioTasks": data})
             return
 
         # 角色库API
@@ -926,82 +924,9 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"status": "ok"})
             return
 
-        if route == "/api/audio-tasks":
-            body = self.read_json()
-            conn = db_conn()
-            novel = conn.execute(
-                "SELECT id,workflow_id FROM novels WHERE id=?",
-                (int(body.get("novelId")),),
-            ).fetchone()
-            if not novel:
-                conn.close()
-                self.send_json({"error": "novel not found"}, 404)
-                return
-            if novel["workflow_id"] is None:
-                conn.close()
-                self.send_json({"error": "novel workflow is not configured"}, 409)
-                return
-            chapter = conn.execute(
-                "SELECT id,title FROM chapters WHERE novel_id=? AND chapter_num=?",
-                (int(body.get("novelId")), int(body.get("chapter"))),
-            ).fetchone()
-            if not chapter:
-                conn.close()
-                self.send_json({"error": "chapter not found"}, 404)
-                return
-            json_task = conn.execute(
-                """
-                SELECT id FROM json_tasks
-                WHERE novel_id=? AND chapter_num=? AND status='completed' AND merged_result_json IS NOT NULL
-                ORDER BY id DESC LIMIT 1
-                """,
-                (int(body.get("novelId")), int(body.get("chapter"))),
-            ).fetchone()
-            if not json_task:
-                conn.close()
-                self.send_json({"error": "chapter has no completed JSON result"}, 409)
-                return
-            conn.execute(
-                """
-                INSERT INTO audio_tasks (novel_id,chapter_id,chapter_num,chapter_title,json_task_id,workflow_id,status,progress,scheduled_at)
-                VALUES (?,?,?,?,?,?,'pending',0,?)
-                """,
-                (
-                    int(body.get("novelId")),
-                    int(chapter["id"]),
-                    int(body.get("chapter")),
-                    str(body.get("title") or "").strip()
-                    or (
-                        str(chapter["title"])
-                        if chapter
-                        else f"第{int(body.get('chapter'))}回"
-                    ),
-                    int(json_task["id"]),
-                    int(novel["workflow_id"]),
-                    str(body.get("scheduledAt") or ""),
-                ),
-            )
-            conn.commit()
-            conn.close()
-            self.send_json({"status": "ok"})
-            return
-
-        if route == "/api/audio-tasks/cancel-all":
-            result = cancel_all_audio_tasks()
-            self.send_json({"status": "ok", **result})
-            return
-
         if route == "/api/json-tasks/simulate":
             conn = db_conn()
             advance_status(conn, "json_tasks")
-            conn.commit()
-            conn.close()
-            self.send_json({"status": "ok"})
-            return
-
-        if route == "/api/audio-tasks/simulate":
-            conn = db_conn()
-            advance_status(conn, "audio_tasks")
             conn.commit()
             conn.close()
             self.send_json({"status": "ok"})
@@ -1153,69 +1078,6 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"status": "ok"})
             return
 
-        m_audio = re.match(r"^/api/novels/(\d+)/chapters/(\d+)/generate-audio$", route)
-        if m_audio:
-            body = self.read_json()
-            novel_id = int(m_audio.group(1))
-            chapter_num = int(m_audio.group(2))
-            scheduled_at = str(body.get("scheduledAt") or "").strip()
-            if scheduled_at and parse_datetime_utc(scheduled_at) is None:
-                self.send_json({"error": "invalid scheduledAt"}, 400)
-                return
-            conn = db_conn()
-            novel = conn.execute(
-                "SELECT id,workflow_id FROM novels WHERE id=?", (novel_id,)
-            ).fetchone()
-            if not novel:
-                conn.close()
-                self.send_json({"error": "novel not found"}, 404)
-                return
-            if novel["workflow_id"] is None:
-                conn.close()
-                self.send_json({"error": "novel workflow is not configured"}, 409)
-                return
-            chapter = conn.execute(
-                "SELECT id,title FROM chapters WHERE novel_id=? AND chapter_num=?",
-                (novel_id, chapter_num),
-            ).fetchone()
-            if not chapter:
-                conn.close()
-                self.send_json({"error": "chapter not found"}, 404)
-                return
-            json_task = conn.execute(
-                """
-                SELECT id FROM json_tasks
-                WHERE novel_id=? AND chapter_num=? AND status='completed' AND merged_result_json IS NOT NULL
-                ORDER BY id DESC LIMIT 1
-                """,
-                (novel_id, chapter_num),
-            ).fetchone()
-            if not json_task:
-                conn.close()
-                self.send_json({"error": "chapter has no completed JSON result"}, 409)
-                return
-            title = str(chapter["title"]) if chapter else f"第{chapter_num}回"
-            chapter_id = int(chapter["id"])
-            conn.execute(
-                """
-                INSERT INTO audio_tasks (novel_id,chapter_id,chapter_num,chapter_title,json_task_id,workflow_id,status,progress,scheduled_at)
-                VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, ?)
-                """,
-                (
-                    novel_id,
-                    chapter_id,
-                    chapter_num,
-                    title,
-                    int(json_task["id"]),
-                    int(novel["workflow_id"]),
-                    scheduled_at,
-                ),
-            )
-            conn.commit()
-            conn.close()
-            self.send_json({"status": "ok"})
-            return
-
         # 角色库POST API
         m_roles_post = re.match(r"^/api/novels/(\d+)/roles$", route)
         if m_roles_post:
@@ -1280,6 +1142,56 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"status": "saved", "role": role})
             return
 
+        # 生成角色示例音频
+        m_role_generate_sample = re.match(
+            r"^/api/novels/(\d+)/roles/(\d+)/generate-sample$", route
+        )
+        if m_role_generate_sample:
+            novel_id = int(m_role_generate_sample.group(1))
+            role_id = int(m_role_generate_sample.group(2))
+            ok, msg, role, workflow = generate_role_sample_audio(role_id, novel_id)
+            if not ok or role is None:
+                code = 404 if msg == "Role not found" else 409
+                payload = {"error": msg}
+                if workflow is not None:
+                    payload["workflow"] = workflow
+                self.send_json(payload, code)
+                return
+            self.send_json({"status": "generated", "role": role, "workflow": workflow})
+            return
+
+        # 提取角色示例音频文本
+        m_role_extract_text = re.match(
+            r"^/api/novels/(\d+)/roles/(\d+)/extract-sample-text$", route
+        )
+        if m_role_extract_text and self.command == "POST":
+            novel_id = int(m_role_extract_text.group(1))
+            role_id = int(m_role_extract_text.group(2))
+            ok, msg, text = extract_role_sample_text(role_id, novel_id)
+            if not ok:
+                code = 404 if "not found" in msg.lower() else 409
+                self.send_json({"error": msg}, code)
+                return
+            self.send_json({"status": "ok", "text": text})
+            return
+
+        # 应用角色到全部章节
+        m_apply_roles_all = re.match(
+            r"^/api/novels/(\d+)/chapters/(\d+)/apply-roles-to-all$", route
+        )
+        if m_apply_roles_all and self.command == "POST":
+            novel_id = int(m_apply_roles_all.group(1))
+            source_chapter_num = int(m_apply_roles_all.group(2))
+            ok, msg, updated_count = apply_roles_to_all_chapters(
+                novel_id, source_chapter_num
+            )
+            if not ok:
+                code = 404 if "not found" in msg.lower() else 409
+                self.send_json({"error": msg}, code)
+                return
+            self.send_json({"status": "ok", "updated_count": updated_count})
+            return
+
         # 台词音频POST API
         m_line_audio_enqueue = re.match(
             r"^/api/novels/(\d+)/chapters/(\d+)/line-audio/enqueue$", route
@@ -1289,8 +1201,12 @@ class Handler(BaseHTTPRequestHandler):
             chapter_num = int(m_line_audio_enqueue.group(2))
             body = self.read_json()
             line_index = body.get("lineIndex")
+            scheduled_at = str(body.get("scheduledAt") or "").strip()
             if not isinstance(line_index, int):
                 self.send_json({"error": "lineIndex must be integer"}, 400)
+                return
+            if scheduled_at and parse_datetime_utc(scheduled_at) is None:
+                self.send_json({"error": "invalid scheduledAt"}, 400)
                 return
             conn = db_conn()
             chapter_row = conn.execute(
@@ -1302,7 +1218,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": "chapter not found"}, 404)
                 return
             ok, msg, task_id = enqueue_line_audio_task(
-                novel_id, int(chapter_row["id"]), line_index
+                novel_id, int(chapter_row["id"]), line_index, scheduled_at=scheduled_at
             )
             if not ok:
                 self.send_json({"error": msg}, 409)
@@ -1316,6 +1232,11 @@ class Handler(BaseHTTPRequestHandler):
         if m_line_audio_enqueue_all:
             novel_id = int(m_line_audio_enqueue_all.group(1))
             chapter_num = int(m_line_audio_enqueue_all.group(2))
+            body = self.read_json()
+            scheduled_at = str(body.get("scheduledAt") or "").strip()
+            if scheduled_at and parse_datetime_utc(scheduled_at) is None:
+                self.send_json({"error": "invalid scheduledAt"}, 400)
+                return
             conn = db_conn()
             chapter_row = conn.execute(
                 "SELECT id FROM chapters WHERE novel_id=? AND chapter_num=?",
@@ -1326,7 +1247,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": "chapter not found"}, 404)
                 return
             ok, msg, data = enqueue_all_line_audio_tasks(
-                novel_id, int(chapter_row["id"])
+                novel_id, int(chapter_row["id"]), scheduled_at=scheduled_at
             )
             if not ok:
                 self.send_json({"error": msg}, 409)
@@ -1353,6 +1274,14 @@ class Handler(BaseHTTPRequestHandler):
             if not ok:
                 self.send_json({"error": msg}, 409)
                 return
+            if path:
+                conn = db_conn()
+                conn.execute(
+                    "UPDATE chapters SET audio_file_path=?,has_audio=1,updated_at=CURRENT_TIMESTAMP WHERE novel_id=? AND chapter_num=?",
+                    (path, novel_id, chapter_num),
+                )
+                conn.commit()
+                conn.close()
             self.send_json({"status": "merged", "path": path})
             return
 
@@ -1638,6 +1567,27 @@ class Handler(BaseHTTPRequestHandler):
             }:
                 ui_timezone = "Asia/Shanghai"
 
+            line_audio_queue = body.get("lineAudioQueue") or {}
+            if not isinstance(line_audio_queue, dict):
+                line_audio_queue = {}
+            line_audio_queue_mode = (
+                str(line_audio_queue.get("mode") or "immediate").strip() or "immediate"
+            )
+            if line_audio_queue_mode not in {"immediate", "scheduled"}:
+                line_audio_queue_mode = "immediate"
+            line_audio_queue_scheduled_at = str(
+                line_audio_queue.get("scheduledAt") or ""
+            ).strip()
+            if line_audio_queue_mode == "scheduled":
+                if (
+                    not line_audio_queue_scheduled_at
+                    or parse_datetime_utc(line_audio_queue_scheduled_at) is None
+                ):
+                    self.send_json({"error": "invalid lineAudioQueue.scheduledAt"}, 400)
+                    return
+            else:
+                line_audio_queue_scheduled_at = ""
+
             pairs = {
                 "comfy_url": str(body.get("comfyUrl") or ""),
                 "proxy_url": str(body.get("proxyUrl") or ""),
@@ -1650,6 +1600,8 @@ class Handler(BaseHTTPRequestHandler):
                 "llm_batch_max_chars": str(batch_max_chars),
                 "ui_language": ui_language,
                 "ui_timezone": ui_timezone,
+                "line_audio_queue_mode": line_audio_queue_mode,
+                "line_audio_queue_scheduled_at": line_audio_queue_scheduled_at,
             }
             conn = db_conn()
             for k, v in pairs.items():
@@ -1673,27 +1625,6 @@ class Handler(BaseHTTPRequestHandler):
     def do_DELETE(self) -> None:
         parsed = urlparse(self.path)
         route = parsed.path
-
-        m_delete_audio_task = re.match(r"^/api/audio-tasks/(\d+)$", route)
-        if m_delete_audio_task:
-            task_id = int(m_delete_audio_task.group(1))
-            conn = db_conn()
-            row = conn.execute(
-                "SELECT status FROM audio_tasks WHERE id=?", (task_id,)
-            ).fetchone()
-            if not row:
-                conn.close()
-                self.send_json({"error": "audio task not found"}, 404)
-                return
-            if str(row["status"]) == "running":
-                conn.close()
-                self.send_json({"error": "running audio task can not be deleted"}, 409)
-                return
-            conn.execute("DELETE FROM audio_tasks WHERE id=?", (task_id,))
-            conn.commit()
-            conn.close()
-            self.send_json({"status": "ok"})
-            return
 
         m_delete_json_task = re.match(r"^/api/json-tasks/(\d+)$", route)
         if m_delete_json_task:
@@ -1734,11 +1665,7 @@ class Handler(BaseHTTPRequestHandler):
                 "SELECT COUNT(1) AS c FROM json_tasks WHERE novel_id=? AND chapter_num=? AND status='running'",
                 (novel_id, chapter_num),
             ).fetchone()
-            running_audio = conn.execute(
-                "SELECT COUNT(1) AS c FROM audio_tasks WHERE novel_id=? AND chapter_num=? AND status='running'",
-                (novel_id, chapter_num),
-            ).fetchone()
-            if int(running_json["c"] or 0) > 0 or int(running_audio["c"] or 0) > 0:
+            if int(running_json["c"] or 0) > 0:
                 conn.close()
                 self.send_json(
                     {"error": "chapter has running tasks, please terminate them first"},
@@ -1754,19 +1681,6 @@ class Handler(BaseHTTPRequestHandler):
             if chapter_audio_path:
                 file_paths.add(chapter_audio_path)
 
-            audio_rows = conn.execute(
-                "SELECT downloaded_file_path FROM audio_tasks WHERE novel_id=? AND chapter_num=?",
-                (novel_id, chapter_num),
-            ).fetchall()
-            for a in audio_rows:
-                p = str(a["downloaded_file_path"] or "").strip()
-                if p:
-                    file_paths.add(p)
-
-            conn.execute(
-                "DELETE FROM audio_tasks WHERE novel_id=? AND chapter_num=?",
-                (novel_id, chapter_num),
-            )
             conn.execute(
                 "DELETE FROM json_tasks WHERE novel_id=? AND chapter_num=?",
                 (novel_id, chapter_num),

@@ -4,7 +4,6 @@ import {
   setActiveNovelId,
   fetchLineAudioTasks,
   deleteLineAudioTask,
-  getLineAudioFileUrl,
 } from "./store.js";
 import { renderNav, toast, fmtDateTime } from "./ui.js";
 import { t } from "./i18n.js";
@@ -15,6 +14,11 @@ let lineAudioTasks = [];
 let activeLineAudioTaskId = null;
 let lineAudioRefreshTimerId = null;
 let activeLineAudioTaskSignature = "";
+
+function isTaskDetailAudioPlaying() {
+  const player = document.getElementById("lineAudioTaskPlayer");
+  return Boolean(player && !player.paused && !player.ended);
+}
 
 function getNovelByQueryOrActive() {
   const url = new URL(window.location.href);
@@ -73,6 +77,11 @@ function calcTaskRuntime(task) {
   return formatHms((end.getTime() - start.getTime()) / 1000);
 }
 
+function getScheduleLabel(task) {
+  const scheduledAt = String(task.scheduledAt || "").trim();
+  return scheduledAt ? `指定时间执行 ${fmtDateTime(scheduledAt) || scheduledAt}` : "立即执行";
+}
+
 function statusClass(status) {
   if (status === "processing" || status === "running") return "status-running";
   if (status === "completed") return "status-completed";
@@ -103,6 +112,7 @@ function renderLineAudioTaskList() {
       <div class="task-list-meta">
         <span class="status-badge ${statusClass(status)}">${status}</span>
         <span>行号: ${task.lineIndex + 1}</span>
+        <span>${escapeHtml(getScheduleLabel(task))}</span>
       </div>
     `;
 
@@ -119,6 +129,7 @@ function getLineAudioTaskSignature(task) {
     comfyPromptId: task.comfyPromptId || "",
     outputFilename: task.outputFilename || "",
     downloadedFilePath: task.downloadedFilePath || "",
+    scheduledAt: task.scheduledAt || "",
     errorMessage: task.errorMessage || "",
     updatedAt: task.updatedAt || "",
   });
@@ -144,6 +155,7 @@ function renderLineAudioTaskDetail(task) {
   html += `<div class="detail-row"><span class="detail-label">Comfy Prompt ID:</span><span class="detail-value">${escapeHtml(task.comfyPromptId || "-")}</span></div>`;
   html += `<div class="detail-row"><span class="detail-label">输出文件:</span><span class="detail-value">${escapeHtml(task.outputFilename || "-")}</span></div>`;
   html += `<div class="detail-row"><span class="detail-label">本地下载路径:</span><span class="detail-value">${escapeHtml(task.downloadedFilePath || "-")}</span></div>`;
+  html += `<div class="detail-row"><span class="detail-label">执行设置:</span><span class="detail-value">${escapeHtml(getScheduleLabel(task))}</span></div>`;
   html += `<div class="detail-row"><span class="detail-label">任务用时:</span><span class="detail-value">${calcTaskRuntime(task)}</span></div>`;
 
   if (task.errorMessage) {
@@ -159,7 +171,7 @@ function renderLineAudioTaskDetail(task) {
   if (status === "completed" && task.id) {
     html += '<div class="task-audio-section">';
     html += '<h4>音频试听</h4>';
-    html += `<audio id="lineAudioTaskPlayer" controls preload="metadata" src="${getLineAudioFileUrl(task.id)}"></audio>`;
+    html += `<audio id="lineAudioTaskPlayer" controls preload="metadata" src="/api/line-audio-tasks/${Number(task.id)}/file"></audio>`;
     html += '</div>';
   }
 
@@ -222,6 +234,9 @@ async function loadLineAudioTaskDetail(taskId) {
 }
 
 async function refreshLineAudioTasks() {
+  if (isTaskDetailAudioPlaying()) {
+    return;
+  }
   await loadLineAudioTaskList();
 }
 
