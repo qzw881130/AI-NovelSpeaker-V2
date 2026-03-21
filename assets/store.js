@@ -12,6 +12,8 @@ const DEFAULT_SETTINGS = {
     apiKey: "",
     temperature: 0.3,
     maxTokens: 8192,
+    numCtx: 65536,
+    keepAlive: "30m",
     batchMaxChars: 3500,
   },
   ui: {

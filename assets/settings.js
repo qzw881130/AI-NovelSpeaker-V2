@@ -8,10 +8,13 @@ const providerDefaults = {
   qwen: { baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen-plus" },
   gemini: { baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", model: "gemini-2.0-flash" },
   openai: { baseUrl: "https://api.openai.com/v1", model: "gpt-4.1-mini" },
+  ollama: { baseUrl: "http://127.0.0.1:11434/v1", model: "qwen2.5:7b" },
   custom: { baseUrl: "", model: "" },
 };
 
-const BATCH_CHAR_OPTIONS = new Set([3500, 4000, 5000, 6000, 7000]);
+const BATCH_CHAR_OPTIONS = new Set([0, 3500, 4000, 5000, 6000, 7000]);
+const NUM_CTX_OPTIONS = new Set([32768, 65536, 98304, 131072]);
+const KEEP_ALIVE_OPTIONS = new Set(["5m", "15m", "30m", "1h", "6h", "24h"]);
 const UI_LANGUAGE_OPTIONS = new Set(["zh-CN", "zh-TW", "en-US", "ja-JP", "ko-KR"]);
 const UI_TIMEZONE_OPTIONS = new Set([
   "Asia/Shanghai",
@@ -162,7 +165,15 @@ function load(settings) {
   document.getElementById("llmKey").value = llm.apiKey || "";
   document.getElementById("llmTemperature").value = llm.temperature ?? 0.3;
   document.getElementById("llmTokens").value = llm.maxTokens ?? 8192;
-  const batchChars = Number(llm.batchMaxChars || 3500);
+  const numCtx = Number(llm.numCtx ?? 65536);
+  document.getElementById("llmNumCtx").value = NUM_CTX_OPTIONS.has(numCtx)
+    ? String(numCtx)
+    : "65536";
+  const keepAlive = String(llm.keepAlive || "30m").trim();
+  document.getElementById("llmKeepAlive").value = KEEP_ALIVE_OPTIONS.has(keepAlive)
+    ? keepAlive
+    : "30m";
+  const batchChars = Number(llm.batchMaxChars ?? 3500);
   document.getElementById("llmBatchChars").value = BATCH_CHAR_OPTIONS.has(batchChars)
     ? String(batchChars)
     : "3500";
@@ -177,6 +188,7 @@ function load(settings) {
     : "immediate";
   document.getElementById("lineAudioQueueScheduledAt").value = toLocalDateTimeValue(lineAudioQueue.scheduledAt || "");
   syncLineAudioQueueModeVisibility();
+  syncOllamaFieldVisibility();
 }
 
 function toLocalDateTimeValue(raw) {
@@ -206,6 +218,20 @@ function syncLineAudioQueueModeVisibility() {
   wrap.classList.toggle("hidden", mode !== "scheduled");
 }
 
+function syncOllamaFieldVisibility() {
+  const provider = String(document.getElementById("llmProvider")?.value || "").trim();
+  const isOllama = provider === "ollama";
+  document.getElementById("llmNumCtxWrap")?.classList.toggle("hidden", !isOllama);
+  document.getElementById("llmKeepAliveWrap")?.classList.toggle("hidden", !isOllama);
+  const keyInput = document.getElementById("llmKey");
+  const keyHint = document.getElementById("llmKeyHint");
+  if (keyInput) {
+    keyInput.disabled = isOllama;
+    keyInput.placeholder = isOllama ? "本地 Ollama 可留空" : "";
+  }
+  keyHint?.classList.toggle("hidden", !isOllama);
+}
+
 function readSettingsForm() {
   return {
     comfyUrl: document.getElementById("comfyUrl").value.trim(),
@@ -217,7 +243,9 @@ function readSettingsForm() {
       apiKey: document.getElementById("llmKey").value.trim(),
       temperature: Number(document.getElementById("llmTemperature").value),
       maxTokens: Number(document.getElementById("llmTokens").value),
-      batchMaxChars: Number(document.getElementById("llmBatchChars").value || 3500),
+      numCtx: Number(document.getElementById("llmNumCtx").value || 65536),
+      keepAlive: String(document.getElementById("llmKeepAlive").value || "30m"),
+      batchMaxChars: Number(document.getElementById("llmBatchChars").value ?? 3500),
     },
     ui: {
       language: document.getElementById("uiLanguage").value,
@@ -304,6 +332,7 @@ function bindEvents() {
     const next = providerDefaults[event.target.value];
     document.getElementById("llmBase").value = next.baseUrl;
     document.getElementById("llmModel").value = next.model;
+    syncOllamaFieldVisibility();
     markLlmDirty();
   });
 
@@ -314,6 +343,8 @@ function bindEvents() {
   document.getElementById("llmKey").addEventListener("input", markLlmDirty);
   document.getElementById("llmTemperature").addEventListener("input", markLlmDirty);
   document.getElementById("llmTokens").addEventListener("input", markLlmDirty);
+  document.getElementById("llmNumCtx").addEventListener("change", markLlmDirty);
+  document.getElementById("llmKeepAlive").addEventListener("change", markLlmDirty);
   document.getElementById("llmBatchChars").addEventListener("change", markLlmDirty);
   document.getElementById("uiLanguage").addEventListener("change", markLlmDirty);
   document.getElementById("uiTimezone").addEventListener("change", markLlmDirty);

@@ -6,6 +6,7 @@ import {
   fetchChapterJsonOutput,
   fetchNovelChapters,
   getData,
+  getActiveNovelId,
   requestConvertJson,
   saveChapterJsonOutput,
   setActiveNovelId,
@@ -165,6 +166,10 @@ function getNovelByQueryOrActive() {
   const queryId = String(url.searchParams.get("novelId") || "");
   if (queryId) {
     return allNovels.find((n) => String(n.id) === queryId) || null;
+  }
+  const activeId = String(getActiveNovelId() || "");
+  if (activeId) {
+    return allNovels.find((n) => String(n.id) === activeId) || allNovels[0] || null;
   }
   return allNovels[0] || null;
 }

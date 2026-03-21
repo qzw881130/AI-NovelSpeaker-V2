@@ -489,8 +489,17 @@ def fetch_settings(conn: sqlite3.Connection) -> dict:
         batch_max_chars = int(kv.get("llm_batch_max_chars", "3500"))
     except (TypeError, ValueError):
         batch_max_chars = 3500
-    if batch_max_chars not in {3500, 4000, 5000, 6000, 7000}:
+    if batch_max_chars not in {0, 3500, 4000, 5000, 6000, 7000}:
         batch_max_chars = 3500
+    try:
+        num_ctx = int(kv.get("llm_num_ctx", "65536"))
+    except (TypeError, ValueError):
+        num_ctx = 65536
+    if num_ctx not in {32768, 65536, 98304, 131072}:
+        num_ctx = 65536
+    keep_alive = str(kv.get("llm_keep_alive", "30m") or "30m").strip() or "30m"
+    if keep_alive not in {"5m", "15m", "30m", "1h", "6h", "24h"}:
+        keep_alive = "30m"
 
     llm = {
         "provider": kv.get("llm_provider", "grok"),
@@ -499,6 +508,8 @@ def fetch_settings(conn: sqlite3.Connection) -> dict:
         "apiKey": kv.get("llm_api_key", ""),
         "temperature": float(kv.get("llm_temperature", "0.3")),
         "maxTokens": int(kv.get("llm_max_tokens", "8192")),
+        "numCtx": num_ctx,
+        "keepAlive": keep_alive,
         "batchMaxChars": batch_max_chars,
     }
     ui_language = str(kv.get("ui_language", "zh-CN") or "zh-CN").strip() or "zh-CN"
@@ -834,7 +845,10 @@ def http_json_request(
     proxy_url: str = "",
 ) -> tuple[int, str]:
     data = None
-    req_headers: dict[str, str] = {"Accept": "application/json"}
+    req_headers: dict[str, str] = {
+        "Accept": "application/json",
+        "User-Agent": "curl/8.7.1",
+    }
     if headers:
         req_headers.update(headers)
     if payload is not None:
@@ -842,10 +856,12 @@ def http_json_request(
         req_headers.setdefault("Content-Type", "application/json")
 
     req = request.Request(url, method=method.upper(), headers=req_headers, data=data)
-    handlers = [request.ProxyHandler({})]
     if proxy_url:
-        handlers = [request.ProxyHandler({"http": proxy_url, "https": proxy_url})]
-    opener = request.build_opener(*handlers)
+        opener = request.build_opener(
+            request.ProxyHandler({"http": proxy_url, "https": proxy_url})
+        )
+    else:
+        opener = request.build_opener()
 
     try:
         with opener.open(req, timeout=timeout) as resp:
@@ -882,12 +898,14 @@ def test_llm_endpoint(
     model: str,
     api_key: str,
     proxy_url: str,
+    num_ctx: int = 65536,
+    keep_alive: str = "30m",
 ) -> tuple[bool, str]:
     if not base_url:
         return False, "API Base URL 不能为空"
     if not model:
         return False, "模型名称不能为空"
-    if provider != "custom" and not api_key:
+    if provider not in {"custom", "ollama"} and not api_key:
         return False, "API Key 不能为空"
 
     url = f"{base_url.rstrip('/')}/chat/completions"
@@ -903,6 +921,9 @@ def test_llm_endpoint(
         "max_tokens": 8,
         "temperature": 0,
     }
+    if provider == "ollama":
+        payload["options"] = {"num_ctx": int(num_ctx or 65536)}
+        payload["keep_alive"] = str(keep_alive or "30m")
     try:
         code, body = http_json_request(
             "POST",
@@ -1011,6 +1032,8 @@ def split_text_batches(text: str, max_chars: int = 3500) -> list[str]:
     normalized = str(text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
     if not normalized:
         return [""]
+    if int(max_chars or 0) <= 0:
+        return [normalized]
 
     lines = normalized.split("\n")
     batches: list[str] = []
@@ -1108,10 +1131,13 @@ def call_llm_json_parse(
     batch_total: int = 1,
 ) -> str:
     base_url = str(llm.get("baseUrl") or "").strip()
+    provider = str(llm.get("provider") or "").strip()
     model = str(llm.get("model") or "").strip()
     api_key = str(llm.get("apiKey") or "").strip()
     temperature = float(llm.get("temperature") or 0.3)
     max_tokens = int(llm.get("maxTokens") or 8192)
+    num_ctx = int(llm.get("numCtx") or 65536)
+    keep_alive = str(llm.get("keepAlive") or "30m").strip() or "30m"
 
     if not base_url:
         raise RuntimeError("LLM baseUrl is empty")
@@ -1149,12 +1175,19 @@ def call_llm_json_parse(
         "temperature": temperature,
         "max_tokens": max_tokens,
     }
+    request_timeout = 180.0
+    if provider == "ollama":
+        payload["options"] = {"num_ctx": num_ctx}
+        payload["keep_alive"] = keep_alive
+        request_timeout = (
+            1800.0 if num_ctx >= 65536 or len(chapter_text) > 12000 else 900.0
+        )
     code, body = http_json_request(
         "POST",
         f"{base_url.rstrip('/')}/chat/completions",
         payload=payload,
         headers=headers,
-        timeout=180.0,
+        timeout=request_timeout,
         proxy_url=proxy_url,
     )
 
@@ -1272,8 +1305,11 @@ def process_json_task(task_id: int) -> None:
         if not chapter_text:
             raise RuntimeError("chapter text is empty or missing")
 
-        batch_max_chars = int(llm.get("batchMaxChars") or 3500)
-        if batch_max_chars not in {3500, 4000, 5000, 6000, 7000}:
+        raw_batch_max_chars = llm.get("batchMaxChars", 3500)
+        if raw_batch_max_chars in (None, ""):
+            raw_batch_max_chars = 3500
+        batch_max_chars = int(raw_batch_max_chars)
+        if batch_max_chars not in {0, 3500, 4000, 5000, 6000, 7000}:
             batch_max_chars = 3500
         batches = split_text_batches(chapter_text, max_chars=batch_max_chars)
 

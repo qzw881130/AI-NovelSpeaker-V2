@@ -73,6 +73,22 @@ function progressWidth(task) {
   return Math.max(0, Math.min(100, base));
 }
 
+function displayBatchProgress(task) {
+  const total = Math.max(0, Number(task.batchTotal || 0));
+  if (total <= 0) return "0/0";
+  const done = Math.max(0, Number(task.batchDone || 0));
+  const failed = Math.max(0, Number(task.batchFailed || 0));
+  let current = done;
+  if (task.status === "running") {
+    current = Math.min(total, done + 1);
+  } else if (task.status === "failed") {
+    current = Math.min(total, done + failed);
+  } else if (task.status === "completed") {
+    current = total;
+  }
+  return `${fmtNumber(current)}/${fmtNumber(total)}`;
+}
+
 function batchKey(batch) {
   const primary = batch.id ?? batch.batchId ?? batch.batchIndex;
   if (primary != null && primary !== "") return String(primary);
@@ -144,7 +160,7 @@ function render() {
           <span class="json-meta-pill"><i class="json-meta-dot"></i>${chapterLabel} ${fmtNumber(task.chapter || 0)}</span>
           <span class="json-meta-pill"><i class="json-meta-dot"></i>${wordsLabel} ${fmtNumber(task.wordCount || 0)}</span>
           <span class="json-meta-pill"><i class="json-meta-dot"></i>${promptLabel} ${escapeHtml(promptName(promptMap, task.promptId))}</span>
-          <span class="json-meta-pill"><i class="json-meta-dot"></i>${batchesLabel} ${fmtNumber(task.batchDone || 0)}/${fmtNumber(task.batchTotal || 0)}</span>
+          <span class="json-meta-pill"><i class="json-meta-dot"></i>${batchesLabel} ${displayBatchProgress(task)}</span>
         </div>
         <p class="meta json-meta-time">${createdAtLabel} ${formatServerTime(task.createdAt || task.updatedAt)} · ${updatedAtLabel} ${formatServerTime(task.updatedAt)}${
           task.status === "running"
