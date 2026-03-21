@@ -22,7 +22,7 @@ const WORKFLOW_TYPE_LABELS = {
 };
 
 function getWorkflowTypeLabel(type) {
-  return WORKFLOW_TYPE_LABELS[type] || type || "-";
+  return translateText(WORKFLOW_TYPE_LABELS[type] || type || "-");
 }
 
 function render() {

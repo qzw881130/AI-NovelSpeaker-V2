@@ -6,7 +6,7 @@ import {
   deleteLineAudioTask,
 } from "./store.js";
 import { clearNavBadge, renderNav, toast, fmtDateTime } from "./ui.js";
-import { t } from "./i18n.js";
+import { localizeDocumentText, t, translateText } from "./i18n.js";
 
 let allNovels = [];
 let activeNovel = null;
@@ -35,7 +35,16 @@ function getNovelByQueryOrActive() {
 }
 
 function setHeader(novel) {
-  document.getElementById("lineAudioPageTitle").textContent = `${novel.name} - 台词音频任务队列`;
+  document.getElementById("lineAudioPageTitle").textContent = `${novel.name} - ${translateText("台词音频任务队列")}`;
+}
+
+function statusText(status) {
+  const normalized = String(status || "pending").toLowerCase();
+  if (normalized === "running" || normalized === "processing") return t("common.status.running");
+  if (normalized === "completed") return t("common.status.completed");
+  if (normalized === "failed") return t("common.status.failed");
+  if (normalized === "cancelled") return t("common.status.cancelled");
+  return t("common.status.pending");
 }
 
 function renderNovelSelect() {
@@ -80,7 +89,9 @@ function calcTaskRuntime(task) {
 
 function getScheduleLabel(task) {
   const scheduledAt = String(task.scheduledAt || "").trim();
-  return scheduledAt ? `指定时间执行 ${fmtDateTime(scheduledAt) || scheduledAt}` : "立即执行";
+  return scheduledAt
+    ? `${translateText("指定时间执行")} ${fmtDateTime(scheduledAt) || scheduledAt}`
+    : translateText("立即执行");
 }
 
 function statusClass(status) {
@@ -95,12 +106,12 @@ function renderLineAudioTaskList() {
   const pendingCountEl = document.getElementById("lineAudioPendingCount");
   const pendingCount = (lineAudioTasks || []).filter((task) => (task.status || "pending") === "pending").length;
   if (pendingCountEl) {
-    pendingCountEl.textContent = `pending ${pendingCount}`;
+    pendingCountEl.textContent = `${t("common.status.pending")} ${pendingCount}`;
   }
   listEl.innerHTML = "";
 
   if (!lineAudioTasks || lineAudioTasks.length === 0) {
-    listEl.innerHTML = '<li class="task-list-empty">暂无台词音频任务</li>';
+    listEl.innerHTML = `<li class="task-list-empty">${translateText("暂无台词音频任务")}</li>`;
     return;
   }
 
@@ -113,11 +124,11 @@ function renderLineAudioTaskList() {
     const comfyStatus = task.comfyStatus || "-";
 
     li.innerHTML = `
-      <div class="task-list-title">#${task.id} | ${task.chapterTitle || `第${task.chapterNum}章`}</div>
-      <div class="task-list-subtitle">${escapeHtml(task.roleName || "未知角色")}：${escapeHtml(task.lineText?.substring(0, 20) || "")}...</div>
+      <div class="task-list-title">#${task.id} | ${task.chapterTitle || `#${task.chapterNum}`}</div>
+      <div class="task-list-subtitle">${escapeHtml(task.roleName || "-")}：${escapeHtml(task.lineText?.substring(0, 20) || "")}...</div>
       <div class="task-list-meta">
-        <span class="status-badge ${statusClass(status)}">${status}</span>
-        <span>行号: ${task.lineIndex + 1}</span>
+        <span class="status-badge ${statusClass(status)}">${statusText(status)}</span>
+        <span>${translateText("行号")} : ${task.lineIndex + 1}</span>
         <span>${escapeHtml(getScheduleLabel(task))}</span>
       </div>
     `;
@@ -147,43 +158,43 @@ function renderLineAudioTaskDetail(task) {
 
   let html = '<div class="task-detail-grid">';
 
-  html += `<div class="detail-row"><span class="detail-label">任务ID:</span><span class="detail-value">${task.id}</span></div>`;
-  html += `<div class="detail-row"><span class="detail-label">章节:</span><span class="detail-value">${escapeHtml(task.chapterTitle || `第${task.chapterNum}章`)}</span></div>`;
-  html += `<div class="detail-row"><span class="detail-label">台词序号:</span><span class="detail-value">${task.lineIndex + 1}</span></div>`;
-  html += `<div class="detail-row"><span class="detail-label">角色:</span><span class="detail-value">${escapeHtml(task.roleName || "-")}</span></div>`;
-  html += `<div class="detail-row"><span class="detail-label">台词:</span><span class="detail-value">${escapeHtml(task.lineText || "-")}</span></div>`;
-  html += `<div class="detail-row"><span class="detail-label">参考文本:</span><span class="detail-value">${escapeHtml(task.referenceText || "-")}</span></div>`;
-  html += `<div class="detail-row"><span class="detail-label">参考音频:</span><span class="detail-value">${escapeHtml(task.referenceAudioPath || "-")}</span></div>`;
+  html += `<div class="detail-row"><span class="detail-label">${translateText("任务ID:")}</span><span class="detail-value">${task.id}</span></div>`;
+  html += `<div class="detail-row"><span class="detail-label">${translateText("章节:")}</span><span class="detail-value">${escapeHtml(task.chapterTitle || `#${task.chapterNum}`)}</span></div>`;
+  html += `<div class="detail-row"><span class="detail-label">${translateText("台词序号:")}</span><span class="detail-value">${task.lineIndex + 1}</span></div>`;
+  html += `<div class="detail-row"><span class="detail-label">${translateText("角色:")}</span><span class="detail-value">${escapeHtml(task.roleName || "-")}</span></div>`;
+  html += `<div class="detail-row"><span class="detail-label">${translateText("台词:")}</span><span class="detail-value">${escapeHtml(task.lineText || "-")}</span></div>`;
+  html += `<div class="detail-row"><span class="detail-label">${translateText("参考文本:")}</span><span class="detail-value">${escapeHtml(task.referenceText || "-")}</span></div>`;
+  html += `<div class="detail-row"><span class="detail-label">${translateText("参考音频:")}</span><span class="detail-value">${escapeHtml(task.referenceAudioPath || "-")}</span></div>`;
 
   const status = task.status || "pending";
-  html += `<div class="detail-row"><span class="detail-label">状态:</span><span class="detail-value"><span class="status-badge ${statusClass(status)}">${status}</span></span></div>`;
-  html += `<div class="detail-row"><span class="detail-label">Comfy状态:</span><span class="detail-value">${escapeHtml(task.comfyStatus || "-")}</span></div>`;
-  html += `<div class="detail-row"><span class="detail-label">Comfy Prompt ID:</span><span class="detail-value">${escapeHtml(task.comfyPromptId || "-")}</span></div>`;
-  html += `<div class="detail-row"><span class="detail-label">输出文件:</span><span class="detail-value">${escapeHtml(task.outputFilename || "-")}</span></div>`;
-  html += `<div class="detail-row"><span class="detail-label">本地下载路径:</span><span class="detail-value">${escapeHtml(task.downloadedFilePath || "-")}</span></div>`;
-  html += `<div class="detail-row"><span class="detail-label">执行设置:</span><span class="detail-value">${escapeHtml(getScheduleLabel(task))}</span></div>`;
-  html += `<div class="detail-row"><span class="detail-label">任务用时:</span><span class="detail-value">${calcTaskRuntime(task)}</span></div>`;
+  html += `<div class="detail-row"><span class="detail-label">${translateText("状态:")}</span><span class="detail-value"><span class="status-badge ${statusClass(status)}">${statusText(status)}</span></span></div>`;
+  html += `<div class="detail-row"><span class="detail-label">${translateText("Comfy状态:")}</span><span class="detail-value">${escapeHtml(task.comfyStatus || "-")}</span></div>`;
+  html += `<div class="detail-row"><span class="detail-label">${translateText("Comfy Prompt ID:")}</span><span class="detail-value">${escapeHtml(task.comfyPromptId || "-")}</span></div>`;
+  html += `<div class="detail-row"><span class="detail-label">${translateText("输出文件:")}</span><span class="detail-value">${escapeHtml(task.outputFilename || "-")}</span></div>`;
+  html += `<div class="detail-row"><span class="detail-label">${translateText("本地下载路径:")}</span><span class="detail-value">${escapeHtml(task.downloadedFilePath || "-")}</span></div>`;
+  html += `<div class="detail-row"><span class="detail-label">${translateText("执行设置:")}</span><span class="detail-value">${escapeHtml(getScheduleLabel(task))}</span></div>`;
+  html += `<div class="detail-row"><span class="detail-label">${translateText("任务用时:")}</span><span class="detail-value">${calcTaskRuntime(task)}</span></div>`;
 
   if (task.errorMessage) {
-    html += `<div class="detail-row"><span class="detail-label">错误信息:</span><span class="detail-value error-text">${escapeHtml(task.errorMessage)}</span></div>`;
+    html += `<div class="detail-row"><span class="detail-label">${translateText("错误信息:")}</span><span class="detail-value error-text">${escapeHtml(task.errorMessage)}</span></div>`;
   }
 
-  html += `<div class="detail-row"><span class="detail-label">创建时间:</span><span class="detail-value">${fmtDateTime(task.createdAt)}</span></div>`;
-  html += `<div class="detail-row"><span class="detail-label">更新时间:</span><span class="detail-value">${fmtDateTime(task.updatedAt)}</span></div>`;
+  html += `<div class="detail-row"><span class="detail-label">${translateText("创建时间:")}</span><span class="detail-value">${fmtDateTime(task.createdAt)}</span></div>`;
+  html += `<div class="detail-row"><span class="detail-label">${translateText("更新时间:")}</span><span class="detail-value">${fmtDateTime(task.updatedAt)}</span></div>`;
 
   html += '</div>';
 
   // 音频播放器
   if (status === "completed" && task.id) {
     html += '<div class="task-audio-section">';
-    html += '<h4>音频试听</h4>';
+    html += `<h4>${translateText("音频试听")}</h4>`;
     html += `<audio id="lineAudioTaskPlayer" controls preload="metadata" src="/api/line-audio-tasks/${Number(task.id)}/file"></audio>`;
     html += '</div>';
   }
 
   // 操作按钮
   html += '<div class="task-actions">';
-  html += `<button class="ghost-btn danger delete-task-btn" data-task-id="${task.id}" type="button">删除任务</button>`;
+  html += `<button class="ghost-btn danger delete-task-btn" data-task-id="${task.id}" type="button">${translateText("删除任务")}</button>`;
   html += '</div>';
 
   detailEl.innerHTML = html;
@@ -192,16 +203,17 @@ function renderLineAudioTaskDetail(task) {
   const deleteBtn = detailEl.querySelector(".delete-task-btn");
   if (deleteBtn) {
     deleteBtn.addEventListener("click", async () => {
-      if (!window.confirm("确定要删除这个任务吗？")) return;
+      if (!window.confirm(translateText("确定要删除这个任务吗？"))) return;
       try {
         await deleteLineAudioTask(task.id);
-        toast("任务已删除");
+        toast(translateText("任务已删除"));
         lineAudioTasks = lineAudioTasks.filter((t) => t.id !== task.id);
         if (activeLineAudioTaskId === task.id) {
           activeLineAudioTaskId = null;
-          detailEl.innerHTML = '<p class="empty-text">请选择左侧任务查看详情。</p>';
+          detailEl.innerHTML = `<p class="empty-text">${translateText("请选择左侧任务查看详情。")}</p>`;
         }
         renderLineAudioTaskList();
+        localizeDocumentText(document);
       } catch (err) {
         toast(err.message);
       }
@@ -214,6 +226,7 @@ async function loadLineAudioTaskList() {
   try {
     lineAudioTasks = await fetchLineAudioTasks(activeNovel.id);
     renderLineAudioTaskList();
+    localizeDocumentText(document);
     if (activeLineAudioTaskId == null && lineAudioTasks.length > 0) {
       await loadLineAudioTaskDetail(lineAudioTasks[0].id);
     } else if (activeLineAudioTaskId != null) {
@@ -237,6 +250,7 @@ async function loadLineAudioTaskDetail(taskId) {
     return;
   }
   renderLineAudioTaskDetail(task);
+  localizeDocumentText(document);
 }
 
 async function refreshLineAudioTasks() {
@@ -278,7 +292,7 @@ function bindActions() {
     applyLineAudioRefreshInterval();
     const seconds = Number(value || 0);
     if (seconds > 0) {
-      toast(`已设置自动刷新: ${seconds}秒`);
+      toast(`${translateText("已设置自动刷新")}: ${seconds}${translateText("秒")}`);
     }
   });
 
@@ -289,7 +303,7 @@ function bindActions() {
     if (!activeNovel) return;
     setHeader(activeNovel);
     activeLineAudioTaskId = null;
-    document.getElementById("lineAudioTaskDetail").innerHTML = '<p class="empty-text">请选择左侧任务查看详情。</p>';
+    document.getElementById("lineAudioTaskDetail").innerHTML = `<p class="empty-text">${translateText("请选择左侧任务查看详情。")}</p>`;
     await refreshLineAudioTasks();
     toast(`${t("common.view")}: ${activeNovel.name}`);
   });
@@ -303,8 +317,9 @@ async function init() {
   activeNovel = getNovelByQueryOrActive();
 
   if (!activeNovel) {
-    document.getElementById("lineAudioPageTitle").textContent = "暂无小说";
-    document.getElementById("lineAudioNovelSelect").innerHTML = '<option value="">暂无小说</option>';
+    document.getElementById("lineAudioPageTitle").textContent = translateText("暂无小说");
+    document.getElementById("lineAudioNovelSelect").innerHTML = `<option value="">${translateText("暂无小说")}</option>`;
+    localizeDocumentText(document);
     return;
   }
 
@@ -315,6 +330,7 @@ async function init() {
   bindActions();
   await refreshLineAudioTasks();
   applyLineAudioRefreshInterval();
+  localizeDocumentText(document);
 }
 
 init().catch((err) => {

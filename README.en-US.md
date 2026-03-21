@@ -4,6 +4,10 @@
 
 Multi-novel management and audio generation toolkit (SQLite + local file storage + ComfyUI + LLM).
 
+## Novel To Audiobook Flow
+
+![Novel to audiobook flow](docs/flow-en.jpg)
+
 ## Video Introduction
 
 - Bilibili: https://www.bilibili.com/video/BV1vXP3znEAT

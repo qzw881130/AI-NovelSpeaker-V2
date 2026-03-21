@@ -143,15 +143,15 @@ function getLineAudioQueueSchedule() {
   const mode = String(queue.mode || "immediate").trim();
   const scheduledAt = String(queue.scheduledAt || "").trim();
   if (mode !== "scheduled") {
-    return { mode: "immediate", scheduledAt: "", label: "立即执行" };
+    return { mode: "immediate", scheduledAt: "", label: translateText("立即执行") };
   }
   if (!scheduledAt) {
-    return { mode: "immediate", scheduledAt: "", label: "立即执行" };
+    return { mode: "immediate", scheduledAt: "", label: translateText("立即执行") };
   }
   return {
     mode: "scheduled",
     scheduledAt,
-    label: `指定时间执行 ${fmtDateTime(scheduledAt) || scheduledAt}`,
+    label: `${translateText("指定时间执行")} ${fmtDateTime(scheduledAt) || scheduledAt}`,
   };
 }
 
@@ -264,6 +264,7 @@ function resetChapterAudioPlayer() {
 function refreshChapterAudioState(detail) {
   const downloadBtn = document.getElementById("downloadAudioBtn");
   if (!activeNovel || !detail?.hasAudio) {
+    downloadBtn.classList.add("hidden");
     downloadBtn.disabled = true;
     resetChapterAudioPlayer();
     return;
@@ -274,6 +275,7 @@ function refreshChapterAudioState(detail) {
   player.src = `/api/novels/${Number(activeNovel.id)}/chapters/${Number(detail.chapterNum)}/audio-stream`;
   duration.textContent = "...";
   box.classList.remove("hidden");
+  downloadBtn.classList.remove("hidden");
   downloadBtn.disabled = false;
 }
 
@@ -298,6 +300,7 @@ async function loadChapter(chapterNum) {
     localizeDocumentText(document);
   } catch (err) {
     resetChapterAudioPlayer();
+    document.getElementById("downloadAudioBtn").classList.add("hidden");
     document.getElementById("downloadAudioBtn").disabled = true;
     setStatus(t("error.loadFailed", { msg: err.message }));
   }
@@ -576,6 +579,7 @@ async function refreshChapters() {
     activeChapterNum = null;
     activeChapterDetail = null;
     resetChapterAudioPlayer();
+    document.getElementById("downloadAudioBtn").classList.add("hidden");
     document.getElementById("downloadAudioBtn").disabled = true;
     document.getElementById("chapterTitle").textContent = "暂无章节";
     document.getElementById("chapterMeta").textContent = "当前小说尚未创建章节";
@@ -597,8 +601,8 @@ function bindActions() {
     if (!activeNovel) return;
     try {
       await refreshChapters();
-      setStatus("章节数据已刷新");
-      toast("章节数据已刷新");
+      setStatus(translateText("章节数据已刷新"));
+      toast(translateText("章节数据已刷新"));
     } catch (err) {
       setStatus(t("error.loadFailed", { msg: err.message }));
       toast(t("error.loadFailed", { msg: err.message }));
@@ -613,7 +617,7 @@ function bindActions() {
   document.getElementById("downloadChapterBtn").addEventListener("click", () => {
     if (!activeChapterDetail || !activeNovel) return;
     downloadText(`${activeNovel.name}-${activeChapterDetail.title}.txt`, activeChapterDetail.content || "");
-    setStatus("开始下载文本");
+    setStatus(translateText("开始下载文本"));
   });
 
   document.getElementById("convertJsonBtn").addEventListener("click", async () => {
@@ -714,7 +718,7 @@ function bindActions() {
     }
     downloadChapterAudio(activeNovel.id, activeChapterDetail.chapterNum)
       .then(() => {
-        setStatus("开始下载音频");
+        setStatus(translateText("开始下载音频"));
       })
       .catch((err) => {
         setStatus(t("error.operationFailed", { msg: err.message }));
@@ -837,8 +841,8 @@ function bindActions() {
     try {
       await mergeChapterLineAudio(activeNovel.id, activeChapterNum);
       await refreshChapters();
-      setStatus("音频已合并");
-      toast("音频已合并");
+      setStatus(translateText("音频已合并"));
+      toast(translateText("音频已合并"));
       const url = getMergedAudioUrl(activeNovel.id, activeChapterNum);
       const audio = new Audio(url);
       audio.play();
@@ -903,7 +907,7 @@ function bindActions() {
     duration.textContent = `时长：${fmtDuration(player.duration)}`;
   });
   player.addEventListener("error", () => {
-    duration.textContent = "时长：读取失败";
+    duration.textContent = translateText("时长：读取失败");
   });
 
 }
@@ -1153,6 +1157,7 @@ function renderLineAudioTable() {
 
   if (!rows.length) {
     root.innerHTML = '<p class="empty-text">当前筛选条件下暂无台词。</p>';
+    localizeDocumentText(document);
     return;
   }
 
@@ -1235,6 +1240,7 @@ function renderLineAudioTable() {
   root.appendChild(list);
   bindLineAudioButtons(root);
   bindLineEditingEvents(root);
+  localizeDocumentText(document);
 }
 
 function bindLineAudioButtons(root) {
@@ -1437,7 +1443,7 @@ function renderRolesTable() {
           <td><input class="role-input" data-field="name" value="${escapeHtml(role.name)}" /></td>
           <td><textarea class="role-textarea" data-field="instruct" rows="2">${escapeHtml(role.instruct)}</textarea></td>
           <td><textarea class="role-textarea" data-field="text" rows="2">${escapeHtml(role.text)}</textarea></td>
-          <td><button class="ghost-btn btn-sm delete-role-btn" type="button">删除</button></td>
+          <td><button class="ghost-btn btn-sm delete-role-btn" type="button">${translateText("删除")}</button></td>
         </tr>
       `;
     } else {
@@ -1449,11 +1455,11 @@ function renderRolesTable() {
       
       let actionHtml = '<span class="text-muted">-</span>';
       if (!defaultRole) {
-        actionHtml = '<button class="ghost-btn btn-sm add-to-library-btn" type="button">加入角色库</button>';
+        actionHtml = `<button class="ghost-btn btn-sm add-to-library-btn" type="button">${translateText("加入角色库")}</button>`;
       } else if (String(defaultRole.instruct || "").trim() !== roleInstruct) {
-        actionHtml = '<button class="ghost-btn btn-sm replace-library-btn" type="button">替换角色库</button>';
+        actionHtml = `<button class="ghost-btn btn-sm replace-library-btn" type="button">${translateText("替换角色库")}</button>`;
       } else {
-        actionHtml = '<span class="success-text">已设为默认</span>';
+        actionHtml = `<span class="success-text">${translateText("已设为默认")}</span>`;
       }
       
       return `
@@ -1501,21 +1507,22 @@ function renderRolesTable() {
             }),
           });
           if (res.ok) {
-            toast("已保存到角色库");
+            toast(translateText("已保存到角色库"));
             await loadGlobalRoleDefaults();
             renderRolesTable();
             await updateChapterActionWarnings();
           } else {
-            toast("保存失败");
+            toast(translateText("保存失败"));
           }
         } catch {
-          toast("保存失败");
+          toast(translateText("保存失败"));
         } finally {
           btn.disabled = false;
         }
       });
     });
   }
+  localizeDocumentText(document);
 }
 
 async function openRolesDialog() {
@@ -1672,10 +1679,9 @@ async function updateLineAudioWarningBadge() {
       return !(entry && entry.hasAudio && entry.streamUrl);
     });
     const hasWarning = incomplete.length > 0;
-    const sample = incomplete.slice(0, 5).map((item) => `${item.index + 1}:${item.line}`).join("；");
     warningBtn.classList.toggle("has-line-audio-warning", hasWarning);
     warningBtn.title = hasWarning
-      ? `以下台词尚未生成音频：${sample}${incomplete.length > 5 ? "..." : ""}`
+      ? `还有 ${incomplete.length} 条台词未生成音频`
       : "";
   } catch {
     warningBtn.classList.remove("has-line-audio-warning");
@@ -1745,6 +1751,7 @@ function openChapterModal(mode) {
 
 async function init() {
   renderNav();
+  document.getElementById("downloadAudioBtn").classList.add("hidden");
   document.getElementById("downloadAudioBtn").disabled = true;
   applyChapterFontSize(getSavedChapterFontSize());
   updateChapterNavButtons();

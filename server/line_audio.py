@@ -776,20 +776,19 @@ def merge_chapter_line_audio(
 
     # 检查所有音频是否都已生成
     temp_dir = ROOT_DIR / "temp" / english_dir / "audio" / str(chapter_num)
-    missing: list[str] = []
+    missing_count = 0
     files: list[Path] = []
 
     for line in lines:
         line_hash = str(line["line_hash"])
         path = temp_dir / f"{line_hash}.flac"
         if not path.exists() or not path.is_file() or path.stat().st_size <= 0:
-            preview = str(line["raw_line"])[:28]
-            missing.append(f"{int(line['line_index']) + 1}:{preview}")
+            missing_count += 1
         else:
             files.append(path)
 
-    if missing:
-        return False, f"以下台词尚未生成音频：{'；'.join(missing[:8])}", None
+    if missing_count > 0:
+        return False, f"还有 {missing_count} 条台词未生成音频", None
 
     # 创建间隔静音文件
     temp_dir.mkdir(parents=True, exist_ok=True)

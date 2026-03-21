@@ -4,6 +4,10 @@
 
 多小说管理与有声生成工具（SQLite + 本地文件存储 + ComfyUI + LLM）。
 
+## 小说转有声小说流程
+
+![小说转有声小说流程](docs/flow.jpg)
+
 ## 视频介绍
 
 - B站：https://www.bilibili.com/video/BV1vXP3znEAT

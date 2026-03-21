@@ -13,7 +13,7 @@ import {
   uploadRoleSampleAudio,
 } from "./store.js";
 import { renderNav, toast } from "./ui.js";
-import { t } from "./i18n.js";
+import { localizeDocumentText, t, translateText } from "./i18n.js";
 
 let allNovels = [];
 let activeNovel = null;
@@ -60,7 +60,7 @@ function getNovelByQueryOrActive() {
 }
 
 function setHeader(novel) {
-  document.getElementById("rolesPageTitle").textContent = `${novel.name} - 角色库`;
+  document.getElementById("rolesPageTitle").textContent = `${novel.name} - ${translateText("角色库")}`;
 }
 
 function renderNovelSelect() {
@@ -126,19 +126,20 @@ async function getSelectedChapterRoleNames() {
 function renderChapterFilter() {
   const select = document.getElementById("chapterFilterSelect");
   if (!select) return;
-  const options = ['<option value="all">全部</option>'];
+  const options = [`<option value="all">${translateText("全部")}</option>`];
   const validChapterValues = new Set(["all"]);
   for (const chapter of chapterItems) {
     const chapterNum = Number(chapter.chapterNum || 0);
-    const title = String(chapter.title || `第${chapterNum}回`).trim();
+    const title = String(chapter.title || `#${chapterNum}`).trim();
     validChapterValues.add(String(chapterNum));
-    options.push(`<option value="${chapterNum}">第${chapterNum}回 ${escapeHtml(title)}</option>`);
+    options.push(`<option value="${chapterNum}">${escapeHtml(title)}</option>`);
   }
   select.innerHTML = options.join("");
   if (!validChapterValues.has(String(rolesFilterState.chapter))) {
     rolesFilterState.chapter = "all";
   }
   select.value = rolesFilterState.chapter;
+  localizeDocumentText(document);
 }
 
 function getChapterFilteredRoleItems() {
@@ -201,18 +202,19 @@ function renderRoleNameFilter() {
   const keyword = String(rolesFilterState.keyword || "").trim().toLowerCase();
   const names = getAllRoleNames().filter((name) => !keyword || name.toLowerCase().includes(keyword));
   if (!names.length) {
-    roleNameFilterDropdownEl.innerHTML = '<div class="role-name-filter-empty">无匹配角色</div>';
+    roleNameFilterDropdownEl.innerHTML = `<div class="role-name-filter-empty">${translateText("无匹配角色")}</div>`;
   } else {
     roleNameFilterDropdownEl.innerHTML = names.map((name) => {
       const active = rolesFilterState.names.has(name);
       return `
         <button class="role-name-option${active ? " active" : ""}" data-role-name="${escapeHtml(name)}" type="button">
           <span>${escapeHtml(name)}</span>
-          <span>${active ? "已选" : "选择"}</span>
+          <span>${active ? translateText("已选") : translateText("选择")}</span>
         </button>
       `;
     }).join("");
   }
+  localizeDocumentText(document);
 
   for (const option of roleNameFilterDropdownEl.querySelectorAll(".role-name-option")) {
     option.addEventListener("mousedown", (event) => {
@@ -266,9 +268,9 @@ function setRolesPageStatus(text, isError = false) {
 function roleLevelOptions(value) {
   const current = Number(value || 3);
   return [
-    { value: 1, label: "一等角色" },
-    { value: 2, label: "二等角色" },
-    { value: 3, label: "三等角色" },
+    { value: 1, label: translateText("一等角色") },
+    { value: 2, label: translateText("二等角色") },
+    { value: 3, label: translateText("三等角色") },
   ]
     .map((item) => `<option value="${item.value}"${item.value === current ? " selected" : ""}>${item.label}</option>`)
     .join("");
@@ -278,7 +280,7 @@ function buildSampleCell(role) {
   const hasAudio = String(role.sampleAudioPath || "").trim();
   const source = String(role.sampleAudioSource || "").trim();
   const sourceIcon = hasAudio
-    ? `<span class="role-sample-source role-sample-source-${escapeHtml(source || "unknown")}" title="${source === "uploaded" ? "本地上传" : source === "generated" ? "AI生成" : "未知来源"}">${source === "uploaded" ? "↑" : source === "generated" ? "AI" : "?"}</span>`
+    ? `<span class="role-sample-source role-sample-source-${escapeHtml(source || "unknown")}" title="${source === "uploaded" ? translateText("本地上传") : source === "generated" ? translateText("AI生成") : translateText("未知来源")}">${source === "uploaded" ? "↑" : source === "generated" ? "AI" : "?"}</span>`
     : "";
   const parts = [];
   if (hasAudio) {
@@ -288,21 +290,21 @@ function buildSampleCell(role) {
     parts.push(sourceIcon);
     parts.push(`
       <div class="role-sample-actions">
-        <button class="ghost-btn btn-sm generate-sample-btn" data-role-id="${role.id}" type="button">重新生成</button>
+        <button class="ghost-btn btn-sm generate-sample-btn" data-role-id="${role.id}" type="button">${translateText("重新生成")}</button>
         <input class="role-upload-input hidden" data-role-id="${role.id}" type="file" accept="audio/*,.flac,.wav,.mp3,.m4a,.aac" />
-        <button class="ghost-btn btn-sm upload-sample-btn" data-role-id="${role.id}" type="button">本地上传</button>
-        <button class="ghost-btn btn-sm extract-text-btn" data-role-id="${role.id}" type="button">提取声音文本</button>
+        <button class="ghost-btn btn-sm upload-sample-btn" data-role-id="${role.id}" type="button">${translateText("本地上传")}</button>
+        <button class="ghost-btn btn-sm extract-text-btn" data-role-id="${role.id}" type="button">${translateText("提取声音文本")}</button>
       </div>
     `);
     parts.push('</div>');
   } else {
-    parts.push('<span class="text-muted">未生成</span>');
+    parts.push(`<span class="text-muted">${translateText("未生成")}</span>`);
     parts.push(`
       <div class="role-sample-actions">
-        <button class="ghost-btn btn-sm generate-sample-btn" data-role-id="${role.id}" type="button">生成示例</button>
+        <button class="ghost-btn btn-sm generate-sample-btn" data-role-id="${role.id}" type="button">${translateText("生成示例")}</button>
         <input class="role-upload-input hidden" data-role-id="${role.id}" type="file" accept="audio/*,.flac,.wav,.mp3,.m4a,.aac" />
-        <button class="ghost-btn btn-sm upload-sample-btn" data-role-id="${role.id}" type="button">本地上传</button>
-        <button class="ghost-btn btn-sm extract-text-btn" data-role-id="${role.id}" type="button" disabled>提取声音文本</button>
+        <button class="ghost-btn btn-sm upload-sample-btn" data-role-id="${role.id}" type="button">${translateText("本地上传")}</button>
+        <button class="ghost-btn btn-sm extract-text-btn" data-role-id="${role.id}" type="button" disabled>${translateText("提取声音文本")}</button>
       </div>
     `);
   }
@@ -315,7 +317,8 @@ function renderRolesTable() {
 
   const items = getFilteredRoleItems();
   if (!items.length) {
-    tbody.innerHTML = '<tr><td colspan="6" class="empty-cell">暂无角色数据</td></tr>';
+    tbody.innerHTML = `<tr><td colspan="6" class="empty-cell">${translateText("暂无角色数据")}</td></tr>`;
+    localizeDocumentText(document);
     return;
   }
 
@@ -333,9 +336,9 @@ function renderRolesTable() {
       </td>
       <td>
         <div class="role-row-actions">
-          <button class="ghost-btn btn-sm save-role-btn" data-role-id="${role.id}" type="button">保存</button>
-          <button class="ghost-btn btn-sm duplicate-role-btn" data-role-id="${role.id}" type="button">复制</button>
-          <button class="ghost-btn btn-sm danger delete-role-btn" data-role-id="${role.id}" data-role-name="${escapeHtml(role.name || "")}" type="button">删除</button>
+          <button class="ghost-btn btn-sm save-role-btn" data-role-id="${role.id}" type="button">${translateText("保存")}</button>
+          <button class="ghost-btn btn-sm duplicate-role-btn" data-role-id="${role.id}" type="button">${translateText("复制")}</button>
+          <button class="ghost-btn btn-sm danger delete-role-btn" data-role-id="${role.id}" data-role-name="${escapeHtml(role.name || "")}" type="button">${translateText("删除")}</button>
         </div>
       </td>
     `;
@@ -354,7 +357,7 @@ function renderRolesTable() {
       const sampleText = String(sampleTextEl?.value || "").trim();
 
       if (!name) {
-        setRolesPageStatus("角色名不能为空", true);
+        setRolesPageStatus(translateText("角色名不能为空"), true);
         return;
       }
 
@@ -365,7 +368,7 @@ function renderRolesTable() {
         if (idx >= 0) {
           roleItems[idx] = result.role || roleItems[idx];
         }
-        setRolesPageStatus(`已保存「${result.role?.name || "角色"}」`);
+        setRolesPageStatus(`${translateText("已保存")}: ${result.role?.name || translateText("角色")}`);
         renderRoleStats({
           total: roleItems.length,
           level_1: roleItems.filter((item) => Number(item.roleLevel) === 1).length,
@@ -375,7 +378,7 @@ function renderRolesTable() {
         });
         renderRolesTable();
       } catch (err) {
-        setRolesPageStatus(err.message || "保存角色失败", true);
+        setRolesPageStatus(err.message || translateText("保存角色失败"), true);
       } finally {
         btn.disabled = false;
       }
@@ -390,10 +393,10 @@ function renderRolesTable() {
       try {
         const result = await duplicateRole(activeNovel.id, roleId);
         roleItems.push(result.role);
-        setRolesPageStatus(`已复制角色为「${result.role?.name || "新角色"}」`);
+        setRolesPageStatus(`${translateText("已复制角色为")} ${result.role?.name || translateText("新角色")}`);
         await refreshRolesPage();
       } catch (err) {
-        setRolesPageStatus(err.message || "复制角色失败", true);
+        setRolesPageStatus(err.message || translateText("复制角色失败"), true);
       } finally {
         btn.disabled = false;
       }
@@ -404,8 +407,8 @@ function renderRolesTable() {
   for (const btn of tbody.querySelectorAll(".delete-role-btn")) {
     btn.addEventListener("click", async () => {
       const roleId = Number(btn.dataset.roleId || 0);
-      const roleName = String(btn.dataset.roleName || "角色");
-      if (!window.confirm(`确定删除「${roleName}」吗？`)) return;
+      const roleName = String(btn.dataset.roleName || translateText("角色"));
+      if (!window.confirm(`${translateText("确定删除")}: ${roleName}?`)) return;
 
       btn.disabled = true;
       try {
@@ -419,9 +422,9 @@ function renderRolesTable() {
           without_sample: roleItems.filter((item) => !String(item.sampleAudioPath || "").trim()).length,
         });
         renderRolesTable();
-        setRolesPageStatus(`已删除「${roleName}」`);
+        setRolesPageStatus(`${translateText("已删除")}: ${roleName}`);
       } catch (err) {
-        setRolesPageStatus(err.message || "删除角色失败", true);
+        setRolesPageStatus(err.message || translateText("删除角色失败"), true);
       } finally {
         btn.disabled = false;
       }
@@ -441,11 +444,11 @@ function renderRolesTable() {
         if (idx >= 0) {
           roleItems[idx] = result.role || roleItems[idx];
         }
-        setRolesPageStatus(`已更新「${result.role?.name || "角色"}」级别`);
+        setRolesPageStatus(`${translateText("已更新")}: ${result.role?.name || translateText("角色")} ${translateText("级别")}`);
         await refreshRolesPage();
       } catch (err) {
         selectEl.value = String(previous);
-        setRolesPageStatus(err.message || "保存角色级别失败", true);
+        setRolesPageStatus(err.message || translateText("保存角色级别失败"), true);
       } finally {
         selectEl.disabled = false;
       }
@@ -459,21 +462,21 @@ function renderRolesTable() {
       if (!roleId) return;
       btn.disabled = true;
       const previousText = btn.textContent;
-      btn.textContent = "生成中...";
+      btn.textContent = translateText("生成中...");
       try {
         const res = await fetch(`/api/novels/${activeNovel.id}/roles/${roleId}/generate-sample`, { method: "POST" });
         const data = await res.json();
         if (!res.ok) {
-          throw new Error(data.error || "生成示例失败");
+          throw new Error(data.error || translateText("生成示例失败"));
         }
         const idx = roleItems.findIndex((r) => r.id === roleId);
         if (idx >= 0) {
           roleItems[idx] = data.role || roleItems[idx];
         }
-        setRolesPageStatus(`已生成「${data.role?.name || "角色"}」声音示例`);
+        setRolesPageStatus(`${translateText("已生成")}: ${data.role?.name || translateText("角色")} ${translateText("声音示例")}`);
         renderRolesTable();
       } catch (err) {
-        setRolesPageStatus(err.message || "生成示例失败", true);
+        setRolesPageStatus(err.message || translateText("生成示例失败"), true);
       } finally {
         btn.disabled = false;
         btn.textContent = previousText;
@@ -488,17 +491,17 @@ function renderRolesTable() {
       if (!roleId || btn.disabled) return;
       btn.disabled = true;
       const previousText = btn.textContent;
-      btn.textContent = "提取中...";
+      btn.textContent = translateText("提取中...");
       try {
         const res = await fetch(`/api/novels/${activeNovel.id}/roles/${roleId}/extract-sample-text`, { method: "POST" });
         const data = await res.json();
         if (!res.ok) {
-          throw new Error(data.error || "提取声音文本失败");
+          throw new Error(data.error || translateText("提取声音文本失败"));
         }
         openRoleTextModal(data.text || "");
-        setRolesPageStatus("已提取声音文本");
+        setRolesPageStatus(translateText("已提取声音文本"));
       } catch (err) {
-        setRolesPageStatus(err.message || "提取声音文本失败", true);
+        setRolesPageStatus(err.message || translateText("提取声音文本失败"), true);
       } finally {
         btn.disabled = false;
         btn.textContent = previousText;
@@ -523,10 +526,10 @@ function renderRolesTable() {
       if (!roleId || !file) return;
 
       const uploadBtn = tbody.querySelector(`.upload-sample-btn[data-role-id="${roleId}"]`);
-      const previousText = uploadBtn?.textContent || "本地上传";
+      const previousText = uploadBtn?.textContent || translateText("本地上传");
       if (uploadBtn) {
         uploadBtn.disabled = true;
-        uploadBtn.textContent = "上传中...";
+        uploadBtn.textContent = translateText("上传中...");
       }
 
       try {
@@ -536,10 +539,10 @@ function renderRolesTable() {
         if (idx >= 0) {
           roleItems[idx] = result.role || roleItems[idx];
         }
-        setRolesPageStatus(`已上传「${result.role?.name || "角色"}」声音示例`);
+        setRolesPageStatus(`${translateText("已上传")}: ${result.role?.name || translateText("角色")} ${translateText("声音示例")}`);
         renderRolesTable();
       } catch (err) {
-        setRolesPageStatus(err.message || "上传声音示例失败", true);
+        setRolesPageStatus(err.message || translateText("上传声音示例失败"), true);
       } finally {
         inputEl.value = "";
         if (uploadBtn) {
@@ -549,6 +552,7 @@ function renderRolesTable() {
       }
     });
   }
+  localizeDocumentText(document);
 }
 
 async function refreshRolesPage() {
@@ -582,7 +586,7 @@ function openRoleModal(mode, roleId = null) {
   roleAudioBase64 = "";
 
   if (mode === "create") {
-    document.getElementById("roleModalTitle").textContent = "添加角色";
+    document.getElementById("roleModalTitle").textContent = translateText("添加角色");
     form.name.value = "";
     form.instruct.value = "";
     form.sampleText.value = "";
@@ -591,7 +595,7 @@ function openRoleModal(mode, roleId = null) {
   } else {
     const role = roleItems.find((r) => r.id === roleId);
     if (!role) return;
-    document.getElementById("roleModalTitle").textContent = "编辑角色";
+    document.getElementById("roleModalTitle").textContent = translateText("编辑角色");
     form.name.value = role.name || "";
     form.instruct.value = role.instruct || "";
     form.sampleText.value = role.sampleText || "";
@@ -603,6 +607,7 @@ function openRoleModal(mode, roleId = null) {
     }
   }
   modal.showModal();
+  localizeDocumentText(document);
 }
 
 async function saveRoleFromForm() {
@@ -613,7 +618,7 @@ async function saveRoleFromForm() {
     sampleText: form.sampleText.value.trim(),
   };
   if (!input.name) {
-    toast("角色名不能为空");
+    toast(translateText("角色名不能为空"));
     return;
   }
   try {
@@ -623,7 +628,7 @@ async function saveRoleFromForm() {
         await uploadRoleSampleAudio(activeNovel.id, result.role.id, roleAudioBase64, "uploaded");
       }
       roleItems.push(result.role);
-      toast("角色已创建");
+      toast(translateText("角色已创建"));
     } else {
       const result = await updateRole(activeNovel.id, editingRoleId, input);
       if (roleAudioBase64) {
@@ -633,7 +638,7 @@ async function saveRoleFromForm() {
       if (idx >= 0) {
         roleItems[idx] = result.role || roleItems[idx];
       }
-      toast("角色已更新");
+      toast(translateText("角色已更新"));
     }
     document.getElementById("roleModal").close();
     await refreshRolesPage();
@@ -647,9 +652,9 @@ function bindActions() {
     setRolesPageStatus("");
     try {
       await refreshRolesPage();
-      setRolesPageStatus("角色列表已刷新");
+      setRolesPageStatus(translateText("角色列表已刷新"));
     } catch (err) {
-      setRolesPageStatus("刷新角色列表失败", true);
+      setRolesPageStatus(translateText("刷新角色列表失败"), true);
     }
   });
 
@@ -676,14 +681,14 @@ function bindActions() {
     try {
       const base64 = await fileToBase64(file);
       roleAudioBase64 = base64;
-      document.getElementById("roleAudioStatus").textContent = `已选择: ${file.name}`;
+      document.getElementById("roleAudioStatus").textContent = `${translateText("已选择")}: ${file.name}`;
     } catch (err) {
-      toast("上传失败: " + err.message);
+      toast(`${translateText("上传失败")}: ${err.message}`);
     }
   });
 
   document.getElementById("generateRoleAudioBtn").addEventListener("click", async () => {
-    toast("生成音频功能需要在保存角色后使用");
+    toast(translateText("生成音频功能需要在保存角色后使用"));
   });
 
   document.getElementById("sampleFilterSelect").addEventListener("change", (e) => {
@@ -740,7 +745,7 @@ function bindActions() {
     closeRoleNameFilterDropdown();
     renderRoleNameFilter();
     renderRolesTable();
-    setRolesPageStatus("已清空筛选");
+    setRolesPageStatus(translateText("已清空筛选"));
   });
 
   document.addEventListener("click", (event) => {
@@ -762,9 +767,10 @@ function bindActions() {
 }
 
 function openRoleTextModal(text) {
-  document.getElementById("roleTextModalContent").textContent = String(text || "").trim() || "未提取到文本";
+  document.getElementById("roleTextModalContent").textContent = String(text || "").trim() || translateText("未提取到文本");
   document.getElementById("roleTextModal").classList.remove("hidden");
   document.getElementById("roleTextModal").showModal();
+  localizeDocumentText(document);
 }
 
 function closeRoleTextModal() {
@@ -779,8 +785,9 @@ async function init() {
   activeNovel = getNovelByQueryOrActive();
 
   if (!activeNovel) {
-    document.getElementById("rolesPageTitle").textContent = "暂无小说";
-    document.getElementById("rolesNovelSelect").innerHTML = '<option value="">暂无小说</option>';
+    document.getElementById("rolesPageTitle").textContent = translateText("暂无小说");
+    document.getElementById("rolesNovelSelect").innerHTML = `<option value="">${translateText("暂无小说")}</option>`;
+    localizeDocumentText(document);
     return;
   }
 
@@ -789,6 +796,7 @@ async function init() {
   renderNovelSelect();
   bindActions();
   await refreshRolesPage();
+  localizeDocumentText(document);
 }
 
 init().catch((err) => {

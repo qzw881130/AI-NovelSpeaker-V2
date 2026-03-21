@@ -4,6 +4,10 @@
 
 다중 소설 관리 + 오디오 생성 도구입니다 (SQLite + 로컬 파일 저장 + ComfyUI + LLM).
 
+## 소설을 오디오북으로 만드는 흐름
+
+![Novel to audiobook flow](docs/flow-en.jpg)
+
 ## 영상 소개
 
 - Bilibili: https://www.bilibili.com/video/BV1vXP3znEAT

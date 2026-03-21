@@ -4,6 +4,10 @@
 
 多小說管理與有聲生成工具（SQLite + 本地檔案儲存 + ComfyUI + LLM）。
 
+## 小說轉有聲小說流程
+
+![Novel to audiobook flow](docs/flow-en.jpg)
+
 ## 影片介紹
 
 - B站：https://www.bilibili.com/video/BV1vXP3znEAT

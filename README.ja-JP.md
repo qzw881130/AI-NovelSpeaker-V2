@@ -4,6 +4,10 @@
 
 複数小説管理 + 音声生成ツール（SQLite + ローカルファイル保存 + ComfyUI + LLM）。
 
+## 小説を音声化する流れ
+
+![Novel to audiobook flow](docs/flow-en.jpg)
+
 ## 動画紹介
 
 - Bilibili：https://www.bilibili.com/video/BV1vXP3znEAT
