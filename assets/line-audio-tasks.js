@@ -14,6 +14,7 @@ let lineAudioTasks = [];
 let activeLineAudioTaskId = null;
 let lineAudioRefreshTimerId = null;
 let activeLineAudioTaskSignature = "";
+const LINE_AUDIO_REFRESH_INTERVAL_KEY = "ai_novel_line_audio_refresh_interval";
 
 function isTaskDetailAudioPlaying() {
   const player = document.getElementById("lineAudioTaskPlayer");
@@ -91,6 +92,11 @@ function statusClass(status) {
 
 function renderLineAudioTaskList() {
   const listEl = document.getElementById("lineAudioTaskList");
+  const pendingCountEl = document.getElementById("lineAudioPendingCount");
+  const pendingCount = (lineAudioTasks || []).filter((task) => (task.status || "pending") === "pending").length;
+  if (pendingCountEl) {
+    pendingCountEl.textContent = `pending ${pendingCount}`;
+  }
   listEl.innerHTML = "";
 
   if (!lineAudioTasks || lineAudioTasks.length === 0) {
@@ -252,14 +258,25 @@ function applyLineAudioRefreshInterval() {
   }, seconds * 1000);
 }
 
+function restoreLineAudioRefreshInterval() {
+  const select = document.getElementById("refreshLineAudioIntervalSelect");
+  if (!select) return;
+  const saved = localStorage.getItem(LINE_AUDIO_REFRESH_INTERVAL_KEY);
+  if (saved != null && Array.from(select.options).some((option) => option.value === saved)) {
+    select.value = saved;
+  }
+}
+
 function bindActions() {
   document.getElementById("refreshLineAudioTasksBtn").addEventListener("click", () => {
     refreshLineAudioTasks();
   });
 
   document.getElementById("refreshLineAudioIntervalSelect").addEventListener("change", () => {
+    const value = String(document.getElementById("refreshLineAudioIntervalSelect").value || "0");
+    localStorage.setItem(LINE_AUDIO_REFRESH_INTERVAL_KEY, value);
     applyLineAudioRefreshInterval();
-    const seconds = Number(document.getElementById("refreshLineAudioIntervalSelect").value || 0);
+    const seconds = Number(value || 0);
     if (seconds > 0) {
       toast(`已设置自动刷新: ${seconds}秒`);
     }
@@ -294,6 +311,7 @@ async function init() {
   setActiveNovelId(activeNovel.id);
   setHeader(activeNovel);
   renderNovelSelect();
+  restoreLineAudioRefreshInterval();
   bindActions();
   await refreshLineAudioTasks();
   applyLineAudioRefreshInterval();

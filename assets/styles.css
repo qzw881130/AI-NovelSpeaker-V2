@@ -1879,6 +1879,22 @@ menu {
   gap: 12px;
 }
 
+.queue-summary-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 88px;
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid #e6cfb2;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #fffaf2 0%, #f8ecda 100%);
+  color: #8d5a31;
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+}
+
 .task-list {
   list-style: none;
   margin: 0;

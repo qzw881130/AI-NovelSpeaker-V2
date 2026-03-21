@@ -1472,11 +1472,13 @@ def parse_datetime_utc(raw: str) -> datetime | None:
         return None
     try:
         if text.endswith("Z"):
-            dt = datetime.fromisoformat(text[:-1])
+            dt = datetime.fromisoformat(text[:-1]).replace(tzinfo=timezone.utc)
         else:
             dt = datetime.fromisoformat(text.replace(" ", "T"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
         if dt.tzinfo is not None:
-            dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+            dt = dt.astimezone(timezone.utc)
         return dt
     except ValueError:
         return None
