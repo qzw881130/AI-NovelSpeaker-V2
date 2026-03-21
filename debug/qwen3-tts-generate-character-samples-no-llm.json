@@ -5,11 +5,170 @@
   "last_link_id": 19,
   "nodes": [
     {
+      "id": 9,
+      "type": "SaveAudio",
+      "pos": [
+        1398.5107013370116,
+        464.25247811771163
+      ],
+      "size": [
+        270,
+        112
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "audio",
+          "name": "audio",
+          "type": "AUDIO",
+          "link": 8
+        },
+        {
+          "label": "filename_prefix",
+          "name": "filename_prefix",
+          "type": "STRING",
+          "widget": {
+            "name": "filename_prefix"
+          }
+        },
+        {
+          "label": "audioUI",
+          "name": "audioUI",
+          "type": "AUDIO_UI",
+          "widget": {
+            "name": "audioUI"
+          }
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.10.0",
+        "Node name for S&R": "SaveAudio",
+        "ue_properties": {
+          "version": "7.5.2",
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "audio/ComfyUI"
+      ]
+    },
+    {
+      "id": 7,
+      "type": "CR Prompt Text",
+      "pos": [
+        357.08329719008765,
+        367.1405858564771
+      ],
+      "size": [
+        400,
+        200
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "prompt",
+          "name": "prompt",
+          "type": "STRING",
+          "widget": {
+            "name": "prompt"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "label": "prompt",
+          "name": "prompt",
+          "type": "STRING",
+          "links": [
+            15
+          ]
+        },
+        {
+          "label": "show_help",
+          "name": "show_help",
+          "type": "STRING"
+        }
+      ],
+      "properties": {
+        "cnr_id": "ComfyUI_Comfyroll_CustomNodes",
+        "ver": "d78b780ae43fcf8c6b7c6505e6ffb4584281ceca",
+        "Node name for S&R": "CR Prompt Text",
+        "ue_properties": {
+          "version": "7.5.2",
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "奴等了一早晨，叔叔怎的不归来吃早饭？"
+      ]
+    },
+    {
+      "id": 6,
+      "type": "CR Prompt Text",
+      "pos": [
+        362.45537260974874,
+        626.6164883183205
+      ],
+      "size": [
+        400,
+        200
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "prompt",
+          "name": "prompt",
+          "type": "STRING",
+          "widget": {
+            "name": "prompt"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "label": "prompt",
+          "name": "prompt",
+          "type": "STRING",
+          "links": [
+            19
+          ]
+        },
+        {
+          "label": "show_help",
+          "name": "show_help",
+          "type": "STRING"
+        }
+      ],
+      "properties": {
+        "cnr_id": "ComfyUI_Comfyroll_CustomNodes",
+        "ver": "d78b780ae43fcf8c6b7c6505e6ffb4584281ceca",
+        "Node name for S&R": "CR Prompt Text",
+        "ue_properties": {
+          "version": "7.5.2",
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "一个二十六七岁的男性声音，潇洒风流自信豪爽，语气机敏油滑带点霸气，语速中等略快。"
+      ]
+    },
+    {
       "id": 3,
       "type": "FB_Qwen3TTSVoiceDesign",
       "pos": [
-        864.7671376302883,
-        195.5556877189928
+        801.9799913472656,
+        347.49008539246256
       ],
       "size": [
         495.1625340014082,
@@ -138,165 +297,6 @@
         "auto",
         false
       ]
-    },
-    {
-      "id": 9,
-      "type": "SaveAudio",
-      "pos": [
-        1412.9868917889169,
-        229.64356677851376
-      ],
-      "size": [
-        270,
-        112
-      ],
-      "flags": {},
-      "order": 3,
-      "mode": 0,
-      "inputs": [
-        {
-          "label": "audio",
-          "name": "audio",
-          "type": "AUDIO",
-          "link": 8
-        },
-        {
-          "label": "filename_prefix",
-          "name": "filename_prefix",
-          "type": "STRING",
-          "widget": {
-            "name": "filename_prefix"
-          }
-        },
-        {
-          "label": "audioUI",
-          "name": "audioUI",
-          "type": "AUDIO_UI",
-          "widget": {
-            "name": "audioUI"
-          }
-        }
-      ],
-      "outputs": [],
-      "properties": {
-        "cnr_id": "comfy-core",
-        "ver": "0.10.0",
-        "Node name for S&R": "SaveAudio",
-        "ue_properties": {
-          "version": "7.5.2",
-          "widget_ue_connectable": {},
-          "input_ue_unconnectable": {}
-        }
-      },
-      "widgets_values": [
-        "audio/ComfyUI"
-      ]
-    },
-    {
-      "id": 7,
-      "type": "CR Prompt Text",
-      "pos": [
-        378.9228231863291,
-        192.63112380895683
-      ],
-      "size": [
-        400,
-        200
-      ],
-      "flags": {},
-      "order": 0,
-      "mode": 0,
-      "inputs": [
-        {
-          "label": "prompt",
-          "name": "prompt",
-          "type": "STRING",
-          "widget": {
-            "name": "prompt"
-          }
-        }
-      ],
-      "outputs": [
-        {
-          "label": "prompt",
-          "name": "prompt",
-          "type": "STRING",
-          "links": [
-            15
-          ]
-        },
-        {
-          "label": "show_help",
-          "name": "show_help",
-          "type": "STRING"
-        }
-      ],
-      "properties": {
-        "cnr_id": "ComfyUI_Comfyroll_CustomNodes",
-        "ver": "d78b780ae43fcf8c6b7c6505e6ffb4584281ceca",
-        "Node name for S&R": "CR Prompt Text",
-        "ue_properties": {
-          "version": "7.5.2",
-          "widget_ue_connectable": {},
-          "input_ue_unconnectable": {}
-        }
-      },
-      "widgets_values": [
-        "奴等了一早晨，叔叔怎的不归来吃早饭？"
-      ]
-    },
-    {
-      "id": 6,
-      "type": "CR Prompt Text",
-      "pos": [
-        377.94541325809337,
-        474.65425946298734
-      ],
-      "size": [
-        400,
-        200
-      ],
-      "flags": {},
-      "order": 1,
-      "mode": 0,
-      "inputs": [
-        {
-          "label": "prompt",
-          "name": "prompt",
-          "type": "STRING",
-          "widget": {
-            "name": "prompt"
-          }
-        }
-      ],
-      "outputs": [
-        {
-          "label": "prompt",
-          "name": "prompt",
-          "type": "STRING",
-          "links": [
-            19
-          ]
-        },
-        {
-          "label": "show_help",
-          "name": "show_help",
-          "type": "STRING"
-        }
-      ],
-      "properties": {
-        "cnr_id": "ComfyUI_Comfyroll_CustomNodes",
-        "ver": "d78b780ae43fcf8c6b7c6505e6ffb4584281ceca",
-        "Node name for S&R": "CR Prompt Text",
-        "ue_properties": {
-          "version": "7.5.2",
-          "widget_ue_connectable": {},
-          "input_ue_unconnectable": {}
-        }
-      },
-      "widgets_values": [
-        "一个二十六七岁的男性声音，潇洒风流自信豪爽，语气机敏油滑带点霸气，语速中等略快。"
-      ]
     }
   ],
   "links": [
@@ -338,6 +338,19 @@
       "color": "#3f789e",
       "font_size": 240,
       "flags": {}
+    },
+    {
+      "id": 2,
+      "title": "Qwen3 TTS 设置角色声音 (无LLM)",
+      "bounding": [
+        178.2281917231209,
+        236.95017653031354,
+        1672.0668027292338,
+        791.174166029438
+      ],
+      "color": "#8A8",
+      "font_size": 34,
+      "flags": {}
     }
   ],
   "config": {},
@@ -350,10 +363,10 @@
       4
     ],
     "ds": {
-      "scale": 1.4538061466082357,
+      "scale": 1.0168665895010918,
       "offset": [
-        -265.1034473035874,
-        25.84576426933591
+        33.818855294849115,
+        -100.10810073758005
       ]
     },
     "frontendVersion": "1.41.20",
