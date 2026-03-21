@@ -1,0 +1,481 @@
+{
+  "id": "1c3a042f-46e7-448a-a29c-6f6c0f0af67c",
+  "revision": 0,
+  "last_node_id": 43,
+  "last_link_id": 46,
+  "nodes": [
+    {
+      "id": 29,
+      "type": "FishS2VoiceCloneTTS",
+      "pos": [
+        1661.2673016253552,
+        701.1475468280732
+      ],
+      "size": [
+        389.0623474121094,
+        649.9653930664062
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "reference_audio",
+          "name": "reference_audio",
+          "type": "AUDIO",
+          "link": 28
+        },
+        {
+          "label": "model_path",
+          "name": "model_path",
+          "type": "COMBO",
+          "widget": {
+            "name": "model_path"
+          }
+        },
+        {
+          "label": "text",
+          "name": "text",
+          "type": "STRING",
+          "widget": {
+            "name": "text"
+          },
+          "link": 37
+        },
+        {
+          "label": "language",
+          "name": "language",
+          "type": "COMBO",
+          "widget": {
+            "name": "language"
+          }
+        },
+        {
+          "label": "device",
+          "name": "device",
+          "type": "COMBO",
+          "widget": {
+            "name": "device"
+          }
+        },
+        {
+          "label": "precision",
+          "name": "precision",
+          "type": "COMBO",
+          "widget": {
+            "name": "precision"
+          }
+        },
+        {
+          "label": "attention",
+          "name": "attention",
+          "type": "COMBO",
+          "widget": {
+            "name": "attention"
+          }
+        },
+        {
+          "label": "max_new_tokens",
+          "name": "max_new_tokens",
+          "type": "INT",
+          "widget": {
+            "name": "max_new_tokens"
+          }
+        },
+        {
+          "label": "chunk_length",
+          "name": "chunk_length",
+          "type": "INT",
+          "widget": {
+            "name": "chunk_length"
+          }
+        },
+        {
+          "label": "temperature",
+          "name": "temperature",
+          "type": "FLOAT",
+          "widget": {
+            "name": "temperature"
+          }
+        },
+        {
+          "label": "top_p",
+          "name": "top_p",
+          "type": "FLOAT",
+          "widget": {
+            "name": "top_p"
+          }
+        },
+        {
+          "label": "repetition_penalty",
+          "name": "repetition_penalty",
+          "type": "FLOAT",
+          "widget": {
+            "name": "repetition_penalty"
+          }
+        },
+        {
+          "label": "seed",
+          "name": "seed",
+          "type": "INT",
+          "widget": {
+            "name": "seed"
+          }
+        },
+        {
+          "label": "keep_model_loaded",
+          "name": "keep_model_loaded",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "keep_model_loaded"
+          }
+        },
+        {
+          "label": "compile_model",
+          "name": "compile_model",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "compile_model"
+          }
+        },
+        {
+          "label": "reference_text",
+          "name": "reference_text",
+          "shape": 7,
+          "type": "STRING",
+          "widget": {
+            "name": "reference_text"
+          },
+          "link": 45
+        }
+      ],
+      "outputs": [
+        {
+          "label": "audio",
+          "name": "audio",
+          "type": "AUDIO",
+          "links": [
+            46
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "ComfyUI-fish-audio-s2",
+        "ver": "b61bec15d943c1c84909b1bc93b77a862986745f",
+        "Node name for S&R": "FishS2VoiceCloneTTS",
+        "aux_id": "Saganaki22/ComfyUI-FishAudioS2",
+        "ue_properties": {
+          "version": "7.7",
+          "widget_ue_connectable": {
+            "reference_text": true
+          },
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "s2-pro-fp8",
+        "Hello! [excited] 皆さん、こんにちは。私は貞貞です。今日のTTSの効果はどうですか，안녕하세요, 저는 정정입니다. 你们给我等着哦！",
+        "auto",
+        "auto",
+        "bfloat16",
+        "flash_attention",
+        0,
+        200,
+        0.7,
+        0.8,
+        1.1,
+        580216274,
+        "fixed",
+        true,
+        false,
+        "the sun is shining brightly in the clear blue sky. A gentle breeze is blowing and birds are singing sweet melodies. The world is full of beauty and wonder waiting to be explored.",
+        ""
+      ]
+    },
+    {
+      "id": 27,
+      "type": "LoadAudio",
+      "pos": [
+        1022.3485906208101,
+        665.2837966896005
+      ],
+      "size": [
+        379.8985290527344,
+        137.1841278076172
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "audio",
+          "name": "audio",
+          "type": "COMBO",
+          "widget": {
+            "name": "audio"
+          }
+        },
+        {
+          "label": "audioUI",
+          "name": "audioUI",
+          "type": "AUDIO_UI",
+          "widget": {
+            "name": "audioUI"
+          }
+        },
+        {
+          "label": "upload",
+          "name": "upload",
+          "type": "AUDIOUPLOAD",
+          "widget": {
+            "name": "upload"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "label": "AUDIO",
+          "name": "AUDIO",
+          "type": "AUDIO",
+          "links": [
+            28
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.16.4",
+        "Node name for S&R": "LoadAudio",
+        "ue_properties": {
+          "version": "7.7",
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "1-旁白.flac",
+        null,
+        null
+      ]
+    },
+    {
+      "id": 41,
+      "type": "SaveAudio",
+      "pos": [
+        2113.0831422461006,
+        713.6184307019561
+      ],
+      "size": [
+        385.44378596368483,
+        162.43918289833096
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "audio",
+          "name": "audio",
+          "type": "AUDIO",
+          "link": 46
+        },
+        {
+          "label": "filename_prefix",
+          "name": "filename_prefix",
+          "type": "STRING",
+          "widget": {
+            "name": "filename_prefix"
+          },
+          "link": null
+        },
+        {
+          "label": "audioUI",
+          "name": "audioUI",
+          "type": "AUDIO_UI",
+          "widget": {
+            "name": "audioUI"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.16.3",
+        "Node name for S&R": "SaveAudio",
+        "ue_properties": {
+          "version": "7.7",
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "audio/ComfyUI"
+      ]
+    },
+    {
+      "id": 33,
+      "type": "CR Prompt Text",
+      "pos": [
+        1018.6328120997553,
+        1171.7103374654557
+      ],
+      "size": [
+        471.7070312568576,
+        164.08337459948234
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "prompt",
+          "name": "prompt",
+          "type": "STRING",
+          "widget": {
+            "name": "prompt"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "label": "prompt",
+          "name": "prompt",
+          "type": "STRING",
+          "links": [
+            37
+          ]
+        },
+        {
+          "label": "show_help",
+          "name": "show_help",
+          "type": "STRING"
+        }
+      ],
+      "properties": {
+        "cnr_id": "ComfyUI_Comfyroll_CustomNodes",
+        "ver": "d78b780ae43fcf8c6b7c6505e6ffb4584281ceca",
+        "Node name for S&R": "CR Prompt Text",
+        "ue_properties": {
+          "version": "7.7",
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "只见一对对缨枪的猎户，摆将过来，后面便是那打死的老虎，好象锦布袋一般，四个人还抬不动。"
+      ]
+    },
+    {
+      "id": 40,
+      "type": "Text Multiline",
+      "pos": [
+        1042.232656281152,
+        888.9379264274781
+      ],
+      "size": [
+        400,
+        200
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            45
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "was-ns",
+        "ver": "3.0.1",
+        "Node name for S&R": "Text Multiline",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {},
+          "version": "7.7"
+        }
+      },
+      "widgets_values": [
+        "话说当日武松来到县前客店内，收拾行李铺盖"
+      ]
+    }
+  ],
+  "links": [
+    [
+      28,
+      27,
+      0,
+      29,
+      0,
+      "AUDIO"
+    ],
+    [
+      37,
+      33,
+      0,
+      29,
+      2,
+      "STRING"
+    ],
+    [
+      45,
+      40,
+      0,
+      29,
+      15,
+      "STRING"
+    ],
+    [
+      46,
+      29,
+      0,
+      41,
+      0,
+      "AUDIO"
+    ]
+  ],
+  "groups": [
+    {
+      "id": 4,
+      "title": "B站、Youtube：T8star-Aix",
+      "bounding": [
+        -407.4759826660156,
+        118.76399993896484,
+        4168,
+        309
+      ],
+      "color": "#3f789e",
+      "font_size": 240,
+      "flags": {}
+    }
+  ],
+  "config": {},
+  "extra": {
+    "links_added_by_ue": [],
+    "ue_links": [],
+    "0246.VERSION": [
+      0,
+      0,
+      4
+    ],
+    "ds": {
+      "scale": 1.1086023824178544,
+      "offset": [
+        -749.4353566019397,
+        -322.3848612975721
+      ]
+    },
+    "frontendVersion": "1.41.20",
+    "VHS_latentpreview": false,
+    "VHS_latentpreviewrate": 0,
+    "VHS_MetadataImage": true,
+    "VHS_KeepIntermediate": true,
+    "workflowRendererVersion": "LG"
+  },
+  "version": 0.4
+}

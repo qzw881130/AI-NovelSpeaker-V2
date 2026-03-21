@@ -1,0 +1,367 @@
+{
+  "id": "89f2c86d-ea05-4e36-9faf-cf1dc5e202de",
+  "revision": 0,
+  "last_node_id": 10,
+  "last_link_id": 19,
+  "nodes": [
+    {
+      "id": 3,
+      "type": "FB_Qwen3TTSVoiceDesign",
+      "pos": [
+        864.7671376302883,
+        195.5556877189928
+      ],
+      "size": [
+        495.1625340014082,
+        636.0895993281381
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "config",
+          "shape": 7,
+          "type": "TTS_CONFIG",
+          "link": null
+        },
+        {
+          "label": "text",
+          "name": "text",
+          "type": "STRING",
+          "widget": {
+            "name": "text"
+          },
+          "link": 15
+        },
+        {
+          "label": "instruct",
+          "name": "instruct",
+          "type": "STRING",
+          "widget": {
+            "name": "instruct"
+          },
+          "link": 19
+        },
+        {
+          "label": "model_choice",
+          "name": "model_choice",
+          "type": "COMBO",
+          "widget": {
+            "name": "model_choice"
+          }
+        },
+        {
+          "label": "device",
+          "name": "device",
+          "type": "COMBO",
+          "widget": {
+            "name": "device"
+          }
+        },
+        {
+          "label": "precision",
+          "name": "precision",
+          "type": "COMBO",
+          "widget": {
+            "name": "precision"
+          }
+        },
+        {
+          "label": "language",
+          "name": "language",
+          "type": "COMBO",
+          "widget": {
+            "name": "language"
+          }
+        },
+        {
+          "label": "seed",
+          "name": "seed",
+          "shape": 7,
+          "type": "INT",
+          "widget": {
+            "name": "seed"
+          }
+        },
+        {
+          "label": "max_new_tokens",
+          "name": "max_new_tokens",
+          "shape": 7,
+          "type": "INT",
+          "widget": {
+            "name": "max_new_tokens"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "label": "audio",
+          "name": "audio",
+          "type": "AUDIO",
+          "links": [
+            8
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "qwen3-tts-comfyui",
+        "ver": "082db1aa17c9de8bd864295b0927acd6b610d5f4",
+        "Node name for S&R": "FB_Qwen3TTSVoiceDesign",
+        "hasSecondTab": false,
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "version": "7.5.2",
+          "input_ue_unconnectable": {}
+        },
+        "secondTabText": "Send Back",
+        "enableTabs": false,
+        "secondTabOffset": 80,
+        "tabWidth": 65,
+        "secondTabWidth": 65,
+        "tabXOffset": 10
+      },
+      "widgets_values": [
+        "哎哟喂，又一天过去了，那该死的还没回来，是不是又在外面和哪个相好的鬼混了，是时候扎个小人给他画个圈圈了，呵呵。。。",
+        "Female, 16 years old, high-pitched soprano with a delicate and fragile timbre. The voice starts with a sweet, breathy, and unnervingly calm whisper, characterized by elongated vowels and a rhythmic, melodic lilt. Gradually, the psychological instability manifests through abrupt shifts in pitch—alternating between a playful, giggling tone and a sharp, obsessive intensity. Include audible shallow breathing and \"creaky voice\" (vocal fry) during moments of fixation. The delivery should feel intimate yet predatory, with a slight nasal resonance and occasional sharp intakes of breath, as if suppressed mania is bubbling just beneath a polished, innocent facade.",
+        "1.7B",
+        "auto",
+        "bf16",
+        "Chinese",
+        720008947256741,
+        "randomize",
+        2048,
+        0.8,
+        20,
+        1,
+        1.05,
+        "auto",
+        false
+      ]
+    },
+    {
+      "id": 9,
+      "type": "SaveAudio",
+      "pos": [
+        1412.9868917889169,
+        229.64356677851376
+      ],
+      "size": [
+        270,
+        112
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "audio",
+          "name": "audio",
+          "type": "AUDIO",
+          "link": 8
+        },
+        {
+          "label": "filename_prefix",
+          "name": "filename_prefix",
+          "type": "STRING",
+          "widget": {
+            "name": "filename_prefix"
+          }
+        },
+        {
+          "label": "audioUI",
+          "name": "audioUI",
+          "type": "AUDIO_UI",
+          "widget": {
+            "name": "audioUI"
+          }
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.10.0",
+        "Node name for S&R": "SaveAudio",
+        "ue_properties": {
+          "version": "7.5.2",
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "audio/ComfyUI"
+      ]
+    },
+    {
+      "id": 7,
+      "type": "CR Prompt Text",
+      "pos": [
+        378.9228231863291,
+        192.63112380895683
+      ],
+      "size": [
+        400,
+        200
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "prompt",
+          "name": "prompt",
+          "type": "STRING",
+          "widget": {
+            "name": "prompt"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "label": "prompt",
+          "name": "prompt",
+          "type": "STRING",
+          "links": [
+            15
+          ]
+        },
+        {
+          "label": "show_help",
+          "name": "show_help",
+          "type": "STRING"
+        }
+      ],
+      "properties": {
+        "cnr_id": "ComfyUI_Comfyroll_CustomNodes",
+        "ver": "d78b780ae43fcf8c6b7c6505e6ffb4584281ceca",
+        "Node name for S&R": "CR Prompt Text",
+        "ue_properties": {
+          "version": "7.5.2",
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "奴等了一早晨，叔叔怎的不归来吃早饭？"
+      ]
+    },
+    {
+      "id": 6,
+      "type": "CR Prompt Text",
+      "pos": [
+        377.94541325809337,
+        474.65425946298734
+      ],
+      "size": [
+        400,
+        200
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "prompt",
+          "name": "prompt",
+          "type": "STRING",
+          "widget": {
+            "name": "prompt"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "label": "prompt",
+          "name": "prompt",
+          "type": "STRING",
+          "links": [
+            19
+          ]
+        },
+        {
+          "label": "show_help",
+          "name": "show_help",
+          "type": "STRING"
+        }
+      ],
+      "properties": {
+        "cnr_id": "ComfyUI_Comfyroll_CustomNodes",
+        "ver": "d78b780ae43fcf8c6b7c6505e6ffb4584281ceca",
+        "Node name for S&R": "CR Prompt Text",
+        "ue_properties": {
+          "version": "7.5.2",
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "一个二十六七岁的男性声音，潇洒风流自信豪爽，语气机敏油滑带点霸气，语速中等略快。"
+      ]
+    }
+  ],
+  "links": [
+    [
+      8,
+      3,
+      0,
+      9,
+      0,
+      "AUDIO"
+    ],
+    [
+      15,
+      7,
+      0,
+      3,
+      1,
+      "STRING"
+    ],
+    [
+      19,
+      6,
+      0,
+      3,
+      2,
+      "STRING"
+    ]
+  ],
+  "groups": [
+    {
+      "id": 1,
+      "title": "B站、Youtube：T8star-Aix",
+      "bounding": [
+        -68.36454772949219,
+        -234.6476287841797,
+        4168,
+        309
+      ],
+      "color": "#3f789e",
+      "font_size": 240,
+      "flags": {}
+    }
+  ],
+  "config": {},
+  "extra": {
+    "links_added_by_ue": [],
+    "ue_links": [],
+    "0246.VERSION": [
+      0,
+      0,
+      4
+    ],
+    "ds": {
+      "scale": 1.4538061466082357,
+      "offset": [
+        -265.1034473035874,
+        25.84576426933591
+      ]
+    },
+    "frontendVersion": "1.41.20",
+    "VHS_latentpreview": false,
+    "VHS_latentpreviewrate": 0,
+    "VHS_MetadataImage": true,
+    "VHS_KeepIntermediate": true,
+    "workflowRendererVersion": "LG"
+  },
+  "version": 0.4
+}
