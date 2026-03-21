@@ -14,10 +14,6 @@ SYSTEM_PROMPT_FILE = PROMPTS_DIR / "xhz_system_prompt.txt"
 SYSTEM_PROMPT_NAME = "系统提示词"
 SYSTEM_PROMPT_DESC = "系统内置"
 DEFAULT_SYSTEM_PROMPT_CONTENT = "请将章回文本拆分为 role_list 与 juben 的 JSON 结构。"
-SYSTEM_WORKFLOW_FILE = PROMPTS_DIR / "xhz_system_workflow_api.txt"
-SYSTEM_WORKFLOW_NAME = "古典小说默认工作流"
-SYSTEM_WORKFLOW_DESC = "系统内置，作为 ComfyUI TTS 默认流程"
-DEFAULT_SYSTEM_WORKFLOW_JSON = '{"workflow":"classic-default"}'
 
 # 系统工作流定义
 SYSTEM_WORKFLOWS = [

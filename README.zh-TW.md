@@ -1,4 +1,4 @@
-# AI-NovelSpeaker-V1
+# AI-NovelSpeaker-V2
 
 [简体中文](README.md) | [繁體中文](README.zh-TW.md) | [English](README.en-US.md) | [日本語](README.ja-JP.md) | [한국어](README.ko-KR.md)
 
@@ -26,7 +26,7 @@
 - `server/services.py`：核心服務
 - `scripts/init_storage.py`：資料庫/目錄初始化
 - `prompts/xhz_system_prompt.txt`：系統提示詞檔案
-- `prompts/xhz_system_workflow_api.txt`：系統工作流檔案（JSON 文字）
+- `workflows/*.json`：系統內建 ComfyUI 工作流檔案
 - `debug/qwen3_tts_workflow_debug.json`：ComfyUI 除錯工作流
 - `output/`：本地匯出目錄（保留目錄，忽略生成檔）
 
@@ -40,9 +40,9 @@
 ### 取得程式碼
 
 ```bash
-git clone git@github.com:qzw881130/AI-NovelSpeaker-V1.git
-# 或者: git clone https://github.com/qzw881130/AI-NovelSpeaker-V1.git
-cd AI-NovelSpeaker-V1
+ git clone git@github.com:qzw881130/AI-NovelSpeaker-V2.git
+ # 或者: git clone https://github.com/qzw881130/AI-NovelSpeaker-V2.git
+ cd AI-NovelSpeaker-V2
 ```
 
 ### macOS / Linux

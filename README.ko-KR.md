@@ -1,4 +1,4 @@
-# AI-NovelSpeaker-V1
+# AI-NovelSpeaker-V2
 
 [简体中文](README.md) | [繁體中文](README.zh-TW.md) | [English](README.en-US.md) | [日本語](README.ja-JP.md) | [한국어](README.ko-KR.md)
 
@@ -26,7 +26,7 @@
 - `server/services.py`: 핵심 서비스
 - `scripts/init_storage.py`: DB/디렉터리 초기화
 - `prompts/xhz_system_prompt.txt`: 시스템 프롬프트 파일
-- `prompts/xhz_system_workflow_api.txt`: 시스템 워크플로 파일 (JSON 텍스트)
+- `workflows/*.json`: 내장 ComfyUI 워크플로 파일
 - `debug/qwen3_tts_workflow_debug.json`: ComfyUI 디버그 워크플로
 - `output/`: 로컬 내보내기 디렉터리 (디렉터리는 추적, 생성 파일은 무시)
 
@@ -40,9 +40,9 @@
 ### 저장소 클론
 
 ```bash
-git clone git@github.com:qzw881130/AI-NovelSpeaker-V1.git
-# 또는: git clone https://github.com/qzw881130/AI-NovelSpeaker-V1.git
-cd AI-NovelSpeaker-V1
+ git clone git@github.com:qzw881130/AI-NovelSpeaker-V2.git
+ # 또는: git clone https://github.com/qzw881130/AI-NovelSpeaker-V2.git
+ cd AI-NovelSpeaker-V2
 ```
 
 ### macOS / Linux

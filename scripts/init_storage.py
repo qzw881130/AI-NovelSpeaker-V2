@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import re
 import sqlite3
 from pathlib import Path
@@ -16,10 +15,6 @@ SYSTEM_PROMPT_FILE = PROMPTS_DIR / "xhz_system_prompt.txt"
 SYSTEM_PROMPT_NAME = "系统提示词"
 SYSTEM_PROMPT_DESC = "系统内置"
 DEFAULT_SYSTEM_PROMPT_CONTENT = "请将章回文本拆分为 role_list 与 juben 的 JSON 结构。"
-SYSTEM_WORKFLOW_FILE = PROMPTS_DIR / "xhz_system_workflow_api.txt"
-SYSTEM_WORKFLOW_NAME = "古典小说默认工作流"
-SYSTEM_WORKFLOW_DESC = "系统内置，作为 ComfyUI TTS 默认流程"
-DEFAULT_SYSTEM_WORKFLOW_JSON = '{"workflow":"classic-default"}'
 
 
 DDL_STATEMENTS = [
@@ -277,34 +272,6 @@ def load_system_prompt_content() -> str:
     return text or DEFAULT_SYSTEM_PROMPT_CONTENT
 
 
-def load_system_workflow_json_text() -> str:
-    legacy_file = WORKFLOWS_DIR / "xhz_system_workflow.json"
-    if not SYSTEM_WORKFLOW_FILE.exists():
-        if legacy_file.exists():
-            legacy_text = legacy_file.read_text(
-                encoding="utf-8", errors="ignore"
-            ).strip()
-            if legacy_text:
-                SYSTEM_WORKFLOW_FILE.write_text(legacy_text, encoding="utf-8")
-            else:
-                SYSTEM_WORKFLOW_FILE.write_text(
-                    DEFAULT_SYSTEM_WORKFLOW_JSON, encoding="utf-8"
-                )
-        else:
-            SYSTEM_WORKFLOW_FILE.write_text(
-                DEFAULT_SYSTEM_WORKFLOW_JSON, encoding="utf-8"
-            )
-        text = SYSTEM_WORKFLOW_FILE.read_text(encoding="utf-8", errors="ignore").strip()
-    else:
-        text = SYSTEM_WORKFLOW_FILE.read_text(encoding="utf-8", errors="ignore").strip()
-    if not text:
-        return DEFAULT_SYSTEM_WORKFLOW_JSON
-    parsed = json.loads(text)
-    if not isinstance(parsed, dict):
-        raise ValueError("system workflow json must be object")
-    return json.dumps(parsed, ensure_ascii=False)
-
-
 def init_schema(conn: sqlite3.Connection) -> None:
     for ddl in DDL_STATEMENTS:
         conn.execute(ddl)
@@ -312,7 +279,6 @@ def init_schema(conn: sqlite3.Connection) -> None:
 
 def seed_core_data(conn: sqlite3.Connection) -> None:
     system_prompt_content = load_system_prompt_content()
-    system_workflow_json_text = load_system_workflow_json_text()
     legacy_names = ["古本水浒传系统提示词", "古本水浒传系统Prompt"]
     current_row = conn.execute(
         "SELECT id FROM json_prompts WHERE name=?",

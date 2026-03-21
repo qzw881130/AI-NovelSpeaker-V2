@@ -1,4 +1,5 @@
 import zipfile
+from pathlib import Path
 from urllib.parse import quote
 
 from .services import *  # noqa: F401,F403
@@ -43,6 +44,85 @@ class Handler(BaseHTTPRequestHandler):
         size = int(self.headers.get("Content-Length", "0"))
         raw = self.rfile.read(size).decode("utf-8", errors="ignore")
         return json.loads(raw) if raw else {}
+
+    def _send_range_not_satisfiable(self, file_size: int, message: str) -> None:
+        body = message.encode("utf-8")
+        self.send_response(416)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Range", f"bytes */{file_size}")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _parse_range_header(self, file_size: int) -> tuple[int, int] | None:
+        range_header = str(self.headers.get("Range") or "").strip()
+        if not range_header:
+            return None
+        match = re.match(r"bytes=(\d*)-(\d*)$", range_header)
+        if not match:
+            self._send_range_not_satisfiable(file_size, "invalid range")
+            return None
+
+        start_raw, end_raw = match.groups()
+        if not start_raw and not end_raw:
+            self._send_range_not_satisfiable(file_size, "invalid range")
+            return None
+
+        if start_raw:
+            start = int(start_raw)
+            end = int(end_raw) if end_raw else file_size - 1
+        else:
+            suffix_length = int(end_raw)
+            if suffix_length <= 0:
+                self._send_range_not_satisfiable(file_size, "invalid range")
+                return None
+            start = max(file_size - suffix_length, 0)
+            end = file_size - 1
+
+        if start < 0 or end < start or start >= file_size:
+            self._send_range_not_satisfiable(file_size, "range not satisfiable")
+            return None
+
+        end = min(end, file_size - 1)
+        return start, end
+
+    def send_file_response(
+        self, file_path: Path, ctype: str, cache_control: str | None = None
+    ) -> None:
+        file_size = file_path.stat().st_size
+        range_values = self._parse_range_header(file_size)
+
+        if str(self.headers.get("Range") or "").strip() and range_values is None:
+            return
+
+        start = 0
+        end = file_size - 1
+        status = 200
+        if range_values is not None:
+            start, end = range_values
+            status = 206
+
+        content_length = max(end - start + 1, 0)
+        self.send_response(status)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Accept-Ranges", "bytes")
+        if cache_control:
+            self.send_header("Cache-Control", cache_control)
+        self.send_header("Content-Length", str(content_length))
+        if status == 206:
+            self.send_header("Content-Range", f"bytes {start}-{end}/{file_size}")
+        self.end_headers()
+
+        with file_path.open("rb") as fp:
+            fp.seek(start)
+            remaining = content_length
+            while remaining > 0:
+                chunk = fp.read(min(64 * 1024, remaining))
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+                remaining -= len(chunk)
 
     def serve_static(self, route: str) -> bool:
         path = route.lstrip("/") or "index.html"
@@ -314,16 +394,10 @@ class Handler(BaseHTTPRequestHandler):
                 conn.commit()
             conn.close()
 
-            body = abs_audio.read_bytes()
             ctype = (
                 mimetypes.guess_type(abs_audio.name)[0] or "application/octet-stream"
             )
-            self.send_response(200)
-            self.send_header("Content-Type", ctype)
-            self.send_header("Cache-Control", "no-store")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+            self.send_file_response(abs_audio, ctype, cache_control="no-store")
             return
 
         m_chapter = re.match(r"^/api/novels/(\d+)/chapters/(\d+)$", route)
@@ -569,13 +643,8 @@ class Handler(BaseHTTPRequestHandler):
             if not abs_path.exists() or not abs_path.is_file():
                 self.send_json({"error": "audio file not found"}, 404)
                 return
-            body = abs_path.read_bytes()
             ctype = mimetypes.guess_type(abs_path.name)[0] or "audio/flac"
-            self.send_response(200)
-            self.send_header("Content-Type", ctype)
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+            self.send_file_response(abs_path, ctype)
             return
 
         m_merged_audio = re.match(
@@ -599,13 +668,8 @@ class Handler(BaseHTTPRequestHandler):
             if not merged_path:
                 self.send_json({"error": "merged audio not found"}, 404)
                 return
-            body = merged_path.read_bytes()
             ctype = mimetypes.guess_type(merged_path.name)[0] or "audio/flac"
-            self.send_response(200)
-            self.send_header("Content-Type", ctype)
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+            self.send_file_response(merged_path, ctype)
             return
 
         if not self.serve_static(route):

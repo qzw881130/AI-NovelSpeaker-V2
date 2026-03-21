@@ -21,7 +21,6 @@ from urllib.parse import parse_qs, urlencode, urlparse
 from .app_context import (
     DB_PATH,
     DEFAULT_SYSTEM_PROMPT_CONTENT,
-    DEFAULT_SYSTEM_WORKFLOW_JSON,
     NOVEL_DIR,
     PROMPTS_DIR,
     ROOT_DIR,
@@ -29,9 +28,6 @@ from .app_context import (
     SYSTEM_PROMPT_DESC,
     SYSTEM_PROMPT_FILE,
     SYSTEM_PROMPT_NAME,
-    SYSTEM_WORKFLOW_DESC,
-    SYSTEM_WORKFLOW_FILE,
-    SYSTEM_WORKFLOW_NAME,
     SYSTEM_WORKFLOWS,
     WORKFLOWS_DIR,
     db_conn,
@@ -44,6 +40,7 @@ CAPTURE_BIND: tuple[str, int] | None = None
 CAPTURE_LOCK = threading.Lock()
 TASK_WORKER_THREAD: threading.Thread | None = None
 TASK_WORKER_STOP = threading.Event()
+LEGACY_SYSTEM_WORKFLOW_NAME = "古典小说默认工作流"
 
 
 def now_iso() -> str:
@@ -194,36 +191,6 @@ def fetch_workflows(conn: sqlite3.Connection) -> list[dict]:
     ]
 
 
-def load_system_workflow_json_text() -> str:
-    PROMPTS_DIR.mkdir(parents=True, exist_ok=True)
-    legacy_file = WORKFLOWS_DIR / "xhz_system_workflow.json"
-    if not SYSTEM_WORKFLOW_FILE.exists():
-        if legacy_file.exists():
-            legacy_text = legacy_file.read_text(
-                encoding="utf-8", errors="ignore"
-            ).strip()
-            if legacy_text:
-                SYSTEM_WORKFLOW_FILE.write_text(legacy_text, encoding="utf-8")
-            else:
-                SYSTEM_WORKFLOW_FILE.write_text(
-                    DEFAULT_SYSTEM_WORKFLOW_JSON, encoding="utf-8"
-                )
-        else:
-            SYSTEM_WORKFLOW_FILE.write_text(
-                DEFAULT_SYSTEM_WORKFLOW_JSON, encoding="utf-8"
-            )
-    text = SYSTEM_WORKFLOW_FILE.read_text(encoding="utf-8", errors="ignore").strip()
-    if not text:
-        return DEFAULT_SYSTEM_WORKFLOW_JSON
-    try:
-        parsed = json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"invalid system workflow json file: {exc}") from exc
-    if not isinstance(parsed, dict):
-        raise ValueError("system workflow json must be object")
-    return json.dumps(parsed, ensure_ascii=False, indent=2)
-
-
 def load_system_workflow_file(file_path: Path) -> str:
     """加载系统工作流JSON文件内容"""
     if not file_path.exists():
@@ -299,13 +266,15 @@ def sync_system_workflow_from_file(conn: sqlite3.Connection) -> None:
     # 先执行迁移
     migrate_workflow_type_constraint(conn)
 
-    # 删除旧的"古典小说默认工作流"
+    # 删除旧版单系统工作流记录
     # 先解除外键引用（将 novels 表中引用该工作流的记录设为 NULL）
     conn.execute(
         "UPDATE novels SET workflow_id=NULL WHERE workflow_id IN (SELECT id FROM comfy_workflows WHERE name=?)",
-        (SYSTEM_WORKFLOW_NAME,),
+        (LEGACY_SYSTEM_WORKFLOW_NAME,),
     )
-    conn.execute("DELETE FROM comfy_workflows WHERE name=?", (SYSTEM_WORKFLOW_NAME,))
+    conn.execute(
+        "DELETE FROM comfy_workflows WHERE name=?", (LEGACY_SYSTEM_WORKFLOW_NAME,)
+    )
 
     # 同步系统工作流（voice_sample, voice_transcribe, line_audio）
     for wf_config in SYSTEM_WORKFLOWS:

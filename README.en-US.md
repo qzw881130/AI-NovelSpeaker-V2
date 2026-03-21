@@ -1,4 +1,4 @@
-# AI-NovelSpeaker-V1
+# AI-NovelSpeaker-V2
 
 [简体中文](README.md) | [繁體中文](README.zh-TW.md) | [English](README.en-US.md) | [日本語](README.ja-JP.md) | [한국어](README.ko-KR.md)
 
@@ -26,7 +26,7 @@ Multi-novel management and audio generation toolkit (SQLite + local file storage
 - `server/services.py`: core services
 - `scripts/init_storage.py`: DB/folder initialization
 - `prompts/xhz_system_prompt.txt`: system prompt file
-- `prompts/xhz_system_workflow_api.txt`: system workflow file (JSON text)
+- `workflows/*.json`: built-in ComfyUI workflow files
 - `debug/qwen3_tts_workflow_debug.json`: ComfyUI debug workflow
 - `output/`: local export directory (directory is tracked, generated files are ignored)
 
@@ -40,9 +40,9 @@ Multi-novel management and audio generation toolkit (SQLite + local file storage
 ### Clone Repository
 
 ```bash
-git clone git@github.com:qzw881130/AI-NovelSpeaker-V1.git
-# or: git clone https://github.com/qzw881130/AI-NovelSpeaker-V1.git
-cd AI-NovelSpeaker-V1
+ git clone git@github.com:qzw881130/AI-NovelSpeaker-V2.git
+ # or: git clone https://github.com/qzw881130/AI-NovelSpeaker-V2.git
+ cd AI-NovelSpeaker-V2
 ```
 
 ### macOS / Linux
