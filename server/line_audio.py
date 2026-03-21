@@ -72,12 +72,13 @@ def parse_juben_lines_from_json_text(json_text: str) -> list[dict]:
             continue
         role_name = ""
         line_text = raw_line
-        for sep in ("：", ":"):
-            if sep in raw_line:
-                left, right = raw_line.split(sep, 1)
-                role_name = left.strip()
-                line_text = right.strip()
-                break
+        separator_positions = [
+            pos for pos in (raw_line.find(":"), raw_line.find("：")) if pos >= 0
+        ]
+        if separator_positions:
+            split_at = min(separator_positions)
+            role_name = raw_line[:split_at].strip()
+            line_text = raw_line[split_at + 1 :].strip()
         line_hash = hashlib.md5(raw_line.encode("utf-8")).hexdigest()
         items.append(
             {

@@ -915,8 +915,12 @@ function bindActions() {
 // ============ 台词音频功能 ============
 
 function extractRoleName(line) {
-  const match = String(line || "").trim().match(/^([^:：\n]{1,20})[:：]/);
-  return match ? String(match[1] || "").trim() : "";
+  const text = String(line || "").trim();
+  if (!text) return "";
+  const positions = [text.indexOf(":"), text.indexOf("：")].filter((pos) => pos >= 0);
+  if (!positions.length) return "";
+  const splitAt = Math.min(...positions);
+  return String(text.slice(0, splitAt) || "").trim().slice(0, 20);
 }
 
 function getJubenLinesFromParsed(parsed) {

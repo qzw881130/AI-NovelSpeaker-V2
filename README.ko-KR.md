@@ -10,8 +10,8 @@
 
 ## 영상 소개
 
-- Bilibili: https://www.bilibili.com/video/BV1vXP3znEAT
-- YouTube: https://youtu.be/FI28PpHUGAY
+- Bilibili: https://www.bilibili.com/video/BV136AKzcE2c
+- YouTube: https://youtu.be/pVB0qMpFdqg
 
 ## 주요 기능
 
