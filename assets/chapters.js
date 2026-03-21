@@ -1455,9 +1455,9 @@ function renderRolesTable() {
       
       let actionHtml = '<span class="text-muted">-</span>';
       if (!defaultRole) {
-        actionHtml = `<button class="ghost-btn btn-sm add-to-library-btn" type="button">${translateText("加入角色库")}</button>`;
+        actionHtml = `<button class="ghost-btn btn-sm add-to-library-btn role-library-action role-library-action-add" type="button">${translateText("加入角色库")}</button>`;
       } else if (String(defaultRole.instruct || "").trim() !== roleInstruct) {
-        actionHtml = `<button class="ghost-btn btn-sm replace-library-btn" type="button">${translateText("替换角色库")}</button>`;
+        actionHtml = `<button class="ghost-btn btn-sm replace-library-btn role-library-action role-library-action-replace" type="button">${translateText("替换角色库")}</button>`;
       } else {
         actionHtml = `<span class="success-text">${translateText("已设为默认")}</span>`;
       }

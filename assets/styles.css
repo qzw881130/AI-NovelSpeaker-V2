@@ -2152,3 +2152,37 @@ menu {
   font-size: 13px;
   font-weight: 500;
 }
+
+.role-library-action {
+  min-width: 124px;
+  font-weight: 600;
+  transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease, background 140ms ease;
+}
+
+.role-library-action:hover {
+  transform: translateY(-1px);
+}
+
+.role-library-action-add {
+  border-color: rgba(58, 140, 86, 0.32);
+  background: linear-gradient(180deg, rgba(244, 255, 247, 0.98) 0%, rgba(232, 248, 237, 0.96) 100%);
+  color: #2f7f4f;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 8px 16px rgba(47, 127, 79, 0.08);
+}
+
+.role-library-action-add:hover {
+  border-color: rgba(58, 140, 86, 0.46);
+  background: linear-gradient(180deg, rgba(239, 253, 243, 1) 0%, rgba(220, 243, 228, 0.98) 100%);
+}
+
+.role-library-action-replace {
+  border-color: rgba(196, 123, 47, 0.34);
+  background: linear-gradient(180deg, rgba(255, 250, 240, 0.98) 0%, rgba(251, 239, 216, 0.96) 100%);
+  color: #a05c14;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 8px 16px rgba(160, 92, 20, 0.08);
+}
+
+.role-library-action-replace:hover {
+  border-color: rgba(196, 123, 47, 0.5);
+  background: linear-gradient(180deg, rgba(255, 246, 232, 1) 0%, rgba(248, 230, 197, 0.98) 100%);
+}
