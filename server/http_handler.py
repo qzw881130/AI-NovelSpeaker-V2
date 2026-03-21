@@ -1571,6 +1571,15 @@ class Handler(BaseHTTPRequestHandler):
                 batch_max_chars = 3500
             if batch_max_chars not in {0, 3500, 4000, 5000, 6000, 7000}:
                 batch_max_chars = 3500
+            raw_max_tokens = llm.get("maxTokens", 8192)
+            if raw_max_tokens in (None, ""):
+                raw_max_tokens = 8192
+            try:
+                llm_max_tokens = int(raw_max_tokens)
+            except (TypeError, ValueError):
+                llm_max_tokens = 8192
+            if str(llm.get("provider") or "").strip() == "deepseek":
+                llm_max_tokens = min(llm_max_tokens, 8192)
 
             ui_language = str(ui.get("language") or "zh-CN").strip() or "zh-CN"
             if ui_language not in {"zh-CN", "zh-TW", "en-US", "ja-JP", "ko-KR"}:
@@ -1622,7 +1631,7 @@ class Handler(BaseHTTPRequestHandler):
                 "llm_model": str(llm.get("model") or ""),
                 "llm_api_key": str(llm.get("apiKey") or ""),
                 "llm_temperature": str(llm.get("temperature") or 0.3),
-                "llm_max_tokens": str(llm.get("maxTokens") or 8192),
+                "llm_max_tokens": str(llm_max_tokens),
                 "llm_num_ctx": str(llm.get("numCtx") or 65536),
                 "llm_keep_alive": str(llm.get("keepAlive") or "30m"),
                 "llm_batch_max_chars": str(batch_max_chars),

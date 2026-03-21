@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import ipaddress
 import mimetypes
 import re
 import shutil
@@ -11,7 +12,9 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from copy import deepcopy
+from http.client import IncompleteRead, RemoteDisconnected
 from urllib import request
+from urllib.parse import urlparse
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urlencode, urlparse
 
@@ -512,6 +515,8 @@ def fetch_settings(conn: sqlite3.Connection) -> dict:
         "keepAlive": keep_alive,
         "batchMaxChars": batch_max_chars,
     }
+    if str(llm.get("provider") or "").strip() == "deepseek":
+        llm["maxTokens"] = min(int(llm.get("maxTokens") or 8192), 8192)
     ui_language = str(kv.get("ui_language", "zh-CN") or "zh-CN").strip() or "zh-CN"
     ui_timezone = (
         str(kv.get("ui_timezone", "Asia/Shanghai") or "Asia/Shanghai").strip()
@@ -856,26 +861,56 @@ def http_json_request(
         req_headers.setdefault("Content-Type", "application/json")
 
     req = request.Request(url, method=method.upper(), headers=req_headers, data=data)
+    parsed_url = urlparse(url)
+    host = str(parsed_url.hostname or "").strip().lower()
+    bypass_env_proxy = False
+    if host in {"localhost", "127.0.0.1", "::1"}:
+        bypass_env_proxy = True
+    else:
+        try:
+            bypass_env_proxy = ipaddress.ip_address(host).is_private
+        except ValueError:
+            bypass_env_proxy = host.endswith(".local")
+
     if proxy_url:
         opener = request.build_opener(
             request.ProxyHandler({"http": proxy_url, "https": proxy_url})
         )
+    elif bypass_env_proxy:
+        opener = request.build_opener(request.ProxyHandler({}))
     else:
         opener = request.build_opener()
 
-    try:
-        with opener.open(req, timeout=timeout) as resp:
-            body = resp.read().decode("utf-8", errors="ignore")
-            return int(resp.getcode() or 200), body
-    except HTTPError as exc:
-        body = (
-            exc.read().decode("utf-8", errors="ignore")
-            if hasattr(exc, "read")
-            else str(exc)
-        )
-        return int(exc.code), body
-    except URLError as exc:
-        raise RuntimeError(str(exc.reason)) from exc
+    transient_errors = (
+        URLError,
+        TimeoutError,
+        RemoteDisconnected,
+        ConnectionError,
+        IncompleteRead,
+    )
+    last_exc: Exception | None = None
+    for attempt in range(3):
+        try:
+            with opener.open(req, timeout=timeout) as resp:
+                body = resp.read().decode("utf-8", errors="ignore")
+                return int(resp.getcode() or 200), body
+        except HTTPError as exc:
+            body = (
+                exc.read().decode("utf-8", errors="ignore")
+                if hasattr(exc, "read")
+                else str(exc)
+            )
+            return int(exc.code), body
+        except transient_errors as exc:
+            last_exc = exc
+            if attempt >= 2:
+                if isinstance(exc, URLError):
+                    raise RuntimeError(str(exc.reason)) from exc
+                raise RuntimeError(str(exc)) from exc
+            time.sleep(1.2 * (attempt + 1))
+    if last_exc:
+        raise RuntimeError(str(last_exc))
+    raise RuntimeError("request failed")
 
 
 def test_comfy_endpoint(comfy_url: str) -> tuple[bool, str]:
@@ -910,7 +945,7 @@ def test_llm_endpoint(
 
     url = f"{base_url.rstrip('/')}/chat/completions"
     headers = {}
-    if api_key:
+    if api_key and provider != "ollama":
         headers["Authorization"] = f"Bearer {api_key}"
     payload = {
         "model": model,
@@ -1136,6 +1171,8 @@ def call_llm_json_parse(
     api_key = str(llm.get("apiKey") or "").strip()
     temperature = float(llm.get("temperature") or 0.3)
     max_tokens = int(llm.get("maxTokens") or 8192)
+    if provider == "deepseek":
+        max_tokens = min(max_tokens, 8192)
     num_ctx = int(llm.get("numCtx") or 65536)
     keep_alive = str(llm.get("keepAlive") or "30m").strip() or "30m"
 

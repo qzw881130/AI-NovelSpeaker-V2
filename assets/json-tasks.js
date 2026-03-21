@@ -39,6 +39,16 @@ function escapeHtml(text) {
     .replaceAll("'", "&#39;");
 }
 
+function formatJsonPretty(text) {
+  const raw = String(text || "").trim();
+  if (!raw) return "";
+  try {
+    return JSON.stringify(JSON.parse(raw), null, 2);
+  } catch {
+    return raw;
+  }
+}
+
 function parseServerTime(value) {
   const text = String(value || "").trim();
   if (!text) return Date.now();
@@ -117,7 +127,7 @@ function renderBatchDetails(taskId) {
         b.updatedAt
       )}</p><div class="batch-block"><strong>${inputLabel}</strong><pre>${escapeHtml(b.inputText || "")}</pre></div><div class="batch-block"><strong>${llmLabel}</strong><pre>${escapeHtml(
         b.llmResponseText || ""
-      )}</pre></div><div class="batch-block"><strong>${parsedJsonLabel}</strong><pre>${escapeHtml(b.parsedJsonText || "")}</pre></div></details>`;
+      )}</pre></div><div class="batch-block"><strong>${parsedJsonLabel}</strong><pre>${escapeHtml(formatJsonPretty(b.parsedJsonText || ""))}</pre></div></details>`;
     })
     .join("")}</div>`;
 }
@@ -164,7 +174,7 @@ function render() {
         </div>
         <p class="meta json-meta-time">${createdAtLabel} ${formatServerTime(task.createdAt || task.updatedAt)} · ${updatedAtLabel} ${formatServerTime(task.updatedAt)}${
           task.status === "running"
-            ? ` · ${elapsedLabel} <span data-elapsed-from="${task.updatedAt}">${formatElapsedFrom(task.updatedAt)}</span>`
+            ? ` · ${elapsedLabel} <span data-elapsed-from="${task.createdAt || task.updatedAt}">${formatElapsedFrom(task.createdAt || task.updatedAt)}</span>`
             : ""
         }</p>
         ${task.status === "failed" && task.errorMessage ? `<p class="task-error">${escapeHtml(task.errorMessage)}</p>` : ""}

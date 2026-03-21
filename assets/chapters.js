@@ -1433,6 +1433,7 @@ function renderRolesTable() {
     if (isRolesEditing) {
       return `
         <tr data-role-index="${index}">
+          <td>${index + 1}</td>
           <td><input class="role-input" data-field="name" value="${escapeHtml(role.name)}" /></td>
           <td><textarea class="role-textarea" data-field="instruct" rows="2">${escapeHtml(role.instruct)}</textarea></td>
           <td><textarea class="role-textarea" data-field="text" rows="2">${escapeHtml(role.text)}</textarea></td>
@@ -1457,6 +1458,7 @@ function renderRolesTable() {
       
       return `
         <tr data-role-index="${index}">
+          <td>${index + 1}</td>
           <td>${escapeHtml(role.name || "-")}</td>
           <td>${escapeHtml(role.instruct || "-")}</td>
           <td>${escapeHtml(role.text || "-")}</td>

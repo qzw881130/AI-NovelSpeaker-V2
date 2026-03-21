@@ -12,6 +12,10 @@ const providerDefaults = {
   custom: { baseUrl: "", model: "" },
 };
 
+const PROVIDER_MAX_TOKENS = {
+  deepseek: 8192,
+};
+
 const BATCH_CHAR_OPTIONS = new Set([0, 3500, 4000, 5000, 6000, 7000]);
 const NUM_CTX_OPTIONS = new Set([32768, 65536, 98304, 131072]);
 const KEEP_ALIVE_OPTIONS = new Set(["5m", "15m", "30m", "1h", "6h", "24h"]);
@@ -164,7 +168,10 @@ function load(settings) {
   document.getElementById("llmModel").value = llm.model || "";
   document.getElementById("llmKey").value = llm.apiKey || "";
   document.getElementById("llmTemperature").value = llm.temperature ?? 0.3;
-  document.getElementById("llmTokens").value = llm.maxTokens ?? 8192;
+  document.getElementById("llmTokens").value = normalizeProviderMaxTokens(
+    llm.provider || "grok",
+    llm.maxTokens ?? 8192
+  );
   const numCtx = Number(llm.numCtx ?? 65536);
   document.getElementById("llmNumCtx").value = NUM_CTX_OPTIONS.has(numCtx)
     ? String(numCtx)
@@ -232,6 +239,13 @@ function syncOllamaFieldVisibility() {
   keyHint?.classList.toggle("hidden", !isOllama);
 }
 
+function normalizeProviderMaxTokens(provider, value) {
+  const raw = Number(value ?? 8192);
+  const next = Number.isFinite(raw) && raw > 0 ? Math.round(raw) : 8192;
+  const limit = PROVIDER_MAX_TOKENS[String(provider || "").trim()];
+  return limit ? Math.min(next, limit) : next;
+}
+
 function readSettingsForm() {
   return {
     comfyUrl: document.getElementById("comfyUrl").value.trim(),
@@ -242,7 +256,10 @@ function readSettingsForm() {
       model: document.getElementById("llmModel").value.trim(),
       apiKey: document.getElementById("llmKey").value.trim(),
       temperature: Number(document.getElementById("llmTemperature").value),
-      maxTokens: Number(document.getElementById("llmTokens").value),
+      maxTokens: normalizeProviderMaxTokens(
+        document.getElementById("llmProvider").value,
+        document.getElementById("llmTokens").value
+      ),
       numCtx: Number(document.getElementById("llmNumCtx").value || 65536),
       keepAlive: String(document.getElementById("llmKeepAlive").value || "30m"),
       batchMaxChars: Number(document.getElementById("llmBatchChars").value ?? 3500),
@@ -332,6 +349,10 @@ function bindEvents() {
     const next = providerDefaults[event.target.value];
     document.getElementById("llmBase").value = next.baseUrl;
     document.getElementById("llmModel").value = next.model;
+    document.getElementById("llmTokens").value = normalizeProviderMaxTokens(
+      event.target.value,
+      document.getElementById("llmTokens").value
+    );
     syncOllamaFieldVisibility();
     markLlmDirty();
   });
