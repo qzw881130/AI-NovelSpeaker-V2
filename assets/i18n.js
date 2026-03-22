@@ -857,6 +857,8 @@ const STATIC_TEXT_MAP = {
   生成音频功能需要在保存角色后使用: { "en-US": "Generate audio is available after saving the role", "zh-TW": "生成音訊功能需在保存角色後使用", "ja-JP": "音声生成は役割保存後に利用できます", "ko-KR": "오디오 생성은 역할 저장 후 사용할 수 있습니다" },
   未提取到文本: { "en-US": "No text extracted", "zh-TW": "未提取到文本", "ja-JP": "テキストを抽出できませんでした", "ko-KR": "추출된 텍스트가 없습니다" },
   章节数据已刷新: { "en-US": "Chapter data refreshed", "zh-TW": "章節資料已刷新", "ja-JP": "章データを更新しました", "ko-KR": "챕터 데이터가 새로고침되었습니다" },
+  筛选: { "en-US": "Filtered", "zh-TW": "篩選", "ja-JP": "絞り込み", "ko-KR": "필터" },
+  条: { "en-US": "items", "zh-TW": "條", "ja-JP": "件", "ko-KR": "개" },
   开始下载文本: { "en-US": "Starting text download", "zh-TW": "開始下載文本", "ja-JP": "テキストのダウンロードを開始します", "ko-KR": "텍스트 다운로드 시작" },
   开始下载音频: { "en-US": "Starting audio download", "zh-TW": "開始下載音訊", "ja-JP": "音声のダウンロードを開始します", "ko-KR": "오디오 다운로드 시작" },
   音频已合并: { "en-US": "Audio merged", "zh-TW": "音訊已合併", "ja-JP": "音声を結合しました", "ko-KR": "오디오가 병합되었습니다" },

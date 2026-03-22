@@ -1191,6 +1191,7 @@ function escapeHtml(text) {
 
 function renderLineAudioTable() {
   const root = document.getElementById("lineAudioTableBody");
+  const countEl = document.getElementById("lineAudioFilteredCount");
   if (!root) return;
 
   syncLineRoleFilterOptions();
@@ -1198,6 +1199,9 @@ function renderLineAudioTable() {
 
   const rows = getFilteredLinePreviewRows();
   const matches = getLineSearchMatches(rows);
+  if (countEl) {
+    countEl.textContent = `${translateText("筛选")} ${rows.length} ${translateText("条")}`;
+  }
   root.innerHTML = "";
 
   if (!rows.length) {

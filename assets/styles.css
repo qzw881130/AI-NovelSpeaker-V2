@@ -1542,7 +1542,17 @@ menu {
 }
 
 .line-audio-footer {
+  display: flex;
+  align-items: center;
   justify-content: flex-end;
+  gap: 12px;
+}
+
+.line-audio-footer-count {
+  margin-right: auto;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .juben-lines {
