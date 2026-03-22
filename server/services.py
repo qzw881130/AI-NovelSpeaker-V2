@@ -28,6 +28,7 @@ from .app_context import (
     SYSTEM_PROMPT_DESC,
     SYSTEM_PROMPT_FILE,
     SYSTEM_PROMPT_NAME,
+    SYSTEM_PROMPTS,
     SYSTEM_WORKFLOWS,
     WORKFLOWS_DIR,
     db_conn,
@@ -101,54 +102,74 @@ def load_system_prompt_content() -> str:
     return text or DEFAULT_SYSTEM_PROMPT_CONTENT
 
 
-def sync_system_prompt_from_file(conn: sqlite3.Connection) -> None:
-    content = load_system_prompt_content()
-    legacy_names = ["古本水浒传系统提示词", "古本水浒传系统Prompt"]
-    current_row = conn.execute(
-        "SELECT id FROM json_prompts WHERE name=?",
-        (SYSTEM_PROMPT_NAME,),
-    ).fetchone()
-    for legacy in legacy_names:
-        if legacy == SYSTEM_PROMPT_NAME:
-            continue
-        legacy_row = conn.execute(
+def load_system_prompt_content_from_file(file_path: Path, default_content: str) -> str:
+    PROMPTS_DIR.mkdir(parents=True, exist_ok=True)
+    if not file_path.exists():
+        file_path.write_text(default_content, encoding="utf-8")
+        return default_content
+    text = file_path.read_text(encoding="utf-8", errors="ignore").strip()
+    return text or default_content
+
+
+def sync_system_prompts_from_files(conn: sqlite3.Connection) -> None:
+    for prompt in SYSTEM_PROMPTS:
+        file_path = Path(prompt["file"])
+        prompt_name = str(prompt["name"])
+        prompt_desc = str(prompt["description"])
+        default_content = str(prompt["default_content"])
+        legacy_names = [str(name) for name in prompt.get("legacy_names", [])]
+        content = load_system_prompt_content_from_file(file_path, default_content)
+
+        current_row = conn.execute(
             "SELECT id FROM json_prompts WHERE name=?",
-            (legacy,),
+            (prompt_name,),
         ).fetchone()
-        if not legacy_row:
-            continue
-        legacy_id = legacy_row["id"]
-        if current_row:
-            current_id = current_row["id"]
-            conn.execute(
-                "UPDATE novels SET prompt_id=? WHERE prompt_id=?",
-                (current_id, legacy_id),
-            )
-            conn.execute("DELETE FROM json_prompts WHERE id=?", (legacy_id,))
-        else:
-            conn.execute(
-                "UPDATE json_prompts SET name=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
-                (SYSTEM_PROMPT_NAME, legacy_id),
-            )
-            current_row = conn.execute(
+        for legacy in legacy_names:
+            if legacy == prompt_name:
+                continue
+            legacy_row = conn.execute(
                 "SELECT id FROM json_prompts WHERE name=?",
-                (SYSTEM_PROMPT_NAME,),
+                (legacy,),
             ).fetchone()
-    conn.execute(
-        """
-        INSERT INTO json_prompts (name,prompt_type,description,content)
-        VALUES (?, 'system', ?, ?)
-        ON CONFLICT(name) DO UPDATE SET
-            prompt_type='system',
-            description=excluded.description,
-            content=excluded.content,
-            updated_at=CURRENT_TIMESTAMP
-        WHERE json_prompts.prompt_type<>'system'
-           OR json_prompts.description<>excluded.description
-           OR json_prompts.content<>excluded.content
-        """,
-        (SYSTEM_PROMPT_NAME, SYSTEM_PROMPT_DESC, content),
-    )
+            if not legacy_row:
+                continue
+            legacy_id = legacy_row["id"]
+            if current_row:
+                current_id = current_row["id"]
+                conn.execute(
+                    "UPDATE novels SET prompt_id=? WHERE prompt_id=?",
+                    (current_id, legacy_id),
+                )
+                conn.execute("DELETE FROM json_prompts WHERE id=?", (legacy_id,))
+            else:
+                conn.execute(
+                    "UPDATE json_prompts SET name=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                    (prompt_name, legacy_id),
+                )
+                current_row = conn.execute(
+                    "SELECT id FROM json_prompts WHERE name=?",
+                    (prompt_name,),
+                ).fetchone()
+
+        conn.execute(
+            """
+            INSERT INTO json_prompts (name,prompt_type,description,content)
+            VALUES (?, 'system', ?, ?)
+            ON CONFLICT(name) DO UPDATE SET
+                prompt_type='system',
+                description=excluded.description,
+                content=excluded.content,
+                updated_at=CURRENT_TIMESTAMP
+            WHERE json_prompts.prompt_type<>'system'
+               OR json_prompts.description<>excluded.description
+               OR json_prompts.content<>excluded.content
+            """,
+            (prompt_name, prompt_desc, content),
+        )
+
+
+def sync_system_prompt_from_file(conn: sqlite3.Connection) -> None:
+    sync_system_prompts_from_files(conn)
 
 
 def next_prompt_copy_name(conn: sqlite3.Connection, src_name: str) -> str:

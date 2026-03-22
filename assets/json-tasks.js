@@ -64,6 +64,15 @@ function formatServerTime(value) {
 
 function formatElapsedFrom(value) {
   const ms = Math.max(0, Date.now() - parseServerTime(value));
+  return formatElapsedMs(ms);
+}
+
+function formatElapsedBetween(startValue, endValue) {
+  const ms = Math.max(0, parseServerTime(endValue) - parseServerTime(startValue));
+  return formatElapsedMs(ms);
+}
+
+function formatElapsedMs(ms) {
   const total = Math.floor(ms / 1000);
   const mm = String(Math.floor(total / 60)).padStart(2, "0");
   const ss = String(total % 60).padStart(2, "0");
@@ -175,7 +184,7 @@ function render() {
         <p class="meta json-meta-time">${createdAtLabel} ${formatServerTime(task.createdAt || task.updatedAt)} · ${updatedAtLabel} ${formatServerTime(task.updatedAt)}${
           task.status === "running"
             ? ` · ${elapsedLabel} <span data-elapsed-from="${task.createdAt || task.updatedAt}">${formatElapsedFrom(task.createdAt || task.updatedAt)}</span>`
-            : ""
+            : ` · ${elapsedLabel} ${formatElapsedBetween(task.createdAt || task.updatedAt, task.updatedAt)}`
         }</p>
         ${task.status === "failed" && task.errorMessage ? `<p class="task-error">${escapeHtml(task.errorMessage)}</p>` : ""}
         ${

@@ -60,7 +60,9 @@ function renderNovelCards() {
           <span class="chip">字数 ${fmtNumber(n.totalWords)}</span>
           <span class="chip">英文目录: ${n.englishDir || "-"}</span>
           <span class="chip">提示词: ${promptMap[String(n.promptId)] || "-"}</span>
-          <span class="chip">工作流: ${workflowMap[String(n.workflowId)] || "-"}</span>
+          <span class="chip">示例音频工作流: ${workflowMap[String(n.voiceSampleWorkflowId)] || "-"}</span>
+          <span class="chip">台词音频工作流: ${workflowMap[String(n.lineAudioWorkflowId)] || "-"}</span>
+          <span class="chip">提取文本工作流: ${workflowMap[String(n.voiceTranscribeWorkflowId)] || "-"}</span>
         </div>
         <div><p class="meta">JSON处理 ${n.jsonProgress}%</p>${progressBar(n.jsonProgress)}</div>
         <div><p class="meta">音频生成 ${n.audioProgress}%</p>${progressBar(n.audioProgress)}</div>

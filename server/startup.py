@@ -7,7 +7,7 @@ from .app_context import DB_PATH, db_conn
 from .http_handler import Handler
 from .services import (
     ensure_task_worker,
-    sync_system_prompt_from_file,
+    sync_system_prompts_from_files,
     sync_system_workflow_from_file,
 )
 
@@ -17,7 +17,7 @@ def main() -> None:
         raise SystemExit("Please run: python3 scripts/init_storage.py")
 
     conn = db_conn()
-    sync_system_prompt_from_file(conn)
+    sync_system_prompts_from_files(conn)
     sync_system_workflow_from_file(conn)
     conn.commit()
     conn.close()

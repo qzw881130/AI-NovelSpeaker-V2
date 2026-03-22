@@ -15,6 +15,23 @@ SYSTEM_PROMPT_NAME = "系统提示词"
 SYSTEM_PROMPT_DESC = "系统内置"
 DEFAULT_SYSTEM_PROMPT_CONTENT = "请将章回文本拆分为 role_list 与 juben 的 JSON 结构。"
 
+SYSTEM_PROMPTS = [
+    {
+        "file": SYSTEM_PROMPT_FILE,
+        "name": SYSTEM_PROMPT_NAME,
+        "description": SYSTEM_PROMPT_DESC,
+        "default_content": DEFAULT_SYSTEM_PROMPT_CONTENT,
+        "legacy_names": ["古本水浒传系统提示词", "古本水浒传系统Prompt"],
+    },
+    {
+        "file": PROMPTS_DIR / "fish_audio_s2_system_prompt.txt",
+        "name": "FishAudioS2支持情绪提示词",
+        "description": "系统内置，适用于 FishAudioS2 情绪标签脚本输出",
+        "default_content": "请将章回文本拆分为 role_list、juben 与 fish_juben 的 JSON 结构。",
+        "legacy_names": [],
+    },
+]
+
 # 系统工作流定义
 SYSTEM_WORKFLOWS = [
     {

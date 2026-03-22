@@ -6,6 +6,10 @@ let editingId = "";
 let modalMode = "create";
 let currentData = { prompts: [] };
 
+function promptCharCount(content) {
+  return Array.from(String(content || "")).length;
+}
+
 function orderedPrompts() {
   return [...(currentData.prompts || [])].sort((a, b) => {
     const at = a.type === "system" ? 0 : 1;
@@ -25,6 +29,7 @@ function render() {
           <span class="chip ${p.type === "system" ? "pending" : "completed"}">${p.type === "system" ? "系统" : "用户"}</span>
         </div>
         <p class="meta">${translateText(p.description || "-")}</p>
+        <p class="meta">${translateText("提示词字数")}: ${promptCharCount(p.content)}</p>
         <div class="card-actions">
           <button class="ghost-btn" data-action="copy" data-id="${p.id}">复制为用户提示词</button>
           <button class="ghost-btn" data-action="${p.type === "system" ? "view" : "edit"}" data-id="${p.id}">${p.type === "system" ? "查看" : "编辑"}</button>
@@ -60,6 +65,7 @@ function openModal(promptItem, mode = "create") {
   form.name.value = mode === "view" ? translateText(promptItem?.name || "") : promptItem?.name || "";
   form.description.value = mode === "view" ? translateText(promptItem?.description || "") : promptItem?.description || "";
   form.content.value = promptItem?.content || "";
+  document.getElementById("promptCharCount").textContent = `${translateText("提示词字数")}: ${promptCharCount(promptItem?.content || "")}`;
   setFormReadonly(mode === "view");
   localizeDocumentText(document);
   document.getElementById("promptModal").showModal();
@@ -99,6 +105,9 @@ function bindEvents() {
   document.getElementById("createPromptBtn").addEventListener("click", () => openModal(null, "create"));
   document.getElementById("promptCancelBtn").addEventListener("click", () => {
     document.getElementById("promptModal").close();
+  });
+  document.getElementById("promptForm").content.addEventListener("input", (event) => {
+    document.getElementById("promptCharCount").textContent = `${translateText("提示词字数")}: ${promptCharCount(event.target.value)}`;
   });
   document.getElementById("promptForm").addEventListener("submit", async (event) => {
     event.preventDefault();

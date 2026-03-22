@@ -799,6 +799,7 @@ const STATIC_TEXT_MAP = {
   台词音频任务队列: { "en-US": "Line Audio Task Queue", "zh-TW": "台詞音訊任務佇列", "ja-JP": "台詞音声タスクキュー", "ko-KR": "대사 오디오 작업 큐" },
   返回章节管理: { "en-US": "Back to Chapters", "zh-TW": "返回章節管理", "ja-JP": "章管理に戻る", "ko-KR": "챕터 관리로" },
   角色库: { "en-US": "Role Library", "zh-TW": "角色庫", "ja-JP": "役割ライブラリ", "ko-KR": "역할 라이브러리" },
+  提示词字数: { "en-US": "Prompt Length", "zh-TW": "提示詞字數", "ja-JP": "プロンプト文字数", "ko-KR": "프롬프트 글자 수" },
   角色统计: { "en-US": "Role Stats", "zh-TW": "角色統計", "ja-JP": "役割統計", "ko-KR": "역할 통계" },
   角色数: { "en-US": "Roles", "zh-TW": "角色數", "ja-JP": "役割数", "ko-KR": "역할 수" },
   一等角色: { "en-US": "Level 1", "zh-TW": "一等角色", "ja-JP": "一級役", "ko-KR": "1급 역할" },
