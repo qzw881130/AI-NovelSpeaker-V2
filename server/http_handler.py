@@ -585,8 +585,19 @@ class Handler(BaseHTTPRequestHandler):
                 return
             body = abs_path.read_bytes()
             ctype = mimetypes.guess_type(abs_path.name)[0] or "application/octet-stream"
+            role_name = str(role.get("name") or "role").strip() or "role"
+            download_name = f"{role_id}-{role_name}.flac"
+            ascii_download_name = re.sub(r"[^A-Za-z0-9._-]+", "_", download_name).strip(
+                "._"
+            )
+            if not ascii_download_name:
+                ascii_download_name = f"{role_id}.flac"
             self.send_response(200)
             self.send_header("Content-Type", ctype)
+            self.send_header(
+                "Content-Disposition",
+                f"attachment; filename=\"{ascii_download_name}\"; filename*=UTF-8''{quote(download_name)}",
+            )
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
