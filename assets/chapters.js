@@ -836,6 +836,35 @@ function bindActions() {
     }
   });
 
+  document.getElementById("enqueueRemainingLineAudioBtn")?.addEventListener("click", async () => {
+    if (!activeNovel || !activeChapterNum) return;
+    const remainingIndexes = getRemainingLineIndexesForQueue();
+    if (!remainingIndexes.length) {
+      toast(translateText("当前没有可加入队列的剩余台词"));
+      return;
+    }
+    try {
+      const schedule = getLineAudioQueueSchedule();
+      let queuedCount = 0;
+      for (const lineIndex of remainingIndexes) {
+        await enqueueLineAudio(activeNovel.id, activeChapterNum, lineIndex, {
+          scheduledAt: schedule.scheduledAt,
+        });
+        queuedCount += 1;
+      }
+      if (queuedCount > 0) {
+        incrementNavBadge("lineAudio", queuedCount);
+        renderNav();
+      }
+      setStatus(schedule.label);
+      toast(`${translateText("剩余台词已加入队列")}: ${queuedCount}`);
+      await loadLineAudios();
+      startLineAudioRefreshLoop();
+    } catch (err) {
+      toast(err.message);
+    }
+  });
+
   document.getElementById("mergeLineAudioBtn")?.addEventListener("click", async () => {
     if (!activeNovel || !activeChapterNum) return;
     try {
@@ -1020,6 +1049,18 @@ function getFilteredLinePreviewRows() {
     }
     return true;
   });
+}
+
+function getRemainingLineIndexesForQueue() {
+  return linePreviewRows
+    .filter((row) => {
+      const entry = getLineAudioEntry(row.index);
+      if (!entry || !entry.canGenerate) return false;
+      if (entry.hasAudio && entry.streamUrl) return false;
+      const taskStatus = String(entry.task?.status || "").trim();
+      return !["pending", "processing", "running", "completed"].includes(taskStatus);
+    })
+    .map((row) => row.index);
 }
 
 function getLineSearchMatches(rows) {
