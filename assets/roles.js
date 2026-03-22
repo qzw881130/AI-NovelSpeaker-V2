@@ -311,6 +311,26 @@ function buildSampleCell(role) {
   return `<div class="role-sample-cell">${parts.join("")}</div>`;
 }
 
+function buildRoleJson(role) {
+  return JSON.stringify(
+    {
+      name: String(role.name || "").trim(),
+      instruct: String(role.instruct || "").trim(),
+      text: String(role.sampleText || "").trim(),
+    },
+    null,
+    2
+  );
+}
+
+function openRoleJsonModal(role) {
+  document.getElementById("roleJsonModalContent").value = buildRoleJson(role);
+  document.querySelector('#roleJsonModal h3').textContent = translateText("角色JSON");
+  document.getElementById("copyRoleJsonBtn").textContent = translateText("复制JSON");
+  document.getElementById("roleJsonModal").showModal();
+  localizeDocumentText(document);
+}
+
 function renderRolesTable() {
   const tbody = document.getElementById("rolesPageTableBody");
   tbody.innerHTML = "";
@@ -336,6 +356,7 @@ function renderRolesTable() {
       </td>
       <td>
         <div class="role-row-actions">
+          <button class="ghost-btn btn-sm role-json-btn" data-role-id="${role.id}" type="button" title="${translateText("复制角色JSON")}" aria-label="${translateText("复制角色JSON")}">{ }</button>
           <button class="ghost-btn btn-sm save-role-btn" data-role-id="${role.id}" type="button">${translateText("保存")}</button>
           <button class="ghost-btn btn-sm duplicate-role-btn" data-role-id="${role.id}" type="button">${translateText("复制")}</button>
           <button class="ghost-btn btn-sm danger delete-role-btn" data-role-id="${role.id}" data-role-name="${escapeHtml(role.name || "")}" type="button">${translateText("删除")}</button>
@@ -343,6 +364,15 @@ function renderRolesTable() {
       </td>
     `;
     tbody.appendChild(tr);
+  }
+
+  for (const btn of tbody.querySelectorAll(".role-json-btn")) {
+    btn.addEventListener("click", () => {
+      const roleId = Number(btn.dataset.roleId || 0);
+      const role = roleItems.find((item) => Number(item.id) === roleId);
+      if (!role) return;
+      openRoleJsonModal(role);
+    });
   }
 
   // 绑定保存按钮
@@ -763,6 +793,12 @@ function bindActions() {
     setHeader(activeNovel);
     await refreshRolesPage();
     toast(`${t("common.view")}: ${activeNovel.name}`);
+  });
+
+  document.getElementById("copyRoleJsonBtn").addEventListener("click", async () => {
+    const text = String(document.getElementById("roleJsonModalContent").value || "");
+    await navigator.clipboard.writeText(text);
+    toast(translateText("JSON已复制"));
   });
 }
 

@@ -1881,6 +1881,13 @@ menu {
   flex-wrap: wrap;
 }
 
+.role-json-btn {
+  min-width: 40px;
+  padding: 0 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-weight: 700;
+}
+
 /* 台词队列页面样式 */
 .tasks-layout {
   display: grid;

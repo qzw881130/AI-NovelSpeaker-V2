@@ -146,6 +146,17 @@
       </form>
     </dialog>
 
+    <dialog id="roleJsonModal" class="modal">
+      <form method="dialog">
+        <h3>角色JSON</h3>
+        <textarea id="roleJsonModalContent" class="code-block" rows="12" readonly></textarea>
+        <menu>
+          <button id="copyRoleJsonBtn" class="ghost-btn" type="button">复制 JSON</button>
+          <button class="primary-btn" type="submit">关闭</button>
+        </menu>
+      </form>
+    </dialog>
+
     <div id="toast" class="toast"></div>
     <script type="module" src="./assets/roles.js"></script>
   </body>
