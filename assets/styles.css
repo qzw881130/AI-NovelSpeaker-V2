@@ -646,24 +646,31 @@ textarea {
 }
 
 .chapter-quick-jump {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 6px;
   margin: 10px 0;
   padding: 8px;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: #fffdf8;
-  max-height: 118px;
+  max-height: 376px;
   overflow: auto;
 }
 
 .quick-chip {
   --progress: 0%;
+  width: 100%;
+  min-width: 0;
   border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 2px 9px;
+  border-radius: 12px;
+  min-height: 30px;
+  padding: 0 10px;
   font-size: 12px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
   background: linear-gradient(90deg, #ead5c0 0%, #ead5c0 var(--progress), #fffdf8 var(--progress), #fffdf8 100%);
 }

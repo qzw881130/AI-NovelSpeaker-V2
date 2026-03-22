@@ -15,12 +15,16 @@ Multi-novel management and audio generation toolkit (SQLite + local file storage
 
 ## Features
 
-- Novel management: create/edit/delete, statistics, ZIP bundle export
-- Chapter management: chapter CRUD, JSON conversion, audio generation, playback/download
-- Queues: JSON task queue, audio task queue, cancel-all, delete non-running audio tasks
-- Prompts & workflows: system/user template management, copy system templates into user templates
-- Settings: ComfyUI URL, LLM parameters, batch character limit, UI language/timezone
-- Multilingual UI: `zh-CN` / `zh-TW` / `en-US` / `ja-JP` / `ko-KR`
+- Novel management: create/edit/delete novels, project stats, auto refresh, real ZIP bundle export, and novel-level prompt/workflow binding
+- Chapter management: chapter CRUD, content viewing/copying, chapter search, AI-to-JSON, JSON view/edit/find-replace, role viewing, line preview/generation, and chapter audio playback/download/merge
+- Line audio: supports single-line generation, batch generation into the line-audio queue, immediate or scheduled execution; task page supports auto refresh, details, playback, deletion, and pending count display
+- Role library: role management, level filtering, chapter role comparison, add/replace role library entries, sample audio upload/generation, and voice text extraction
+- Task queues: JSON task queue and line-audio task queue with status viewing, novel-based filtering, and auto refresh; audio merge warns about the number of lines still missing audio
+- Prompts & workflows: system/user template management with copy-to-user support; built-in ComfyUI workflows for voice text extraction, line-audio generation, sample-audio generation, and more
+- Settings: ComfyUI URL, LLM parameters, Proxy, batch text length, line queue execution mode, UI language, and timezone
+- Multilingual UI: supports `zh-CN` / `zh-TW` / `en-US` / `ja-JP` / `ko-KR`
+- Audio experience: chapter audio, line audio, and merged audio all support seeking via the progress bar
+- Debugging & docs: includes ComfyUI debug workflows, sample debug assets, and a “novel to audiobook” flow diagram
 
 ## Important Paths
 
