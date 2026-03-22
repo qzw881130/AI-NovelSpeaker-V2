@@ -461,6 +461,10 @@ async function deleteLineAudioTask(taskId) {
   await api(`/api/line-audio-tasks/${Number(taskId)}`, { method: "DELETE" });
 }
 
+async function retryLineAudioTask(taskId) {
+  await api(`/api/line-audio-tasks/${Number(taskId)}/retry`, { method: "POST", body: "{}" });
+}
+
 async function getLineAudioFileUrl(taskId) {
   return `/api/line-audio-tasks/${Number(taskId)}/file`;
 }
@@ -515,6 +519,7 @@ export {
   mergeChapterLineAudio,
   fetchLineAudioTasks,
   deleteLineAudioTask,
+  retryLineAudioTask,
   getLineAudioFileUrl,
   getMergedAudioUrl,
 };

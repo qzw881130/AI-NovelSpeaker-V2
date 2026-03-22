@@ -4,6 +4,7 @@ import {
   setActiveNovelId,
   fetchLineAudioTasks,
   deleteLineAudioTask,
+  retryLineAudioTask,
 } from "./store.js";
 import { clearNavBadge, renderNav, toast, fmtDateTime } from "./ui.js";
 import { localizeDocumentText, t, translateText } from "./i18n.js";
@@ -155,6 +156,7 @@ function getLineAudioTaskSignature(task) {
 function renderLineAudioTaskDetail(task) {
   const detailEl = document.getElementById("lineAudioTaskDetail");
   activeLineAudioTaskSignature = getLineAudioTaskSignature(task);
+  const lineCharCount = Array.from(String(task.lineText || "")).length;
 
   let html = '<div class="task-detail-grid">';
 
@@ -163,6 +165,7 @@ function renderLineAudioTaskDetail(task) {
   html += `<div class="detail-row"><span class="detail-label">${translateText("台词序号:")}</span><span class="detail-value">${task.lineIndex + 1}</span></div>`;
   html += `<div class="detail-row"><span class="detail-label">${translateText("角色:")}</span><span class="detail-value">${escapeHtml(task.roleName || "-")}</span></div>`;
   html += `<div class="detail-row"><span class="detail-label">${translateText("台词:")}</span><span class="detail-value">${escapeHtml(task.lineText || "-")}</span></div>`;
+  html += `<div class="detail-row"><span class="detail-label">${translateText("台词字数:")}</span><span class="detail-value">${lineCharCount}</span></div>`;
   html += `<div class="detail-row"><span class="detail-label">${translateText("参考文本:")}</span><span class="detail-value">${escapeHtml(task.referenceText || "-")}</span></div>`;
   html += `<div class="detail-row"><span class="detail-label">${translateText("参考音频:")}</span><span class="detail-value">${escapeHtml(task.referenceAudioPath || "-")}</span></div>`;
 
@@ -194,10 +197,27 @@ function renderLineAudioTaskDetail(task) {
 
   // 操作按钮
   html += '<div class="task-actions">';
+  if (status === "failed" || status === "cancelled") {
+    html += `<button class="ghost-btn retry-task-btn" data-task-id="${task.id}" type="button">${translateText("重试")}</button>`;
+  }
   html += `<button class="ghost-btn danger delete-task-btn" data-task-id="${task.id}" type="button">${translateText("删除任务")}</button>`;
   html += '</div>';
 
   detailEl.innerHTML = html;
+
+  const retryBtn = detailEl.querySelector(".retry-task-btn");
+  if (retryBtn) {
+    retryBtn.addEventListener("click", async () => {
+      try {
+        await retryLineAudioTask(task.id);
+        toast(translateText("任务已重新加入队列"));
+        await refreshLineAudioTasks();
+        await loadLineAudioTaskDetail(task.id);
+      } catch (err) {
+        toast(err.message);
+      }
+    });
+  }
 
   // 绑定删除按钮
   const deleteBtn = detailEl.querySelector(".delete-task-btn");

@@ -148,6 +148,50 @@ def _line_audio_task_row_to_dict(row: Any) -> dict:
     }
 
 
+def _extract_comfy_history_error(history: dict, prompt_id: str) -> str | None:
+    if not isinstance(history, dict) or not history:
+        return None
+    job = history.get(prompt_id)
+    if job is None:
+        job = next(iter(history.values())) if history else None
+    if not isinstance(job, dict):
+        return None
+
+    status = job.get("status")
+    if not isinstance(status, dict):
+        return None
+
+    status_str = str(status.get("status_str") or "").strip().lower()
+    messages = status.get("messages")
+    if isinstance(messages, list):
+        for message in messages:
+            if not isinstance(message, (list, tuple)) or not message:
+                continue
+            message_type = str(message[0] or "").strip().lower()
+            payload = (
+                message[1] if len(message) > 1 and isinstance(message[1], dict) else {}
+            )
+            if "error" not in message_type and message_type not in {
+                "execution_interrupted",
+                "execution_error",
+            }:
+                continue
+            details = [
+                str(payload.get("exception_message") or "").strip(),
+                str(payload.get("node_errors") or "").strip(),
+                str(payload.get("error") or "").strip(),
+            ]
+            detail_text = next((item for item in details if item), "")
+            if detail_text:
+                return detail_text
+            if message_type:
+                return message_type
+
+    if status_str in {"error", "failed", "execution_error", "execution_interrupted"}:
+        return str(status.get("status_str") or "ComfyUI workflow failed")
+    return None
+
+
 def _get_existing_line_task(novel_id: int, chapter_id: int, line_hash: str) -> Any:
     """获取已存在的台词任务"""
     conn = db_conn()
@@ -646,6 +690,9 @@ def process_line_audio_task(task_id: int) -> None:
                 path=f"/history/{prompt_id}",
                 method="GET",
             )
+            history_error = _extract_comfy_history_error(history, prompt_id)
+            if history_error:
+                raise RuntimeError(history_error)
             output_info = extract_audio_output_from_history(
                 history, prompt_id, node_id=str(output_node)
             )
@@ -919,6 +966,39 @@ def delete_line_audio_task(task_id: int) -> tuple[bool, str]:
     conn.commit()
     conn.close()
     return True, "deleted"
+
+
+def retry_line_audio_task(task_id: int) -> tuple[bool, str]:
+    """重试失败的台词音频任务"""
+    conn = db_conn()
+    row = conn.execute(
+        "SELECT id, status FROM line_audio_tasks WHERE id=?", (task_id,)
+    ).fetchone()
+
+    if not row:
+        conn.close()
+        return False, "任务不存在"
+
+    current_status = str(row["status"] or "").strip()
+    if current_status not in {"failed", "cancelled"}:
+        conn.close()
+        return False, "只有失败或已取消的任务可以重试"
+
+    conn.execute(
+        """
+        UPDATE line_audio_tasks
+        SET status='pending', comfy_status='queued', comfy_prompt_id='',
+            output_filename='', output_subfolder='', output_type='',
+            downloaded_file_path='', error_message=NULL,
+            comfy_started_at=NULL, comfy_finished_at=NULL,
+            scheduled_at='', updated_at=CURRENT_TIMESTAMP
+        WHERE id=?
+        """,
+        (task_id,),
+    )
+    conn.commit()
+    conn.close()
+    return True, "queued"
 
 
 def cancel_all_line_audio_tasks(novel_id: int | None = None) -> dict:

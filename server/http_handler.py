@@ -25,6 +25,7 @@ from .line_audio import (
     merge_chapter_line_audio,
     get_chapter_merged_audio_path,
     delete_line_audio_task,
+    retry_line_audio_task,
 )
 
 
@@ -613,6 +614,7 @@ class Handler(BaseHTTPRequestHandler):
 
         m_line_audio_tasks = re.match(r"^/api/novels/(\d+)/line-audio-tasks$", route)
         if m_line_audio_tasks:
+            ensure_task_worker()
             novel_id = int(m_line_audio_tasks.group(1))
             tasks = list_line_audio_tasks(novel_id)
             self.send_json({"lineAudioTasks": tasks})
@@ -1284,6 +1286,7 @@ class Handler(BaseHTTPRequestHandler):
             r"^/api/novels/(\d+)/chapters/(\d+)/line-audio/enqueue$", route
         )
         if m_line_audio_enqueue:
+            ensure_task_worker()
             novel_id = int(m_line_audio_enqueue.group(1))
             chapter_num = int(m_line_audio_enqueue.group(2))
             body = self.read_json()
@@ -1317,6 +1320,7 @@ class Handler(BaseHTTPRequestHandler):
             r"^/api/novels/(\d+)/chapters/(\d+)/line-audio/enqueue-all$", route
         )
         if m_line_audio_enqueue_all:
+            ensure_task_worker()
             novel_id = int(m_line_audio_enqueue_all.group(1))
             chapter_num = int(m_line_audio_enqueue_all.group(2))
             body = self.read_json()
@@ -1340,6 +1344,18 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": msg}, 409)
                 return
             self.send_json({"status": "queued", **data})
+            return
+
+        m_retry_line_task = re.match(r"^/api/line-audio-tasks/(\d+)/retry$", route)
+        if m_retry_line_task:
+            ensure_task_worker()
+            task_id = int(m_retry_line_task.group(1))
+            ok, msg = retry_line_audio_task(task_id)
+            if not ok:
+                code = 404 if "不存在" in msg or "not found" in msg else 409
+                self.send_json({"error": msg}, code)
+                return
+            self.send_json({"status": msg})
             return
 
         m_merge_audio = re.match(
@@ -1884,6 +1900,7 @@ class Handler(BaseHTTPRequestHandler):
         # 台词音频DELETE API
         m_delete_line_task = re.match(r"^/api/line-audio-tasks/(\d+)$", route)
         if m_delete_line_task:
+            ensure_task_worker()
             task_id = int(m_delete_line_task.group(1))
             ok, msg = delete_line_audio_task(task_id)
             if not ok:

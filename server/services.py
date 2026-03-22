@@ -1823,8 +1823,16 @@ def task_worker_loop() -> None:
     from .line_audio import run_line_audio_queue_once
 
     while not TASK_WORKER_STOP.is_set():
-        has_json_work = run_json_queue_once()
-        has_line_audio_work = run_line_audio_queue_once()
+        has_json_work = False
+        has_line_audio_work = False
+        try:
+            has_json_work = run_json_queue_once()
+        except Exception as exc:
+            print(f"[task-worker] json queue error: {exc}")
+        try:
+            has_line_audio_work = run_line_audio_queue_once()
+        except Exception as exc:
+            print(f"[task-worker] line audio queue error: {exc}")
         TASK_WORKER_STOP.wait(1.0 if (has_json_work or has_line_audio_work) else 3.0)
 
 
