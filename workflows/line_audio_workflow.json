@@ -28,7 +28,7 @@
       "seed": 580216274,
       "keep_model_loaded": true,
       "offload_to_cpu": false,
-      "compile_model": "the sun is shining brightly in the clear blue sky. A gentle breeze is blowing and birds are singing sweet melodies. The world is full of beauty and wonder waiting to be explored.",
+      "compile_model": false,
       "reference_text": [
         "40",
         0
