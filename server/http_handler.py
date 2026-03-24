@@ -89,7 +89,11 @@ class Handler(BaseHTTPRequestHandler):
         return start, end
 
     def send_file_response(
-        self, file_path: Path, ctype: str, cache_control: str | None = None
+        self,
+        file_path: Path,
+        ctype: str,
+        cache_control: str | None = None,
+        download_name: str | None = None,
     ) -> None:
         file_size = file_path.stat().st_size
         range_values = self._parse_range_header(file_size)
@@ -108,6 +112,16 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", ctype)
         self.send_header("Accept-Ranges", "bytes")
+        if download_name:
+            ascii_download_name = re.sub(r"[^A-Za-z0-9._-]+", "_", download_name).strip(
+                "._"
+            )
+            if not ascii_download_name:
+                ascii_download_name = "download.bin"
+            self.send_header(
+                "Content-Disposition",
+                f"attachment; filename=\"{ascii_download_name}\"; filename*=UTF-8''{quote(download_name)}",
+            )
         if cache_control:
             self.send_header("Cache-Control", cache_control)
         self.send_header("Content-Length", str(content_length))
@@ -657,7 +671,10 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": "audio file not found"}, 404)
                 return
             ctype = mimetypes.guess_type(abs_path.name)[0] or "audio/flac"
-            self.send_file_response(abs_path, ctype)
+            download_name = (
+                abs_path.name if abs_path.suffix else f"line-audio-{task_id}.flac"
+            )
+            self.send_file_response(abs_path, ctype, download_name=download_name)
             return
 
         m_merged_audio = re.match(
