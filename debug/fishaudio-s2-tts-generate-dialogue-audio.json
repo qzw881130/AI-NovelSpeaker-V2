@@ -5,6 +5,218 @@
   "last_link_id": 46,
   "nodes": [
     {
+      "id": 27,
+      "type": "LoadAudio",
+      "pos": [
+        1022.3485906208101,
+        665.2837966896005
+      ],
+      "size": [
+        379.8985290527344,
+        137.1841278076172
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "audio",
+          "name": "audio",
+          "type": "COMBO",
+          "widget": {
+            "name": "audio"
+          }
+        },
+        {
+          "label": "audioUI",
+          "name": "audioUI",
+          "type": "AUDIO_UI",
+          "widget": {
+            "name": "audioUI"
+          }
+        },
+        {
+          "label": "upload",
+          "name": "upload",
+          "type": "AUDIOUPLOAD",
+          "widget": {
+            "name": "upload"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "label": "AUDIO",
+          "name": "AUDIO",
+          "type": "AUDIO",
+          "links": [
+            28
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.16.4",
+        "Node name for S&R": "LoadAudio",
+        "ue_properties": {
+          "version": "7.7",
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "1-旁白.flac",
+        null,
+        null
+      ]
+    },
+    {
+      "id": 40,
+      "type": "Text Multiline",
+      "pos": [
+        1079.4213236931814,
+        1111.9296392301696
+      ],
+      "size": [
+        400,
+        200
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            45
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "was-ns",
+        "ver": "3.0.1",
+        "Node name for S&R": "Text Multiline",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {},
+          "version": "7.7"
+        }
+      },
+      "widgets_values": [
+        "话说当日武松来到县前客店内，收拾行李铺盖"
+      ]
+    },
+    {
+      "id": 41,
+      "type": "SaveAudio",
+      "pos": [
+        2113.0831422461006,
+        713.6184307019561
+      ],
+      "size": [
+        385.44378596368483,
+        162.43918289833096
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "audio",
+          "name": "audio",
+          "type": "AUDIO",
+          "link": 46
+        },
+        {
+          "label": "filename_prefix",
+          "name": "filename_prefix",
+          "type": "STRING",
+          "widget": {
+            "name": "filename_prefix"
+          },
+          "link": null
+        },
+        {
+          "label": "audioUI",
+          "name": "audioUI",
+          "type": "AUDIO_UI",
+          "widget": {
+            "name": "audioUI"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.16.3",
+        "Node name for S&R": "SaveAudio",
+        "ue_properties": {
+          "version": "7.7",
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "audio/ComfyUI"
+      ]
+    },
+    {
+      "id": 33,
+      "type": "CR Prompt Text",
+      "pos": [
+        1030.3301040008673,
+        871.0046231051647
+      ],
+      "size": [
+        471.7070312568576,
+        164.08337459948234
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "prompt",
+          "name": "prompt",
+          "type": "STRING",
+          "widget": {
+            "name": "prompt"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "label": "prompt",
+          "name": "prompt",
+          "type": "STRING",
+          "links": [
+            37
+          ]
+        },
+        {
+          "label": "show_help",
+          "name": "show_help",
+          "type": "STRING"
+        }
+      ],
+      "properties": {
+        "cnr_id": "ComfyUI_Comfyroll_CustomNodes",
+        "ver": "d78b780ae43fcf8c6b7c6505e6ffb4584281ceca",
+        "Node name for S&R": "CR Prompt Text",
+        "ue_properties": {
+          "version": "7.7",
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "看官听说：原来花子虚浑家姓李，因正月十五所生，那日人家送了一对鱼瓶儿来，就小字唤做瓶姐。先与大名府梁中书为妾。梁中书乃东京蔡太师女婿，夫人性甚嫉妒，婢妾打死者多埋在后花园中。这李氏只在外边书房内住，有养娘伏侍。只因政和三年正月上元之夜，梁中书同夫人在翠云楼上，李逵杀了全家老小，梁中书与夫人各自逃生。这李氏带了一百颗西洋大珠，二两重一对鸦青宝石，与养娘走上东京投亲。那时花太监由御前班直升广南镇守，因侄男花子虚没妻室，就使媒婆说亲，娶为正室。太监到广南去，也带他到广南，住了半年有余。不幸花太监有病，告老在家，因是清河县人，在本县住了。如今花太监死了，一分钱多在子虚手里。每日同朋友在院中行走，与西门庆都是前日结拜的弟兄。终日与应伯爵、谢希大一班十数个，每月会在一处，叫些唱的，花攒锦簇顽耍。众人又见花子虚乃是内臣家勤儿，手里使钱撒漫，哄着他在院中请婊子，整三五夜不归。正是："
+      ]
+    },
+    {
       "id": 29,
       "type": "FishS2VoiceCloneTTS",
       "pos": [
@@ -188,220 +400,8 @@
         "fixed",
         true,
         false,
-        "the sun is shining brightly in the clear blue sky. A gentle breeze is blowing and birds are singing sweet melodies. The world is full of beauty and wonder waiting to be explored.",
+        false,
         ""
-      ]
-    },
-    {
-      "id": 27,
-      "type": "LoadAudio",
-      "pos": [
-        1022.3485906208101,
-        665.2837966896005
-      ],
-      "size": [
-        379.8985290527344,
-        137.1841278076172
-      ],
-      "flags": {},
-      "order": 0,
-      "mode": 0,
-      "inputs": [
-        {
-          "label": "audio",
-          "name": "audio",
-          "type": "COMBO",
-          "widget": {
-            "name": "audio"
-          }
-        },
-        {
-          "label": "audioUI",
-          "name": "audioUI",
-          "type": "AUDIO_UI",
-          "widget": {
-            "name": "audioUI"
-          }
-        },
-        {
-          "label": "upload",
-          "name": "upload",
-          "type": "AUDIOUPLOAD",
-          "widget": {
-            "name": "upload"
-          }
-        }
-      ],
-      "outputs": [
-        {
-          "label": "AUDIO",
-          "name": "AUDIO",
-          "type": "AUDIO",
-          "links": [
-            28
-          ]
-        }
-      ],
-      "properties": {
-        "cnr_id": "comfy-core",
-        "ver": "0.16.4",
-        "Node name for S&R": "LoadAudio",
-        "ue_properties": {
-          "version": "7.7",
-          "widget_ue_connectable": {},
-          "input_ue_unconnectable": {}
-        }
-      },
-      "widgets_values": [
-        "1-旁白.flac",
-        null,
-        null
-      ]
-    },
-    {
-      "id": 41,
-      "type": "SaveAudio",
-      "pos": [
-        2113.0831422461006,
-        713.6184307019561
-      ],
-      "size": [
-        385.44378596368483,
-        162.43918289833096
-      ],
-      "flags": {},
-      "order": 4,
-      "mode": 0,
-      "inputs": [
-        {
-          "label": "audio",
-          "name": "audio",
-          "type": "AUDIO",
-          "link": 46
-        },
-        {
-          "label": "filename_prefix",
-          "name": "filename_prefix",
-          "type": "STRING",
-          "widget": {
-            "name": "filename_prefix"
-          },
-          "link": null
-        },
-        {
-          "label": "audioUI",
-          "name": "audioUI",
-          "type": "AUDIO_UI",
-          "widget": {
-            "name": "audioUI"
-          },
-          "link": null
-        }
-      ],
-      "outputs": [],
-      "properties": {
-        "cnr_id": "comfy-core",
-        "ver": "0.16.3",
-        "Node name for S&R": "SaveAudio",
-        "ue_properties": {
-          "version": "7.7",
-          "widget_ue_connectable": {},
-          "input_ue_unconnectable": {}
-        }
-      },
-      "widgets_values": [
-        "audio/ComfyUI"
-      ]
-    },
-    {
-      "id": 33,
-      "type": "CR Prompt Text",
-      "pos": [
-        1030.3301040008673,
-        871.0046231051647
-      ],
-      "size": [
-        471.7070312568576,
-        164.08337459948234
-      ],
-      "flags": {},
-      "order": 1,
-      "mode": 0,
-      "inputs": [
-        {
-          "label": "prompt",
-          "name": "prompt",
-          "type": "STRING",
-          "widget": {
-            "name": "prompt"
-          }
-        }
-      ],
-      "outputs": [
-        {
-          "label": "prompt",
-          "name": "prompt",
-          "type": "STRING",
-          "links": [
-            37
-          ]
-        },
-        {
-          "label": "show_help",
-          "name": "show_help",
-          "type": "STRING"
-        }
-      ],
-      "properties": {
-        "cnr_id": "ComfyUI_Comfyroll_CustomNodes",
-        "ver": "d78b780ae43fcf8c6b7c6505e6ffb4584281ceca",
-        "Node name for S&R": "CR Prompt Text",
-        "ue_properties": {
-          "version": "7.7",
-          "widget_ue_connectable": {},
-          "input_ue_unconnectable": {}
-        }
-      },
-      "widgets_values": [
-        "只见一对对缨枪的猎户，摆将过来，后面便是那打死的老虎，好象锦布袋一般，四个人还抬不动。"
-      ]
-    },
-    {
-      "id": 40,
-      "type": "Text Multiline",
-      "pos": [
-        1079.4213236931814,
-        1111.9296392301696
-      ],
-      "size": [
-        400,
-        200
-      ],
-      "flags": {},
-      "order": 2,
-      "mode": 0,
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "STRING",
-          "type": "STRING",
-          "links": [
-            45
-          ]
-        }
-      ],
-      "properties": {
-        "cnr_id": "was-ns",
-        "ver": "3.0.1",
-        "Node name for S&R": "Text Multiline",
-        "ue_properties": {
-          "widget_ue_connectable": {},
-          "input_ue_unconnectable": {},
-          "version": "7.7"
-        }
-      },
-      "widgets_values": [
-        "话说当日武松来到县前客店内，收拾行李铺盖"
       ]
     }
   ],
@@ -477,10 +477,10 @@
       4
     ],
     "ds": {
-      "scale": 0.419917955727796,
+      "scale": 0.7989059610151635,
       "offset": [
-        901.2498989979483,
-        763.7071310945578
+        -5.565834433382406,
+        -16.638231737803608
       ]
     },
     "frontendVersion": "1.41.20",
