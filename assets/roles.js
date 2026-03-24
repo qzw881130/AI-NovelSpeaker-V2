@@ -333,9 +333,13 @@ function openRoleJsonModal(role) {
 
 function renderRolesTable() {
   const tbody = document.getElementById("rolesPageTableBody");
+  const countEl = document.getElementById("rolesFilteredCount");
   tbody.innerHTML = "";
 
   const items = getFilteredRoleItems();
+  if (countEl) {
+    countEl.textContent = `${translateText("结果")} ${items.length} ${translateText("条")}`;
+  }
   if (!items.length) {
     tbody.innerHTML = `<tr><td colspan="6" class="empty-cell">${translateText("暂无角色数据")}</td></tr>`;
     localizeDocumentText(document);

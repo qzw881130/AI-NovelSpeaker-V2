@@ -1881,6 +1881,18 @@ menu {
   flex-wrap: wrap;
 }
 
+.panel-head-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.roles-filtered-count {
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+}
+
 .role-json-btn {
   min-width: 40px;
   padding: 0 10px;
