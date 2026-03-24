@@ -11,6 +11,7 @@ import {
   duplicateRole,
   deleteRole,
   uploadRoleSampleAudio,
+  generateRoleSampleAudio,
 } from "./store.js";
 import { renderNav, toast } from "./ui.js";
 import { localizeDocumentText, t, translateText } from "./i18n.js";
@@ -176,6 +177,10 @@ function getFilteredRoleItems() {
     }
     return true;
   });
+}
+
+function getRolesMissingSampleAudio() {
+  return roleItems.filter((role) => !String(role.sampleAudioPath || "").trim());
 }
 
 function renderRoleNameFilter() {
@@ -498,11 +503,7 @@ function renderRolesTable() {
       const previousText = btn.textContent;
       btn.textContent = translateText("生成中...");
       try {
-        const res = await fetch(`/api/novels/${activeNovel.id}/roles/${roleId}/generate-sample`, { method: "POST" });
-        const data = await res.json();
-        if (!res.ok) {
-          throw new Error(data.error || translateText("生成示例失败"));
-        }
+        const data = await generateRoleSampleAudio(activeNovel.id, roleId);
         const idx = roleItems.findIndex((r) => r.id === roleId);
         if (idx >= 0) {
           roleItems[idx] = data.role || roleItems[idx];
@@ -694,6 +695,30 @@ function bindActions() {
 
   document.getElementById("createRoleBtn").addEventListener("click", () => {
     openRoleModal("create");
+  });
+
+  document.getElementById("generateMissingSamplesBtn").addEventListener("click", async () => {
+    if (!activeNovel) return;
+    const missingRoles = getRolesMissingSampleAudio();
+    if (!missingRoles.length) {
+      toast(translateText("当前没有缺失声音示例的角色"));
+      return;
+    }
+    const btn = document.getElementById("generateMissingSamplesBtn");
+    btn.disabled = true;
+    try {
+      let queuedCount = 0;
+      for (const role of missingRoles) {
+        await generateRoleSampleAudio(activeNovel.id, role.id);
+        queuedCount += 1;
+      }
+      setRolesPageStatus(`${translateText("缺失声音示例已加入生成队列")}: ${queuedCount}`);
+      await refreshRolesPage();
+    } catch (err) {
+      setRolesPageStatus(err.message || translateText("生成示例失败"), true);
+    } finally {
+      btn.disabled = false;
+    }
   });
 
   document.getElementById("roleCancelBtn").addEventListener("click", () => {

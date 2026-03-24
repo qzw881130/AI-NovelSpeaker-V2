@@ -1536,6 +1536,20 @@ menu {
   font-size: 13px;
 }
 
+.inline-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.inline-check input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary);
+}
+
 .line-audio-toolbar input[type="search"] {
   flex: 1 1 260px;
   min-width: 180px;

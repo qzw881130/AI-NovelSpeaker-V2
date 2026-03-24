@@ -413,6 +413,14 @@ async function uploadRoleSampleAudio(novelId, roleId, audioBase64, source = "upl
   return res;
 }
 
+async function generateRoleSampleAudio(novelId, roleId) {
+  const res = await api(`/api/novels/${Number(novelId)}/roles/${Number(roleId)}/generate-sample`, {
+    method: "POST",
+    body: "{}",
+  });
+  return res;
+}
+
 async function getRoleSampleAudioUrl(novelId, roleId) {
   return `/api/novels/${Number(novelId)}/roles/${Number(roleId)}/sample`;
 }
@@ -512,6 +520,7 @@ export {
   duplicateRole,
   deleteRole,
   uploadRoleSampleAudio,
+  generateRoleSampleAudio,
   // 台词音频
   fetchChapterLineAudios,
   enqueueLineAudio,

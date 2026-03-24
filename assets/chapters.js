@@ -42,6 +42,7 @@ let lineAudioEntries = [];
 let linePreviewRows = [];
 let activeLineRole = "__all";
 let activeLineAudioFilter = "__all";
+let filterMissingRoleOnly = false;
 let lineSearchIndex = -1;
 let lineEditEnabled = false;
 let editingLineIndex = -1;
@@ -921,6 +922,12 @@ function bindActions() {
     renderLineAudioTable();
   });
 
+  document.getElementById("lineMissingRoleFilter")?.addEventListener("change", (event) => {
+    filterMissingRoleOnly = Boolean(event.target.checked);
+    lineSearchIndex = -1;
+    renderLineAudioTable();
+  });
+
   document.getElementById("lineSearchInput")?.addEventListener("input", () => {
     lineSearchIndex = -1;
     renderLineAudioTable();
@@ -1066,6 +1073,12 @@ function getFilteredLinePreviewRows() {
     if (activeLineRole !== "__all" && row.roleName !== activeLineRole) {
       return false;
     }
+    if (filterMissingRoleOnly) {
+      const entry = getLineAudioEntry(row.index);
+      if (entry?.roleInLibrary !== false) {
+        return false;
+      }
+    }
     if (activeLineAudioFilter !== "__all") {
       const entry = getLineAudioEntry(row.index);
       const hasAudio = Boolean(entry && entry.hasAudio && entry.streamUrl);
@@ -1119,8 +1132,10 @@ function updateLineAudioToolbarState() {
   }
   const roleFilter = document.getElementById("lineRoleFilter");
   const audioFilter = document.getElementById("lineHasAudioFilter");
+  const missingRoleFilter = document.getElementById("lineMissingRoleFilter");
   if (roleFilter) roleFilter.disabled = Boolean(lineEditEnabled);
   if (audioFilter) audioFilter.disabled = Boolean(lineEditEnabled);
+  if (missingRoleFilter) missingRoleFilter.disabled = Boolean(lineEditEnabled);
 }
 
 function stopLineAudioRefreshLoop() {
