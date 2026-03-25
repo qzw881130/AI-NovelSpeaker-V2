@@ -12,6 +12,7 @@ import {
   setActiveNovelId,
   updateChapter,
   fetchChapterLineAudios,
+  fetchChapterLineAudioOverview,
   enqueueLineAudio,
   enqueueAllLineAudios,
   mergeChapterLineAudio,
@@ -1794,9 +1795,24 @@ async function updateLineAudioWarningBadge() {
   }
 }
 
+async function updateMergedAudioWarningBadge() {
+  const warningBtn = document.getElementById("mergeLineAudioBtn");
+  if (!warningBtn || !activeNovel || !activeChapterNum) return;
+  try {
+    const overview = await fetchChapterLineAudioOverview(activeNovel.id, activeChapterNum);
+    const hasWarning = Boolean(overview.mergedAudioOutdated);
+    warningBtn.classList.toggle("has-line-audio-warning", hasWarning);
+    warningBtn.title = hasWarning ? "存在更新的台词音频，建议重新合并" : "";
+  } catch {
+    warningBtn.classList.remove("has-line-audio-warning");
+    warningBtn.title = "";
+  }
+}
+
 async function updateChapterActionWarnings() {
   await updateRolesWarningBadge();
   await updateLineAudioWarningBadge();
+  await updateMergedAudioWarningBadge();
 }
 
 function bindRolesEvents() {

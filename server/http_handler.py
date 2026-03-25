@@ -20,6 +20,7 @@ from .line_audio import (
     list_line_audio_tasks,
     get_line_audio_task,
     get_chapter_line_audio_entries,
+    is_chapter_merged_audio_stale,
     enqueue_line_audio_task,
     enqueue_all_line_audio_tasks,
     merge_chapter_line_audio,
@@ -634,7 +635,15 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": "chapter not found"}, 404)
                 return
             entries = get_chapter_line_audio_entries(novel_id, int(chapter_row["id"]))
-            self.send_json({"lineAudios": entries})
+            merged_audio_outdated = is_chapter_merged_audio_stale(
+                novel_id, int(chapter_row["id"])
+            )
+            self.send_json(
+                {
+                    "lineAudios": entries,
+                    "mergedAudioOutdated": merged_audio_outdated,
+                }
+            )
             return
 
         m_line_audio_tasks = re.match(r"^/api/novels/(\d+)/line-audio-tasks$", route)

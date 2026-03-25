@@ -196,12 +196,14 @@ p {
 }
 
 #viewRolesBtn,
-#viewLineAudioBtn {
+#viewLineAudioBtn,
+#mergeLineAudioBtn {
   position: relative;
 }
 
 #viewRolesBtn.has-role-library-warning::after,
-#viewLineAudioBtn.has-line-audio-warning::after {
+#viewLineAudioBtn.has-line-audio-warning::after,
+#mergeLineAudioBtn.has-line-audio-warning::after {
   content: "!";
   position: absolute;
   top: -7px;
@@ -849,7 +851,9 @@ textarea {
 }
 
 .chapter-audio-box audio {
-  width: min(520px, 100%);
+  flex: 1 1 760px;
+  width: min(760px, 100%);
+  min-width: 320px;
 }
 
 .chapter-reading {

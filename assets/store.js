@@ -431,6 +431,14 @@ async function fetchChapterLineAudios(novelId, chapterNum) {
   return data.lineAudios || [];
 }
 
+async function fetchChapterLineAudioOverview(novelId, chapterNum) {
+  const data = await api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/line-audios`);
+  return {
+    lineAudios: data.lineAudios || [],
+    mergedAudioOutdated: Boolean(data.mergedAudioOutdated),
+  };
+}
+
 async function enqueueLineAudio(novelId, chapterNum, lineIndex, options = {}) {
   const res = await api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/line-audio/enqueue`, {
     method: "POST",
@@ -523,6 +531,7 @@ export {
   generateRoleSampleAudio,
   // 台词音频
   fetchChapterLineAudios,
+  fetchChapterLineAudioOverview,
   enqueueLineAudio,
   enqueueAllLineAudios,
   mergeChapterLineAudio,

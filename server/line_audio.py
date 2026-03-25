@@ -327,6 +327,35 @@ def get_chapter_line_audio_entries(novel_id: int, chapter_id: int) -> list[dict]
     return items
 
 
+def is_chapter_merged_audio_stale(novel_id: int, chapter_id: int) -> bool:
+    merged_path = get_chapter_merged_audio_path(novel_id, chapter_id)
+    if not merged_path or not merged_path.exists() or not merged_path.is_file():
+        return False
+
+    merged_mtime = merged_path.stat().st_mtime
+    conn = db_conn()
+    rows = conn.execute(
+        """
+        SELECT downloaded_file_path
+        FROM line_audio_tasks
+        WHERE novel_id=? AND chapter_id=? AND status='completed'
+        """,
+        (novel_id, chapter_id),
+    ).fetchall()
+    conn.close()
+
+    for row in rows:
+        file_path = str(row["downloaded_file_path"] or "").strip()
+        if not file_path:
+            continue
+        abs_path = (ROOT_DIR / file_path).resolve()
+        if not abs_path.exists() or not abs_path.is_file():
+            continue
+        if abs_path.stat().st_mtime > merged_mtime:
+            return True
+    return False
+
+
 def enqueue_line_audio_task(
     novel_id: int, chapter_id: int, line_index: int, scheduled_at: str = ""
 ) -> tuple[bool, str, int | None]:
