@@ -66,9 +66,15 @@ function escapeHtml(text) {
 function parseDbTime(text) {
   const raw = String(text || "").trim();
   if (!raw) return null;
+  const hasZone = /[zZ]|[+-]\d\d:\d\d$/.test(raw);
   const iso = raw.includes("T") ? raw : raw.replace(" ", "T");
-  const dt = new Date(`${iso}Z`);
+  const dt = new Date(hasZone ? iso : `${iso}Z`);
   return Number.isNaN(dt.getTime()) ? null : dt;
+}
+
+function formatDbDateTime(text) {
+  const dt = parseDbTime(text);
+  return dt ? fmtDateTime(dt) : "-";
 }
 
 function formatHms(totalSeconds) {
@@ -91,7 +97,7 @@ function calcTaskRuntime(task) {
 function getScheduleLabel(task) {
   const scheduledAt = String(task.scheduledAt || "").trim();
   return scheduledAt
-    ? `${translateText("指定时间执行")} ${fmtDateTime(scheduledAt) || scheduledAt}`
+    ? `${translateText("指定时间执行")} ${formatDbDateTime(scheduledAt) || scheduledAt}`
     : translateText("立即执行");
 }
 
@@ -182,8 +188,8 @@ function renderLineAudioTaskDetail(task) {
     html += `<div class="detail-row"><span class="detail-label">${translateText("错误信息:")}</span><span class="detail-value error-text">${escapeHtml(task.errorMessage)}</span></div>`;
   }
 
-  html += `<div class="detail-row"><span class="detail-label">${translateText("创建时间:")}</span><span class="detail-value">${fmtDateTime(task.createdAt)}</span></div>`;
-  html += `<div class="detail-row"><span class="detail-label">${translateText("更新时间:")}</span><span class="detail-value">${fmtDateTime(task.updatedAt)}</span></div>`;
+  html += `<div class="detail-row"><span class="detail-label">${translateText("创建时间:")}</span><span class="detail-value">${formatDbDateTime(task.createdAt)}</span></div>`;
+  html += `<div class="detail-row"><span class="detail-label">${translateText("更新时间:")}</span><span class="detail-value">${formatDbDateTime(task.updatedAt)}</span></div>`;
 
   html += '</div>';
 
