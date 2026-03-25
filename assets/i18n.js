@@ -802,6 +802,7 @@ const STATIC_TEXT_MAP = {
   返回章节管理: { "en-US": "Back to Chapters", "zh-TW": "返回章節管理", "ja-JP": "章管理に戻る", "ko-KR": "챕터 관리로" },
   角色库: { "en-US": "Role Library", "zh-TW": "角色庫", "ja-JP": "役割ライブラリ", "ko-KR": "역할 라이브러리" },
   提示词字数: { "en-US": "Prompt Length", "zh-TW": "提示詞字數", "ja-JP": "プロンプト文字数", "ko-KR": "프롬프트 글자 수" },
+  Temp存储: { "en-US": "Temp Storage", "zh-TW": "Temp 儲存", "ja-JP": "Temp ストレージ", "ko-KR": "Temp 저장소" },
   角色JSON: { "en-US": "Role JSON", "zh-TW": "角色 JSON", "ja-JP": "役割 JSON", "ko-KR": "역할 JSON" },
   复制角色JSON: { "en-US": "Copy Role JSON", "zh-TW": "複製角色 JSON", "ja-JP": "役割 JSON をコピー", "ko-KR": "역할 JSON 복사" },
   JSON已复制: { "en-US": "JSON copied", "zh-TW": "JSON 已複製", "ja-JP": "JSON をコピーしました", "ko-KR": "JSON 이 복사되었습니다" },

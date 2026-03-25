@@ -344,6 +344,10 @@ a.ghost-btn {
   grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
+.project-metrics {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
 .hero-card,
 .panel {
   border: 1px solid var(--line);

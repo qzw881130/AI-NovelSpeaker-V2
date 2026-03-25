@@ -24,11 +24,13 @@ function renderMetrics(data) {
   const totalChapters = data.novels.reduce((s, n) => s + n.chapterCount, 0);
   const totalTxt = data.novels.reduce((s, n) => s + (n.storage?.txtBytes || 0), 0);
   const totalAudio = data.novels.reduce((s, n) => s + (n.storage?.audioBytes || 0), 0);
+  const totalTemp = data.novels.reduce((s, n) => s + (n.storage?.tempBytes || 0), 0);
   document.getElementById("projectMetrics").innerHTML = `
     <div class="metric"><span>小说数</span><strong>${fmtNumber(data.novels.length)}</strong></div>
     <div class="metric"><span>章节总数</span><strong>${fmtNumber(totalChapters)}</strong></div>
     <div class="metric"><span>总字数</span><strong>${fmtNumber(totalWords)}</strong></div>
     <div class="metric"><span>本地存储</span><strong>${bytesToText(totalTxt + totalAudio)}</strong></div>
+    <div class="metric"><span>Temp存储</span><strong>${bytesToText(totalTemp)}</strong></div>
   `;
 }
 
@@ -89,11 +91,12 @@ function renderStorageTable(data) {
         <span>${n.name}</span>
         <span>${bytesToText(n.storage?.txtBytes || 0)}</span>
         <span>${bytesToText(n.storage?.audioBytes || 0)}</span>
+        <span>${bytesToText(n.storage?.tempBytes || 0)}</span>
       </div>
     `
     )
     .join("");
-  document.getElementById("storageTable").innerHTML = `<div class="storage-row head"><span>小说</span><span>txt</span><span>音频</span></div>${rows}`;
+  document.getElementById("storageTable").innerHTML = `<div class="storage-row head"><span>小说</span><span>txt</span><span>音频</span><span>Temp存储</span></div>${rows}`;
   localizeDocumentText(document);
 }
 

@@ -381,8 +381,14 @@ def fetch_novels(conn: sqlite3.Connection) -> list[dict]:
         if total_words <= 0:
             total_words = int(r["chapter_words"] or 0)
         base_dir = NOVEL_DIR / str(r["english_dir"]) if r["english_dir"] else NOVEL_DIR
+        temp_dir = (
+            ROOT_DIR / "temp" / str(r["english_dir"])
+            if r["english_dir"]
+            else ROOT_DIR / "temp"
+        )
         txt_bytes = dir_size_bytes(base_dir / "text")
         audio_bytes = dir_size_bytes(base_dir / "audio")
+        temp_bytes = dir_size_bytes(temp_dir)
         json_progress = 0
         audio_progress = 0
         if chapter_count > 0:
@@ -416,6 +422,7 @@ def fetch_novels(conn: sqlite3.Connection) -> list[dict]:
                 "storage": {
                     "txtBytes": txt_bytes,
                     "audioBytes": audio_bytes,
+                    "tempBytes": temp_bytes,
                     "dbBytes": db_size,
                 },
                 "createdAt": str(r["created_at"]),
