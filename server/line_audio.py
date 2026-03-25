@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import random
 import re
 import subprocess
 import time
@@ -683,6 +684,13 @@ def process_line_audio_task(task_id: int) -> None:
             workflow[output_node]["inputs"]["filename_prefix"] = (
                 f"temp/chapter-{chapter_id:03d}"
             )
+
+            for node in workflow.values():
+                if not isinstance(node, dict):
+                    continue
+                inputs = node.get("inputs", {})
+                if "seed" in inputs:
+                    inputs["seed"] = random.randint(0, 2**31 - 1)
 
             submit_result = comfy_request_json(
                 comfy_url=comfy_url,
