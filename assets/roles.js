@@ -25,6 +25,7 @@ let roleAudioBase64 = "";
 let chapterItems = [];
 let chapterRoleNamesCache = new Map();
 let roleNameDropdownShouldStayOpen = false;
+const generatingSampleRoleIds = new Set();
 
 const rolesFilterState = {
   chapter: "all",
@@ -283,6 +284,7 @@ function roleLevelOptions(value) {
 
 function buildSampleCell(role) {
   const hasAudio = String(role.sampleAudioPath || "").trim();
+  const isGenerating = generatingSampleRoleIds.has(Number(role.id));
   const source = String(role.sampleAudioSource || "").trim();
   const sourceIcon = hasAudio
     ? `<span class="role-sample-source role-sample-source-${escapeHtml(source || "unknown")}" title="${source === "uploaded" ? translateText("本地上传") : source === "generated" ? translateText("AI生成") : translateText("未知来源")}">${source === "uploaded" ? "↑" : source === "generated" ? "AI" : "?"}</span>`
@@ -295,20 +297,20 @@ function buildSampleCell(role) {
     parts.push(sourceIcon);
     parts.push(`
       <div class="role-sample-actions">
-        <button class="ghost-btn btn-sm generate-sample-btn" data-role-id="${role.id}" type="button">${translateText("重新生成")}</button>
+        <button class="ghost-btn btn-sm generate-sample-btn" data-role-id="${role.id}" type="button" ${isGenerating ? "disabled" : ""}>${isGenerating ? translateText("生成中...") : translateText("重新生成")}</button>
         <input class="role-upload-input hidden" data-role-id="${role.id}" type="file" accept="audio/*,.flac,.wav,.mp3,.m4a,.aac" />
-        <button class="ghost-btn btn-sm upload-sample-btn" data-role-id="${role.id}" type="button">${translateText("本地上传")}</button>
-        <button class="ghost-btn btn-sm extract-text-btn" data-role-id="${role.id}" type="button">${translateText("提取声音文本")}</button>
+        <button class="ghost-btn btn-sm upload-sample-btn" data-role-id="${role.id}" type="button" ${isGenerating ? "disabled" : ""}>${translateText("本地上传")}</button>
+        <button class="ghost-btn btn-sm extract-text-btn" data-role-id="${role.id}" type="button" ${isGenerating ? "disabled" : ""}>${translateText("提取声音文本")}</button>
       </div>
     `);
     parts.push('</div>');
   } else {
-    parts.push(`<span class="text-muted">${translateText("未生成")}</span>`);
+    parts.push(`<span class="text-muted">${isGenerating ? translateText("生成中...") : translateText("未生成")}</span>`);
     parts.push(`
       <div class="role-sample-actions">
-        <button class="ghost-btn btn-sm generate-sample-btn" data-role-id="${role.id}" type="button">${translateText("生成示例")}</button>
+        <button class="ghost-btn btn-sm generate-sample-btn" data-role-id="${role.id}" type="button" ${isGenerating ? "disabled" : ""}>${isGenerating ? translateText("生成中...") : translateText("生成示例")}</button>
         <input class="role-upload-input hidden" data-role-id="${role.id}" type="file" accept="audio/*,.flac,.wav,.mp3,.m4a,.aac" />
-        <button class="ghost-btn btn-sm upload-sample-btn" data-role-id="${role.id}" type="button">${translateText("本地上传")}</button>
+        <button class="ghost-btn btn-sm upload-sample-btn" data-role-id="${role.id}" type="button" ${isGenerating ? "disabled" : ""}>${translateText("本地上传")}</button>
         <button class="ghost-btn btn-sm extract-text-btn" data-role-id="${role.id}" type="button" disabled>${translateText("提取声音文本")}</button>
       </div>
     `);
@@ -499,9 +501,8 @@ function renderRolesTable() {
     btn.addEventListener("click", async () => {
       const roleId = Number(btn.dataset.roleId || 0);
       if (!roleId) return;
-      btn.disabled = true;
-      const previousText = btn.textContent;
-      btn.textContent = translateText("生成中...");
+      generatingSampleRoleIds.add(roleId);
+      renderRolesTable();
       try {
         const data = await generateRoleSampleAudio(activeNovel.id, roleId);
         const idx = roleItems.findIndex((r) => r.id === roleId);
@@ -513,8 +514,8 @@ function renderRolesTable() {
       } catch (err) {
         setRolesPageStatus(err.message || translateText("生成示例失败"), true);
       } finally {
-        btn.disabled = false;
-        btn.textContent = previousText;
+        generatingSampleRoleIds.delete(roleId);
+        renderRolesTable();
       }
     });
   }
@@ -706,6 +707,8 @@ function bindActions() {
     }
     const btn = document.getElementById("generateMissingSamplesBtn");
     btn.disabled = true;
+    missingRoles.forEach((role) => generatingSampleRoleIds.add(Number(role.id)));
+    renderRolesTable();
     try {
       let queuedCount = 0;
       for (const role of missingRoles) {
@@ -717,7 +720,9 @@ function bindActions() {
     } catch (err) {
       setRolesPageStatus(err.message || translateText("生成示例失败"), true);
     } finally {
+      missingRoles.forEach((role) => generatingSampleRoleIds.delete(Number(role.id)));
       btn.disabled = false;
+      renderRolesTable();
     }
   });
 
