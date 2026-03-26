@@ -629,6 +629,32 @@ textarea {
   flex-wrap: wrap;
 }
 
+.bundle-list {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0 16px;
+  max-height: 360px;
+  overflow: auto;
+}
+
+.bundle-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fffdf8;
+}
+
+.bundle-item-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .chapter-workspace {
   display: grid;
   grid-template-columns: 320px minmax(0, 1fr);

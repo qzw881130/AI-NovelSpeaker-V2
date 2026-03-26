@@ -1,19 +1,23 @@
 import {
   bytesToText,
+  createNovelBundle,
   deleteNovel,
-  downloadNovelBundle,
+  deleteNovelBundleFile,
+  downloadNovelBundleFile,
   getActiveNovelId,
   getData,
+  listNovelBundles,
   saveNovel,
   setActiveNovelId,
 } from "./store.js";
-import { fmtNumber, renderNav, showPageError, toast } from "./ui.js";
-import { localizeDocumentText, t } from "./i18n.js";
+import { fmtDateTime, fmtNumber, renderNav, showPageError, toast } from "./ui.js";
+import { localizeDocumentText, t, translateText } from "./i18n.js";
 
 let editingId = "";
 let refreshTimer = null;
 let currentData = { novels: [], prompts: [], workflows: [] };
 const REFRESH_INTERVAL_KEY = "ai_novel_index_refresh_interval";
+let activeBundleNovelId = "";
 
 function isValidEnglishDir(value) {
   return /^[A-Za-z0-9_]{1,25}$/.test(String(value || ""));
@@ -147,14 +151,85 @@ function closeNovelModal() {
   document.getElementById("novelModal").close();
 }
 
+async function openBundleModal(novel) {
+  activeBundleNovelId = String(novel.id);
+  document.getElementById("bundleModalTitle").textContent = `${novel.name} - ${translateText("打包下载")}`;
+  document.getElementById("bundleList").innerHTML = `<p class="empty-text">${translateText("加载中...")}</p>`;
+  document.getElementById("bundleModal").showModal();
+  await refreshBundleList();
+}
+
+function closeBundleModal() {
+  document.getElementById("bundleModal").close();
+}
+
+function setBundleListLoading() {
+  const listEl = document.getElementById("bundleList");
+  if (!listEl) return;
+  listEl.innerHTML = `<p class="empty-text">${translateText("打包中...")}</p>`;
+}
+
+async function refreshBundleList() {
+  const listEl = document.getElementById("bundleList");
+  if (!activeBundleNovelId || !listEl) return;
+  try {
+    const bundles = await listNovelBundles(activeBundleNovelId);
+    if (!bundles.length) {
+      listEl.innerHTML = `<p class="empty-text">${translateText("暂无打包记录")}</p>`;
+      localizeDocumentText(document);
+      return;
+    }
+    listEl.innerHTML = bundles
+      .map(
+        (bundle) => `
+        <div class="bundle-item">
+          <div>
+            <strong>${bundle.fileName}</strong>
+            <p class="meta">${translateText("创建时间")} ${fmtDateTime(bundle.createdAt)} · ${bytesToText(bundle.sizeBytes)}</p>
+          </div>
+          <div class="bundle-item-actions">
+            <button class="ghost-btn bundle-download-btn" data-file="${bundle.fileName}" type="button">${translateText("下载")}</button>
+            <button class="ghost-btn danger bundle-delete-btn" data-file="${bundle.fileName}" type="button">${translateText("删除")}</button>
+          </div>
+        </div>
+      `
+      )
+      .join("");
+    listEl.querySelectorAll(".bundle-download-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          await downloadNovelBundleFile(activeBundleNovelId, btn.dataset.file || "");
+        } catch (err) {
+          toast(t("error.operationFailed", { msg: err.message }));
+        }
+      });
+    });
+    listEl.querySelectorAll(".bundle-delete-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const fileName = String(btn.dataset.file || "");
+        if (!window.confirm(t("confirm.deleteFile", { name: fileName }) || `确认删除 ${fileName} ?`)) return;
+        try {
+          await deleteNovelBundleFile(activeBundleNovelId, fileName);
+          toast(t("toast.deleted"));
+          await refreshBundleList();
+        } catch (err) {
+          toast(t("error.operationFailed", { msg: err.message }));
+        }
+      });
+    });
+    localizeDocumentText(document);
+  } catch (err) {
+    listEl.innerHTML = `<p class="empty-text">${err.message}</p>`;
+  }
+}
+
 async function onNovelAction(action, id) {
   const novel = currentData.novels.find((n) => String(n.id) === String(id));
   if (!novel) return;
   try {
     if (action === "edit") openNovelModal(novel);
     if (action === "download") {
-      await downloadNovelBundle(id);
-      toast(t("toast.created"));
+      await openBundleModal(novel);
     }
     if (action === "chapters") {
       setActiveNovelId(id);
@@ -213,6 +288,26 @@ function bindEvents() {
   document.getElementById("novelSort").addEventListener("change", renderNovelCards);
   document.getElementById("autoRefreshSelect").addEventListener("change", applyAutoRefresh);
   document.getElementById("novelCancelBtn").addEventListener("click", closeNovelModal);
+  document.getElementById("bundleCloseBtn").addEventListener("click", closeBundleModal);
+  document.getElementById("bundleCreateBtn").addEventListener("click", async () => {
+    if (!activeBundleNovelId) return;
+    const btn = document.getElementById("bundleCreateBtn");
+    btn.disabled = true;
+    const previousText = btn.textContent;
+    btn.textContent = translateText("打包中...");
+    setBundleListLoading();
+    try {
+      await createNovelBundle(activeBundleNovelId);
+      toast(t("toast.created"));
+      await refreshBundleList();
+    } catch (err) {
+      toast(t("error.operationFailed", { msg: err.message }));
+      await refreshBundleList();
+    } finally {
+      btn.disabled = false;
+      btn.textContent = previousText;
+    }
+  });
 
   document.getElementById("novelForm").addEventListener("submit", async (event) => {
     event.preventDefault();

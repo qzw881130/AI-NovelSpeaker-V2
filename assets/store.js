@@ -146,28 +146,38 @@ async function deleteNovel(id) {
 }
 
 async function downloadNovelBundle(novelId) {
-  const res = await fetch(`/api/novels/${Number(novelId)}/bundle`);
-  if (!res.ok) {
-    let msg = `HTTP ${res.status}`;
-    try {
-      const j = await res.json();
-      msg = j.error || msg;
-    } catch {
-      // ignore
-    }
-    throw new Error(msg);
-  }
-  const blob = await res.blob();
-  const cd = res.headers.get("Content-Disposition") || "";
-  const m = cd.match(/filename=([^;]+)/i);
-  const filename = (m ? m[1] : `novel-${novelId}-bundle.zip`).replace(/"/g, "");
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = filename;
+  a.href = `/api/novels/${Number(novelId)}/bundle`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  URL.revokeObjectURL(a.href);
+}
+
+async function listNovelBundles(novelId) {
+  const data = await api(`/api/novels/${Number(novelId)}/bundles`);
+  return data.bundles || [];
+}
+
+async function createNovelBundle(novelId) {
+  const data = await api(`/api/novels/${Number(novelId)}/bundles`, {
+    method: "POST",
+    body: "{}",
+  });
+  return data.bundle || null;
+}
+
+async function downloadNovelBundleFile(novelId, fileName) {
+  const a = document.createElement("a");
+  a.href = `/api/novels/${Number(novelId)}/bundles/${encodeURIComponent(String(fileName || ""))}`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+async function deleteNovelBundleFile(novelId, fileName) {
+  await api(`/api/novels/${Number(novelId)}/bundles/${encodeURIComponent(String(fileName || ""))}`, {
+    method: "DELETE",
+  });
 }
 
 async function createJsonTask(input) {
@@ -516,6 +526,9 @@ export {
   updateChapter,
   deleteChapter,
   saveNovel,
+  listNovelBundles,
+  createNovelBundle,
+  deleteNovelBundleFile,
   savePrompt,
   saveSettings,
   saveWorkflow,
@@ -540,4 +553,5 @@ export {
   retryLineAudioTask,
   getLineAudioFileUrl,
   getMergedAudioUrl,
+  downloadNovelBundleFile,
 };

@@ -30,6 +30,135 @@ from .line_audio import (
 )
 
 
+def _resolve_storage_path(raw_path: str) -> Path | None:
+    text = str(raw_path or "").strip()
+    if not text:
+        return None
+    path = Path(text)
+    if not path.is_absolute():
+        path = ROOT_DIR / path
+    try:
+        return path.resolve()
+    except Exception:
+        return None
+
+
+def _bundle_output_dir() -> Path:
+    output_dir = ROOT_DIR / "output"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    return output_dir
+
+
+def _build_bundle_record(zip_path: Path) -> dict:
+    stat = zip_path.stat()
+    return {
+        "fileName": zip_path.name,
+        "sizeBytes": int(stat.st_size),
+        "createdAt": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+    }
+
+
+def _get_novel_bundle_entries(
+    novel_id: int,
+) -> tuple[bool, str, str, list[tuple[Path, Path]]]:
+    conn = db_conn()
+    row = conn.execute(
+        "SELECT id,name,english_dir FROM novels WHERE id=?",
+        (novel_id,),
+    ).fetchone()
+    if not row:
+        conn.close()
+        return False, "novel not found", "", []
+    chapters = conn.execute(
+        """
+        SELECT c.id,c.novel_id,c.chapter_num,c.title,c.text_file_path,c.audio_file_path,n.english_dir
+        FROM chapters c
+        JOIN novels n ON n.id = c.novel_id
+        WHERE novel_id=?
+        ORDER BY chapter_num ASC
+        """,
+        (novel_id,),
+    ).fetchall()
+    conn.close()
+
+    english_dir = str(row["english_dir"] or "").strip()
+    if not english_dir:
+        return False, "novel english_dir missing", "", []
+
+    bundle_entries: list[tuple[Path, Path]] = []
+    for chapter in chapters:
+        chapter_num = int(chapter["chapter_num"] or 0)
+        title = str(chapter["title"] or "")
+        text_name = safe_chapter_file_name(chapter_num, title)
+        audio_name = text_name.replace(".txt", ".flac")
+
+        text_src = _resolve_storage_path(str(chapter["text_file_path"] or ""))
+        if text_src and text_src.exists() and text_src.is_file():
+            arc = Path(english_dir) / "text" / text_name
+            bundle_entries.append((text_src, arc))
+
+        audio_src = resolve_audio_file(chapter)
+        if audio_src and audio_src.exists() and audio_src.is_file():
+            arc = Path(english_dir) / "audio" / audio_name
+            bundle_entries.append((audio_src, arc))
+
+    if not bundle_entries:
+        return False, "novel text/audio files not found", english_dir, []
+    return True, "ok", english_dir, bundle_entries
+
+
+def _create_novel_bundle_file(novel_id: int) -> tuple[bool, str, dict | None]:
+    ok, msg, english_dir, bundle_entries = _get_novel_bundle_entries(novel_id)
+    if not ok:
+        return False, msg, None
+
+    out_name = f"{english_dir}-{datetime.now().strftime('%Y-%m-%d_%H%M%S')}.zip"
+    zip_path = _bundle_output_dir() / out_name
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for src_path, arcname in bundle_entries:
+            zf.write(src_path, arcname=str(arcname))
+    return True, "created", _build_bundle_record(zip_path)
+
+
+def _list_novel_bundle_files(novel_id: int) -> tuple[bool, str, str, list[dict]]:
+    conn = db_conn()
+    row = conn.execute(
+        "SELECT english_dir FROM novels WHERE id=?", (novel_id,)
+    ).fetchone()
+    conn.close()
+    if not row:
+        return False, "novel not found", "", []
+    english_dir = str(row["english_dir"] or "").strip()
+    if not english_dir:
+        return False, "novel english_dir missing", "", []
+
+    files = sorted(
+        _bundle_output_dir().glob(f"{english_dir}-*.zip"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    return (
+        True,
+        "ok",
+        english_dir,
+        [_build_bundle_record(path) for path in files if path.is_file()],
+    )
+
+
+def _delete_novel_bundle_file(novel_id: int, file_name: str) -> tuple[bool, str]:
+    ok, msg, english_dir, bundles = _list_novel_bundle_files(novel_id)
+    if not ok:
+        return False, msg
+    allowed = {str(item["fileName"]) for item in bundles}
+    if file_name not in allowed or not file_name.startswith(f"{english_dir}-"):
+        return False, "bundle not found"
+    zip_path = (_bundle_output_dir() / file_name).resolve()
+    if not zip_path.exists() or not zip_path.is_file():
+        return False, "bundle not found"
+    zip_path.unlink()
+    return True, "deleted"
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt: str, *args) -> None:
         return
@@ -232,80 +361,56 @@ class Handler(BaseHTTPRequestHandler):
         m_bundle = re.match(r"^/api/novels/(\d+)/bundle$", route)
         if m_bundle:
             novel_id = int(m_bundle.group(1))
-            conn = db_conn()
-            row = conn.execute(
-                "SELECT id,name,english_dir FROM novels WHERE id=?",
-                (novel_id,),
-            ).fetchone()
-            if not row:
-                conn.close()
-                self.send_json({"error": "novel not found"}, 404)
+            ok, msg, record = _create_novel_bundle_file(novel_id)
+            if not ok or not record:
+                code = 404 if "not found" in msg else 400
+                self.send_json({"error": msg}, code)
                 return
-            chapters = conn.execute(
-                """
-                SELECT c.id,c.novel_id,c.chapter_num,c.title,c.text_file_path,c.audio_file_path,n.english_dir
-                FROM chapters c
-                JOIN novels n ON n.id = c.novel_id
-                WHERE novel_id=?
-                ORDER BY chapter_num ASC
-                """,
-                (novel_id,),
-            ).fetchall()
-            conn.close()
-
-            english_dir = str(row["english_dir"] or "").strip()
-            if not english_dir:
-                self.send_json({"error": "novel english_dir missing"}, 400)
-                return
-
-            def resolve_storage_path(raw_path: str) -> Path | None:
-                text = str(raw_path or "").strip()
-                if not text:
-                    return None
-                path = Path(text)
-                if not path.is_absolute():
-                    path = ROOT_DIR / path
-                try:
-                    return path.resolve()
-                except Exception:
-                    return None
-
-            bundle_entries: list[tuple[Path, Path]] = []
-            for chapter in chapters:
-                chapter_num = int(chapter["chapter_num"] or 0)
-                title = str(chapter["title"] or "")
-                text_name = safe_chapter_file_name(chapter_num, title)
-                audio_name = text_name.replace(".txt", ".flac")
-
-                text_src = resolve_storage_path(str(chapter["text_file_path"] or ""))
-                if text_src and text_src.exists() and text_src.is_file():
-                    arc = Path(english_dir) / "text" / text_name
-                    bundle_entries.append((text_src, arc))
-
-                audio_src = resolve_audio_file(chapter)
-                if audio_src and audio_src.exists() and audio_src.is_file():
-                    arc = Path(english_dir) / "audio" / audio_name
-                    bundle_entries.append((audio_src, arc))
-
-            if not bundle_entries:
-                self.send_json({"error": "novel text/audio files not found"}, 404)
-                return
-
-            out_name = f"{english_dir}-{datetime.now().strftime('%Y-%m-%d_%H%M')}.zip"
-            output_dir = ROOT_DIR / "output"
-            output_dir.mkdir(parents=True, exist_ok=True)
-            zip_path = output_dir / out_name
-
-            with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-                for src_path, arcname in bundle_entries:
-                    zf.write(src_path, arcname=str(arcname))
-
+            zip_path = _bundle_output_dir() / str(record["fileName"])
             body = zip_path.read_bytes()
-
             self.send_response(200)
             self.send_header("Content-Type", "application/zip")
             self.send_header(
-                "Content-Disposition", f'attachment; filename="{out_name}"'
+                "Content-Disposition", f'attachment; filename="{record["fileName"]}"'
+            )
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
+        m_bundle_list = re.match(r"^/api/novels/(\d+)/bundles$", route)
+        if m_bundle_list:
+            novel_id = int(m_bundle_list.group(1))
+            ok, msg, _, bundles = _list_novel_bundle_files(novel_id)
+            if not ok:
+                code = 404 if "not found" in msg else 400
+                self.send_json({"error": msg}, code)
+                return
+            self.send_json({"bundles": bundles})
+            return
+
+        m_bundle_file = re.match(r"^/api/novels/(\d+)/bundles/(.+)$", route)
+        if m_bundle_file:
+            novel_id = int(m_bundle_file.group(1))
+            file_name = str(m_bundle_file.group(2) or "").strip()
+            ok, msg, english_dir, bundles = _list_novel_bundle_files(novel_id)
+            if not ok:
+                code = 404 if "not found" in msg else 400
+                self.send_json({"error": msg}, code)
+                return
+            allowed = {str(item["fileName"]) for item in bundles}
+            if file_name not in allowed or not file_name.startswith(f"{english_dir}-"):
+                self.send_json({"error": "bundle not found"}, 404)
+                return
+            zip_path = (_bundle_output_dir() / file_name).resolve()
+            if not zip_path.exists() or not zip_path.is_file():
+                self.send_json({"error": "bundle not found"}, 404)
+                return
+            body = zip_path.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/zip")
+            self.send_header(
+                "Content-Disposition", f'attachment; filename="{file_name}"'
             )
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
@@ -773,6 +878,17 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"ok": True, "message": f"{health_url} 返回 {code}"})
                 return
             self.send_json({"ok": False, "message": f"{health_url} 返回 {code}"})
+            return
+
+        m_bundle_create = re.match(r"^/api/novels/(\d+)/bundles$", route)
+        if m_bundle_create:
+            novel_id = int(m_bundle_create.group(1))
+            ok, msg, record = _create_novel_bundle_file(novel_id)
+            if not ok or not record:
+                code = 404 if "not found" in msg else 400
+                self.send_json({"error": msg}, code)
+                return
+            self.send_json({"status": "created", "bundle": record})
             return
 
         if route == "/chapter":
@@ -1942,6 +2058,18 @@ class Handler(BaseHTTPRequestHandler):
             ok, msg = delete_line_audio_task(task_id)
             if not ok:
                 code = 404 if "not found" in msg else 409
+                self.send_json({"error": msg}, code)
+                return
+            self.send_json({"status": "deleted"})
+            return
+
+        m_delete_bundle = re.match(r"^/api/novels/(\d+)/bundles/(.+)$", route)
+        if m_delete_bundle:
+            novel_id = int(m_delete_bundle.group(1))
+            file_name = str(m_delete_bundle.group(2) or "").strip()
+            ok, msg = _delete_novel_bundle_file(novel_id, file_name)
+            if not ok:
+                code = 404 if "not found" in msg else 400
                 self.send_json({"error": msg}, code)
                 return
             self.send_json({"status": "deleted"})
