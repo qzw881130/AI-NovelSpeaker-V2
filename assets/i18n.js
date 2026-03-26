@@ -800,6 +800,7 @@ const STATIC_TEXT_MAP = {
   批量生成当前所列: { "en-US": "Generate Filtered", "zh-TW": "批量生成目前所列", "ja-JP": "現在の一覧を一括生成", "ko-KR": "현재 표시 항목 일괄 생성" },
   批量生成剩余: { "en-US": "Generate Remaining", "zh-TW": "批量生成剩餘", "ja-JP": "残りを一括生成", "ko-KR": "남은 항목 일괄 생성" },
   未入角色库: { "en-US": "Not In Role Library", "zh-TW": "未入角色庫", "ja-JP": "役割ライブラリ未登録", "ko-KR": "역할 라이브러리 미등록" },
+  只列出未加入角色库: { "en-US": "Only Show Missing Roles", "zh-TW": "只列出未加入角色庫", "ja-JP": "未登録役割のみ表示", "ko-KR": "역할 라이브러리 미등록만 표시" },
   上一回: { "en-US": "Previous", "zh-TW": "上一回", "ja-JP": "前へ", "ko-KR": "이전" },
   下一回: { "en-US": "Next", "zh-TW": "下一回", "ja-JP": "次へ", "ko-KR": "다음" },
   字号: { "en-US": "Font", "zh-TW": "字號", "ja-JP": "文字サイズ", "ko-KR": "글꼴 크기" },

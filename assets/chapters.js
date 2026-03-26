@@ -54,6 +54,7 @@ let lineAudioRefreshTimerId = null;
 let chapterRoles = [];
 let isRolesEditing = false;
 let globalRoleDefaults = [];
+let filterRolesMissingOnly = false;
 
 function resetChapterJsonCache() {
   jsonViewRawText = "";
@@ -1541,7 +1542,15 @@ function renderRolesTable() {
   const tbody = document.getElementById("rolesTableBody");
   if (!tbody) return;
 
-  tbody.innerHTML = chapterRoles.map((role, index) => {
+  const visibleRoles = chapterRoles
+    .map((role, index) => ({ role, index }))
+    .filter(({ role }) => {
+      if (!filterRolesMissingOnly || isRolesEditing) return true;
+      const roleName = String(role.name || "").trim();
+      return !globalRoleDefaults.some((item) => String(item.name || "").trim() === roleName);
+    });
+
+  tbody.innerHTML = visibleRoles.map(({ role, index }) => {
     if (isRolesEditing) {
       return `
         <tr data-role-index="${index}">
@@ -1648,6 +1657,9 @@ async function openRolesDialog() {
   }
 
   isRolesEditing = false;
+  filterRolesMissingOnly = false;
+  const missingOnlyFilter = document.getElementById("rolesMissingOnlyFilter");
+  if (missingOnlyFilter) missingOnlyFilter.checked = false;
   
   // Load roles from JSON's role_list (like old jpm project)
   const list = Array.isArray(parsed?.role_list) ? parsed.role_list : [];
@@ -1817,6 +1829,11 @@ async function updateChapterActionWarnings() {
 
 function bindRolesEvents() {
   document.getElementById("viewRolesBtn")?.addEventListener("click", openRolesDialog);
+
+  document.getElementById("rolesMissingOnlyFilter")?.addEventListener("change", (event) => {
+    filterRolesMissingOnly = Boolean(event.target.checked);
+    renderRolesTable();
+  });
   
   document.getElementById("editRolesBtn")?.addEventListener("click", () => {
     isRolesEditing = true;
