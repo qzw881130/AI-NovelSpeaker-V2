@@ -879,6 +879,7 @@ const STATIC_TEXT_MAP = {
   筛选: { "en-US": "Filtered", "zh-TW": "篩選", "ja-JP": "絞り込み", "ko-KR": "필터" },
   结果: { "en-US": "Results", "zh-TW": "結果", "ja-JP": "結果", "ko-KR": "결과" },
   条: { "en-US": "items", "zh-TW": "條", "ja-JP": "件", "ko-KR": "개" },
+  用时: { "en-US": "Elapsed", "zh-TW": "用時", "ja-JP": "所要時間", "ko-KR": "소요 시간" },
   开始下载文本: { "en-US": "Starting text download", "zh-TW": "開始下載文本", "ja-JP": "テキストのダウンロードを開始します", "ko-KR": "텍스트 다운로드 시작" },
   开始下载音频: { "en-US": "Starting audio download", "zh-TW": "開始下載音訊", "ja-JP": "音声のダウンロードを開始します", "ko-KR": "오디오 다운로드 시작" },
   音频已合并: { "en-US": "Audio merged", "zh-TW": "音訊已合併", "ja-JP": "音声を結合しました", "ko-KR": "오디오가 병합되었습니다" },

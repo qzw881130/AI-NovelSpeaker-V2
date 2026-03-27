@@ -128,7 +128,7 @@ function renderLineAudioTaskList() {
     li.dataset.taskId = task.id;
 
     const status = task.status || "pending";
-    const comfyStatus = task.comfyStatus || "-";
+    const runtime = calcTaskRuntime(task);
 
     li.innerHTML = `
       <div class="task-list-title">#${task.id} | ${task.chapterTitle || `#${task.chapterNum}`}</div>
@@ -136,6 +136,7 @@ function renderLineAudioTaskList() {
       <div class="task-list-meta">
         <span class="status-badge ${statusClass(status)}">${statusText(status)}</span>
         <span>${translateText("行号")} : ${task.lineIndex + 1}</span>
+        <span>${translateText("用时")} : ${runtime}</span>
         <span>${escapeHtml(getScheduleLabel(task))}</span>
       </div>
     `;
