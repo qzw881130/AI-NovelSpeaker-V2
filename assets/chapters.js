@@ -37,6 +37,7 @@ let jsonViewEditing = false;
 let lastJsonFindQuery = "";
 let lastJsonFindIndex = -1;
 const CHAPTER_FONT_SIZE_KEY = "ai_novel_reader_font_size";
+const JSON_VIEW_FONT_SIZE_KEY = "ai_novel_json_view_font_size";
 
 // 台词音频状态
 let lineAudioEntries = [];
@@ -348,6 +349,15 @@ function renderJsonViewMode() {
   const rawBtn = document.getElementById("viewJsonRawBtn");
   const jubenBtn = document.getElementById("viewJsonJubenBtn");
   const rolesBtn = document.getElementById("viewJsonRolesBtn");
+  const jsonFontSize = Number(localStorage.getItem(JSON_VIEW_FONT_SIZE_KEY) || 18);
+  const normalizedFontSize = Number.isFinite(jsonFontSize) ? Math.max(14, Math.min(30, jsonFontSize)) : 18;
+  preview.style.fontSize = `${normalizedFontSize}px`;
+  readOnly.style.fontSize = `${normalizedFontSize}px`;
+  editor.style.fontSize = `${normalizedFontSize}px`;
+  const fontRange = document.getElementById("jsonViewFontSizeRange");
+  const fontValue = document.getElementById("jsonViewFontSizeValue");
+  if (fontRange) fontRange.value = String(normalizedFontSize);
+  if (fontValue) fontValue.textContent = `${normalizedFontSize}px`;
   rawBtn.classList.toggle("active", jsonViewMode === "raw");
   jubenBtn.classList.toggle("active", jsonViewMode === "juben");
   rolesBtn.classList.toggle("active", jsonViewMode === "roles");
@@ -711,6 +721,12 @@ function bindActions() {
   });
   document.getElementById("jsonReplaceAllBtn").addEventListener("click", () => {
     replaceAllInJsonEditor();
+  });
+
+  document.getElementById("jsonViewFontSizeRange")?.addEventListener("input", (event) => {
+    const value = Number(event.target.value || 18);
+    localStorage.setItem(JSON_VIEW_FONT_SIZE_KEY, String(value));
+    renderJsonViewMode();
   });
 
   document.getElementById("downloadAudioBtn").addEventListener("click", () => {
