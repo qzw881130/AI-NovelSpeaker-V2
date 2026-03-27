@@ -85,6 +85,7 @@
               <span id="rolesFilteredCount" class="roles-filtered-count">结果 0 条</span>
             </div>
             <div class="toolbar">
+              <button id="downloadAllRoleVoicesBtn" class="ghost-btn" type="button">打包下载所有角色声音</button>
               <button id="generateMissingSamplesBtn" class="ghost-btn" type="button">一键生成缺失的声音示例</button>
               <button id="createRoleBtn" class="primary-btn" type="button">添加角色</button>
             </div>
@@ -157,6 +158,17 @@
         <menu>
           <button id="copyRoleJsonBtn" class="ghost-btn" type="button">复制 JSON</button>
           <button class="primary-btn" type="submit">关闭</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <dialog id="roleVoiceBundleModal" class="modal">
+      <form method="dialog">
+        <h3 id="roleVoiceBundleModalTitle">打包下载所有角色声音</h3>
+        <div id="roleVoiceBundleList" class="bundle-list"></div>
+        <menu>
+          <button id="createRoleVoiceBundleBtn" class="primary-btn" type="button">打包</button>
+          <button class="ghost-btn" type="submit">关闭</button>
         </menu>
       </form>
     </dialog>

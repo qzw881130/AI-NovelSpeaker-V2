@@ -1,7 +1,11 @@
 import {
+  bytesToText,
+  createRoleVoiceBundle,
   getData,
   getActiveNovelId,
   setActiveNovelId,
+  listRoleVoiceBundles,
+  downloadRoleVoiceBundleFile,
   fetchRoles,
   fetchNovelChapters,
   fetchChapterJsonOutput,
@@ -13,7 +17,7 @@ import {
   uploadRoleSampleAudio,
   generateRoleSampleAudio,
 } from "./store.js";
-import { renderNav, toast } from "./ui.js";
+import { fmtDateTime, renderNav, toast } from "./ui.js";
 import { localizeDocumentText, t, translateText } from "./i18n.js";
 
 let allNovels = [];
@@ -26,6 +30,7 @@ let chapterItems = [];
 let chapterRoleNamesCache = new Map();
 let roleNameDropdownShouldStayOpen = false;
 const generatingSampleRoleIds = new Set();
+let activeRoleVoiceBundleNovelId = "";
 
 const rolesFilterState = {
   chapter: "all",
@@ -698,6 +703,10 @@ function bindActions() {
     openRoleModal("create");
   });
 
+  document.getElementById("downloadAllRoleVoicesBtn").addEventListener("click", async () => {
+    await openRoleVoiceBundleModal();
+  });
+
   document.getElementById("generateMissingSamplesBtn").addEventListener("click", async () => {
     if (!activeNovel) return;
     const missingRoles = getRolesMissingSampleAudio();
@@ -834,6 +843,26 @@ function bindActions() {
     await navigator.clipboard.writeText(text);
     toast(translateText("JSON已复制"));
   });
+
+  document.getElementById("createRoleVoiceBundleBtn").addEventListener("click", async () => {
+    if (!activeRoleVoiceBundleNovelId) return;
+    const btn = document.getElementById("createRoleVoiceBundleBtn");
+    btn.disabled = true;
+    const previousText = btn.textContent;
+    btn.textContent = translateText("打包中...");
+    document.getElementById("roleVoiceBundleList").innerHTML = `<p class="empty-text">${translateText("打包中...")}</p>`;
+    try {
+      await createRoleVoiceBundle(activeRoleVoiceBundleNovelId);
+      toast(t("toast.created"));
+      await refreshRoleVoiceBundleList();
+    } catch (err) {
+      toast(err.message);
+      await refreshRoleVoiceBundleList();
+    } finally {
+      btn.disabled = false;
+      btn.textContent = previousText;
+    }
+  });
 }
 
 function openRoleTextModal(text) {
@@ -846,6 +875,55 @@ function openRoleTextModal(text) {
 function closeRoleTextModal() {
   document.getElementById("roleTextModal").close();
   document.getElementById("roleTextModal").classList.add("hidden");
+}
+
+async function openRoleVoiceBundleModal() {
+  if (!activeNovel) return;
+  activeRoleVoiceBundleNovelId = String(activeNovel.id);
+  document.getElementById("roleVoiceBundleModalTitle").textContent = `${activeNovel.name} - ${translateText("打包下载所有角色声音")}`;
+  document.getElementById("roleVoiceBundleList").innerHTML = `<p class="empty-text">${translateText("加载中...")}</p>`;
+  document.getElementById("roleVoiceBundleModal").showModal();
+  await refreshRoleVoiceBundleList();
+}
+
+async function refreshRoleVoiceBundleList() {
+  const listEl = document.getElementById("roleVoiceBundleList");
+  if (!activeRoleVoiceBundleNovelId || !listEl) return;
+  try {
+    const bundles = await listRoleVoiceBundles(activeRoleVoiceBundleNovelId);
+    if (!bundles.length) {
+      listEl.innerHTML = `<p class="empty-text">${translateText("暂无角色声音打包记录")}</p>`;
+      localizeDocumentText(document);
+      return;
+    }
+    listEl.innerHTML = bundles
+      .map(
+        (bundle) => `
+        <div class="bundle-item">
+          <div>
+            <strong>${bundle.fileName}</strong>
+            <p class="meta">${translateText("创建时间")} ${fmtDateTime(bundle.createdAt)} · ${bytesToText(bundle.sizeBytes)}</p>
+          </div>
+          <div class="bundle-item-actions">
+            <button class="ghost-btn role-voice-bundle-download-btn" data-file="${bundle.fileName}" type="button">${translateText("下载")}</button>
+          </div>
+        </div>
+      `
+      )
+      .join("");
+    listEl.querySelectorAll(".role-voice-bundle-download-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          await downloadRoleVoiceBundleFile(activeRoleVoiceBundleNovelId, btn.dataset.file || "");
+        } catch (err) {
+          toast(err.message);
+        }
+      });
+    });
+    localizeDocumentText(document);
+  } catch (err) {
+    listEl.innerHTML = `<p class="empty-text">${err.message}</p>`;
+  }
 }
 
 async function init() {

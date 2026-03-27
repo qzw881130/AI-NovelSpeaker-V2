@@ -590,6 +590,8 @@ const STATIC_TEXT_MAP = {
   暂无打包记录: { "en-US": "No bundle records", "zh-TW": "暫無打包記錄", "ja-JP": "バンドル履歴なし", "ko-KR": "묶음 기록 없음" },
   "加载中...": { "en-US": "Loading...", "zh-TW": "載入中...", "ja-JP": "読み込み中...", "ko-KR": "불러오는 중..." },
   "打包中...": { "en-US": "Packing...", "zh-TW": "打包中...", "ja-JP": "圧縮中...", "ko-KR": "압축 중..." },
+  打包下载所有角色声音: { "en-US": "Bundle All Role Voices", "zh-TW": "打包下載所有角色聲音", "ja-JP": "全役割音声を一括ダウンロード", "ko-KR": "모든 역할 음성 묶음 다운로드" },
+  暂无角色声音打包记录: { "en-US": "No role voice bundle records", "zh-TW": "暫無角色聲音打包記錄", "ja-JP": "役割音声バンドル履歴なし", "ko-KR": "역할 음성 묶음 기록 없음" },
   返回小说管理: { "en-US": "Back to Novels", "zh-TW": "返回小說管理", "ja-JP": "小説管理に戻る", "ko-KR": "소설 관리로" },
   搜索章节: { "en-US": "Search Chapters", "zh-TW": "搜尋章節", "ja-JP": "章検索", "ko-KR": "챕터 검색" },
   有声小说队列: { "en-US": "Audio Novel Queue", "zh-TW": "有聲小說佇列", "ja-JP": "音声小説キュー", "ko-KR": "오디오 소설 큐" },

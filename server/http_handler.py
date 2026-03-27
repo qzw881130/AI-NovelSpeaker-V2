@@ -159,6 +159,87 @@ def _delete_novel_bundle_file(novel_id: int, file_name: str) -> tuple[bool, str]
     return True, "deleted"
 
 
+def _role_voice_bundle_dir(english_dir: str) -> Path:
+    bundle_dir = ROOT_DIR / "temp" / english_dir
+    bundle_dir.mkdir(parents=True, exist_ok=True)
+    return bundle_dir
+
+
+def _build_role_bundle_record(zip_path: Path) -> dict:
+    stat = zip_path.stat()
+    return {
+        "fileName": zip_path.name,
+        "sizeBytes": int(stat.st_size),
+        "createdAt": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+    }
+
+
+def _list_role_voice_bundle_files(novel_id: int) -> tuple[bool, str, str, list[dict]]:
+    conn = db_conn()
+    row = conn.execute(
+        "SELECT english_dir FROM novels WHERE id=?", (novel_id,)
+    ).fetchone()
+    conn.close()
+    if not row:
+        return False, "novel not found", "", []
+    english_dir = str(row["english_dir"] or "").strip()
+    if not english_dir:
+        return False, "novel english_dir missing", "", []
+    files = sorted(
+        _role_voice_bundle_dir(english_dir).glob(f"{english_dir}-voice-*.zip"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    return (
+        True,
+        "ok",
+        english_dir,
+        [_build_role_bundle_record(path) for path in files if path.is_file()],
+    )
+
+
+def _create_role_voice_bundle_file(novel_id: int) -> tuple[bool, str, dict | None]:
+    conn = db_conn()
+    novel_row = conn.execute(
+        "SELECT english_dir FROM novels WHERE id=?", (novel_id,)
+    ).fetchone()
+    if not novel_row:
+        conn.close()
+        return False, "novel not found", None
+    english_dir = str(novel_row["english_dir"] or "").strip()
+    if not english_dir:
+        conn.close()
+        return False, "novel english_dir missing", None
+    rows = conn.execute(
+        "SELECT id, name, sample_audio_path FROM roles WHERE novel_id=? ORDER BY id ASC",
+        (novel_id,),
+    ).fetchall()
+    conn.close()
+
+    bundle_entries: list[tuple[Path, str]] = []
+    for row in rows:
+        sample_audio_path = str(row["sample_audio_path"] or "").strip()
+        if not sample_audio_path:
+            continue
+        src = _resolve_storage_path(sample_audio_path)
+        if not src or not src.exists() or not src.is_file():
+            continue
+        role_id = int(row["id"])
+        role_name = str(row["name"] or "role").strip() or "role"
+        safe_role_name = re.sub(r'[\\/:*?"<>|]+', "_", role_name).strip() or "role"
+        bundle_entries.append((src, f"role-{role_id}-{safe_role_name}.flac"))
+
+    if not bundle_entries:
+        return False, "role sample audio files not found", None
+
+    out_name = f"{english_dir}-voice-{datetime.now().strftime('%Y-%m-%d_%H%M%S')}.zip"
+    zip_path = _role_voice_bundle_dir(english_dir) / out_name
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for src_path, arcname in bundle_entries:
+            zf.write(src_path, arcname=arcname)
+    return True, "created", _build_role_bundle_record(zip_path)
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt: str, *args) -> None:
         return
@@ -403,6 +484,49 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": "bundle not found"}, 404)
                 return
             zip_path = (_bundle_output_dir() / file_name).resolve()
+            if not zip_path.exists() or not zip_path.is_file():
+                self.send_json({"error": "bundle not found"}, 404)
+                return
+            body = zip_path.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/zip")
+            self.send_header(
+                "Content-Disposition", f'attachment; filename="{file_name}"'
+            )
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
+        m_role_bundle_list = re.match(r"^/api/novels/(\d+)/role-voice-bundles$", route)
+        if m_role_bundle_list:
+            novel_id = int(m_role_bundle_list.group(1))
+            ok, msg, _, bundles = _list_role_voice_bundle_files(novel_id)
+            if not ok:
+                code = 404 if "not found" in msg else 400
+                self.send_json({"error": msg}, code)
+                return
+            self.send_json({"bundles": bundles})
+            return
+
+        m_role_bundle_file = re.match(
+            r"^/api/novels/(\d+)/role-voice-bundles/(.+)$", route
+        )
+        if m_role_bundle_file:
+            novel_id = int(m_role_bundle_file.group(1))
+            file_name = str(m_role_bundle_file.group(2) or "").strip()
+            ok, msg, english_dir, bundles = _list_role_voice_bundle_files(novel_id)
+            if not ok:
+                code = 404 if "not found" in msg else 400
+                self.send_json({"error": msg}, code)
+                return
+            allowed = {str(item["fileName"]) for item in bundles}
+            if file_name not in allowed or not file_name.startswith(
+                f"{english_dir}-voice-"
+            ):
+                self.send_json({"error": "bundle not found"}, 404)
+                return
+            zip_path = (_role_voice_bundle_dir(english_dir) / file_name).resolve()
             if not zip_path.exists() or not zip_path.is_file():
                 self.send_json({"error": "bundle not found"}, 404)
                 return
@@ -884,6 +1008,19 @@ class Handler(BaseHTTPRequestHandler):
         if m_bundle_create:
             novel_id = int(m_bundle_create.group(1))
             ok, msg, record = _create_novel_bundle_file(novel_id)
+            if not ok or not record:
+                code = 404 if "not found" in msg else 400
+                self.send_json({"error": msg}, code)
+                return
+            self.send_json({"status": "created", "bundle": record})
+            return
+
+        m_role_bundle_create = re.match(
+            r"^/api/novels/(\d+)/role-voice-bundles$", route
+        )
+        if m_role_bundle_create:
+            novel_id = int(m_role_bundle_create.group(1))
+            ok, msg, record = _create_role_voice_bundle_file(novel_id)
             if not ok or not record:
                 code = 404 if "not found" in msg else 400
                 self.send_json({"error": msg}, code)

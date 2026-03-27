@@ -180,6 +180,27 @@ async function deleteNovelBundleFile(novelId, fileName) {
   });
 }
 
+async function listRoleVoiceBundles(novelId) {
+  const data = await api(`/api/novels/${Number(novelId)}/role-voice-bundles`);
+  return data.bundles || [];
+}
+
+async function createRoleVoiceBundle(novelId) {
+  const data = await api(`/api/novels/${Number(novelId)}/role-voice-bundles`, {
+    method: "POST",
+    body: "{}",
+  });
+  return data.bundle || null;
+}
+
+async function downloadRoleVoiceBundleFile(novelId, fileName) {
+  const a = document.createElement("a");
+  a.href = `/api/novels/${Number(novelId)}/role-voice-bundles/${encodeURIComponent(String(fileName || ""))}`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
 async function createJsonTask(input) {
   await api("/api/json-tasks", {
     method: "POST",
@@ -528,6 +549,8 @@ export {
   saveNovel,
   listNovelBundles,
   createNovelBundle,
+  listRoleVoiceBundles,
+  createRoleVoiceBundle,
   deleteNovelBundleFile,
   savePrompt,
   saveSettings,
@@ -542,6 +565,7 @@ export {
   deleteRole,
   uploadRoleSampleAudio,
   generateRoleSampleAudio,
+  downloadRoleVoiceBundleFile,
   // 台词音频
   fetchChapterLineAudios,
   fetchChapterLineAudioOverview,
