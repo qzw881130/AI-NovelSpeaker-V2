@@ -3,6 +3,7 @@ import {
   getActiveNovelId,
   setActiveNovelId,
   fetchLineAudioTasks,
+  fetchLineAudioTaskDetail,
   deleteLineAudioTask,
   retryLineAudioTask,
 } from "./store.js";
@@ -16,6 +17,12 @@ let activeLineAudioTaskId = null;
 let lineAudioRefreshTimerId = null;
 let activeLineAudioTaskSignature = "";
 const LINE_AUDIO_REFRESH_INTERVAL_KEY = "ai_novel_line_audio_refresh_interval";
+const LINE_AUDIO_TASK_PAGE_SIZE = 100;
+let lineAudioNextOffset = 0;
+let lineAudioHasMore = false;
+let lineAudioTotalCount = 0;
+let lineAudioPendingCount = 0;
+let lineAudioLoadingMore = false;
 
 function isTaskDetailAudioPlaying() {
   const player = document.getElementById("lineAudioTaskPlayer");
@@ -111,9 +118,17 @@ function statusClass(status) {
 function renderLineAudioTaskList() {
   const listEl = document.getElementById("lineAudioTaskList");
   const pendingCountEl = document.getElementById("lineAudioPendingCount");
-  const pendingCount = (lineAudioTasks || []).filter((task) => (task.status || "pending") === "pending").length;
+  const listMetaEl = document.getElementById("lineAudioListMeta");
+  const loadMoreBtn = document.getElementById("loadMoreLineAudioTasksBtn");
   if (pendingCountEl) {
-    pendingCountEl.textContent = `${t("common.status.pending")} ${pendingCount}`;
+    pendingCountEl.textContent = `${t("common.status.pending")} ${lineAudioPendingCount}`;
+  }
+  if (listMetaEl) {
+    listMetaEl.textContent = `${lineAudioTasks.length} / ${lineAudioTotalCount}`;
+  }
+  if (loadMoreBtn) {
+    loadMoreBtn.classList.toggle("hidden", !lineAudioHasMore);
+    loadMoreBtn.disabled = lineAudioLoadingMore;
   }
   listEl.innerHTML = "";
 
@@ -143,6 +158,30 @@ function renderLineAudioTaskList() {
 
     li.addEventListener("click", () => loadLineAudioTaskDetail(task.id));
     listEl.appendChild(li);
+  }
+}
+
+async function loadMoreLineAudioTasks() {
+  if (!activeNovel || !lineAudioHasMore || lineAudioLoadingMore) return;
+  lineAudioLoadingMore = true;
+  renderLineAudioTaskList();
+  try {
+    const data = await fetchLineAudioTasks(activeNovel.id, {
+      limit: LINE_AUDIO_TASK_PAGE_SIZE,
+      offset: lineAudioNextOffset,
+    });
+    lineAudioTasks = lineAudioTasks.concat(data.lineAudioTasks || []);
+    lineAudioNextOffset = Number(data.nextOffset || lineAudioTasks.length);
+    lineAudioHasMore = Boolean(data.hasMore);
+    lineAudioTotalCount = Number(data.totalCount || lineAudioTasks.length);
+    lineAudioPendingCount = Number(data.pendingCount || 0);
+    renderLineAudioTaskList();
+    localizeDocumentText(document);
+  } catch (err) {
+    toast(t("error.loadFailed", { msg: err.message }));
+  } finally {
+    lineAudioLoadingMore = false;
+    renderLineAudioTaskList();
   }
 }
 
@@ -251,7 +290,15 @@ function renderLineAudioTaskDetail(task) {
 async function loadLineAudioTaskList() {
   if (!activeNovel) return;
   try {
-    lineAudioTasks = await fetchLineAudioTasks(activeNovel.id);
+    const data = await fetchLineAudioTasks(activeNovel.id, {
+      limit: LINE_AUDIO_TASK_PAGE_SIZE,
+      offset: 0,
+    });
+    lineAudioTasks = data.lineAudioTasks || [];
+    lineAudioNextOffset = Number(data.nextOffset || lineAudioTasks.length);
+    lineAudioHasMore = Boolean(data.hasMore);
+    lineAudioTotalCount = Number(data.totalCount || lineAudioTasks.length);
+    lineAudioPendingCount = Number(data.pendingCount || 0);
     renderLineAudioTaskList();
     localizeDocumentText(document);
     if (activeLineAudioTaskId == null && lineAudioTasks.length > 0) {
@@ -266,8 +313,14 @@ async function loadLineAudioTaskList() {
 
 async function loadLineAudioTaskDetail(taskId) {
   if (!activeNovel) return;
-  const task = lineAudioTasks.find((t) => t.id === taskId);
-  if (!task) return;
+  let task = lineAudioTasks.find((t) => t.id === taskId);
+  if (!task) {
+    try {
+      task = await fetchLineAudioTaskDetail(taskId);
+    } catch {
+      return;
+    }
+  }
 
   activeLineAudioTaskId = taskId;
   renderLineAudioTaskList();
@@ -311,6 +364,17 @@ function restoreLineAudioRefreshInterval() {
 function bindActions() {
   document.getElementById("refreshLineAudioTasksBtn").addEventListener("click", () => {
     refreshLineAudioTasks();
+  });
+
+  document.getElementById("loadMoreLineAudioTasksBtn").addEventListener("click", () => {
+    loadMoreLineAudioTasks();
+  });
+
+  document.getElementById("lineAudioTaskList").addEventListener("scroll", (event) => {
+    const el = event.currentTarget;
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 80) {
+      loadMoreLineAudioTasks();
+    }
   });
 
   document.getElementById("refreshLineAudioIntervalSelect").addEventListener("change", () => {

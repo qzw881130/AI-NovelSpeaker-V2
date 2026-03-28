@@ -214,14 +214,27 @@ def get_line_audio_task(task_id: int) -> dict | None:
     return _line_audio_task_row_to_dict(row) if row else None
 
 
-def list_line_audio_tasks(novel_id: int | None = None) -> list[dict]:
-    """获取台词音频任务列表"""
+def list_line_audio_tasks(
+    novel_id: int | None = None, limit: int = 100, offset: int = 0
+) -> dict:
+    """分页获取台词音频任务列表"""
     conn = db_conn()
     params = []
     where_clause = ""
     if novel_id is not None:
         where_clause = "WHERE novel_id = ?"
         params.append(novel_id)
+
+    limit = max(1, min(int(limit or 100), 200))
+    offset = max(0, int(offset or 0))
+
+    count_row = conn.execute(
+        f"SELECT COUNT(1) AS c FROM line_audio_tasks {where_clause}", params
+    ).fetchone()
+    pending_row = conn.execute(
+        f"SELECT COUNT(1) AS c FROM line_audio_tasks {where_clause}{' AND' if where_clause else ' WHERE'} status='pending'",
+        params,
+    ).fetchone()
 
     rows = conn.execute(
         f"""
@@ -237,11 +250,21 @@ def list_line_audio_tasks(novel_id: int | None = None) -> list[dict]:
             END,
             updated_at DESC,
             id DESC
+        LIMIT ? OFFSET ?
         """,
-        params,
+        [*params, limit, offset],
     ).fetchall()
     conn.close()
-    return [_line_audio_task_row_to_dict(row) for row in rows]
+    total_count = int(count_row["c"] or 0) if count_row else 0
+    pending_count = int(pending_row["c"] or 0) if pending_row else 0
+    task_list = [_line_audio_task_row_to_dict(row) for row in rows]
+    return {
+        "lineAudioTasks": task_list,
+        "pendingCount": pending_count,
+        "totalCount": total_count,
+        "hasMore": offset + len(task_list) < total_count,
+        "nextOffset": offset + len(task_list),
+    }
 
 
 def get_chapter_line_audio_entries(novel_id: int, chapter_id: int) -> list[dict]:

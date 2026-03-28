@@ -38,6 +38,8 @@ let lastJsonFindQuery = "";
 let lastJsonFindIndex = -1;
 const CHAPTER_FONT_SIZE_KEY = "ai_novel_reader_font_size";
 const JSON_VIEW_FONT_SIZE_KEY = "ai_novel_json_view_font_size";
+let jsonAutosaveTimerId = null;
+let jsonAutosaveSaving = false;
 
 // 台词音频状态
 let lineAudioEntries = [];
@@ -61,6 +63,7 @@ function resetChapterJsonCache() {
   jsonViewRawText = "";
   jsonViewParsed = null;
   jsonViewEditing = false;
+  clearJsonAutosaveTimer();
 }
 
 async function loadChapterJsonCache() {
@@ -346,6 +349,7 @@ function renderJsonViewMode() {
   const replaceAllBtn = document.getElementById("jsonReplaceAllBtn");
   const editBtn = document.getElementById("editJsonViewBtn");
   const saveBtn = document.getElementById("saveJsonViewBtn");
+  const autosaveHint = document.getElementById("jsonAutosaveHint");
   const rawBtn = document.getElementById("viewJsonRawBtn");
   const jubenBtn = document.getElementById("viewJsonJubenBtn");
   const rolesBtn = document.getElementById("viewJsonRolesBtn");
@@ -373,6 +377,9 @@ function renderJsonViewMode() {
   findWrap.classList.toggle("hidden", jsonViewMode !== "raw");
   replaceBtn.classList.toggle("hidden", !(jsonViewMode === "raw" && jsonViewEditing));
   replaceAllBtn.classList.toggle("hidden", !(jsonViewMode === "raw" && jsonViewEditing));
+  if (autosaveHint) {
+    autosaveHint.classList.toggle("hidden", !(jsonViewEditing && jsonViewMode === "juben"));
+  }
 
   if (jsonViewEditing) {
     if (jsonViewMode === "raw") {
@@ -393,8 +400,11 @@ function renderJsonViewMode() {
     } else {
       editor.value = jsonViewRawText || "";
     }
+    updateJsonAutosaveState();
     return;
   }
+
+  updateJsonAutosaveState();
 
   if (jsonViewMode === "raw") {
     if (jsonViewParsed && typeof jsonViewParsed === "object") {
@@ -431,7 +441,38 @@ function renderJsonViewMode() {
   localizeDocumentText(document);
 }
 
-async function saveJsonViewEdit() {
+function clearJsonAutosaveTimer() {
+  if (jsonAutosaveTimerId) {
+    window.clearInterval(jsonAutosaveTimerId);
+    jsonAutosaveTimerId = null;
+  }
+}
+
+function updateJsonAutosaveState() {
+  const shouldAutosave = jsonViewEditing && jsonViewMode === "juben";
+  if (!shouldAutosave) {
+    clearJsonAutosaveTimer();
+    return;
+  }
+  if (jsonAutosaveTimerId) return;
+  jsonAutosaveTimerId = window.setInterval(async () => {
+    if (!jsonViewEditing || jsonViewMode !== "juben" || jsonAutosaveSaving) return;
+    const editor = document.getElementById("chapterJsonEditor");
+    if (!editor) return;
+    const currentText = String(editor.value || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
+    const savedText = String(jsonViewParsed?.juben || "").trim();
+    if (currentText === savedText) return;
+    jsonAutosaveSaving = true;
+    try {
+      await saveJsonViewEdit({ keepEditing: true, silent: true, autosave: true });
+    } finally {
+      jsonAutosaveSaving = false;
+    }
+  }, 15000);
+}
+
+async function saveJsonViewEdit(options = {}) {
+  const { keepEditing = false, silent = false, autosave = false } = options;
   if (!activeNovel || !activeChapterNum) {
     toast("当前章节 JSON 不可编辑");
     return;
@@ -479,11 +520,13 @@ async function saveJsonViewEdit() {
   await saveChapterJsonOutput(activeNovel.id, activeChapterNum, merged);
   jsonViewParsed = draft;
   jsonViewRawText = merged;
-  jsonViewEditing = false;
+  jsonViewEditing = keepEditing;
   renderJsonViewMode();
   await updateChapterActionWarnings();
-  setStatus("JSON 已保存");
-  toast(t("toast.saved"));
+  setStatus(autosave ? "台词已自动保存" : "JSON 已保存");
+  if (!silent) {
+    toast(t("toast.saved"));
+  }
 }
 
 function getActiveJsonTextEl() {
@@ -652,7 +695,7 @@ function bindActions() {
     if (!activeNovel || !activeChapterNum) return;
     await loadChapterJsonCache();
     const text = jsonViewRawText || JSON.stringify({ role_list: [], juben: "" }, null, 2);
-    jsonViewMode = "raw";
+    jsonViewMode = "juben";
     jsonViewEditing = false;
     lastJsonFindQuery = "";
     lastJsonFindIndex = -1;

@@ -2053,6 +2053,18 @@ menu {
   border-radius: 8px;
 }
 
+.task-list-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.task-list-meta-text {
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .task-list-empty {
   padding: 24px;
   text-align: center;

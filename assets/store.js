@@ -499,9 +499,21 @@ async function mergeChapterLineAudio(novelId, chapterNum) {
   return res;
 }
 
-async function fetchLineAudioTasks(novelId) {
-  const data = await api(`/api/novels/${Number(novelId)}/line-audio-tasks`);
-  return data.lineAudioTasks || [];
+async function fetchLineAudioTasks(novelId, options = {}) {
+  const limit = Number(options.limit || 100);
+  const offset = Number(options.offset || 0);
+  const data = await api(`/api/novels/${Number(novelId)}/line-audio-tasks?limit=${limit}&offset=${offset}`);
+  return {
+    lineAudioTasks: data.lineAudioTasks || [],
+    pendingCount: Number(data.pendingCount || 0),
+    totalCount: Number(data.totalCount || 0),
+    hasMore: Boolean(data.hasMore),
+    nextOffset: Number(data.nextOffset || 0),
+  };
+}
+
+async function fetchLineAudioTaskDetail(taskId) {
+  return await api(`/api/line-audio-tasks/${Number(taskId)}`);
 }
 
 async function deleteLineAudioTask(taskId) {
@@ -573,6 +585,7 @@ export {
   enqueueAllLineAudios,
   mergeChapterLineAudio,
   fetchLineAudioTasks,
+  fetchLineAudioTaskDetail,
   deleteLineAudioTask,
   retryLineAudioTask,
   getLineAudioFileUrl,

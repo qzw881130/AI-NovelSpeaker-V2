@@ -879,8 +879,11 @@ class Handler(BaseHTTPRequestHandler):
         if m_line_audio_tasks:
             ensure_task_worker()
             novel_id = int(m_line_audio_tasks.group(1))
-            tasks = list_line_audio_tasks(novel_id)
-            self.send_json({"lineAudioTasks": tasks})
+            query = parse_qs(parsed.query or "")
+            limit = int((query.get("limit") or ["100"])[0])
+            offset = int((query.get("offset") or ["0"])[0])
+            data = list_line_audio_tasks(novel_id, limit=limit, offset=offset)
+            self.send_json(data)
             return
 
         m_line_audio_task_detail = re.match(r"^/api/line-audio-tasks/(\d+)$", route)
