@@ -766,6 +766,14 @@ function bindActions() {
     replaceAllInJsonEditor();
   });
 
+  document.getElementById("chapterJsonEditor").addEventListener("keydown", async (event) => {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+      event.preventDefault();
+      if (!jsonViewEditing) return;
+      await saveJsonViewEdit({ keepEditing: true });
+    }
+  });
+
   document.getElementById("jsonViewFontSizeRange")?.addEventListener("input", (event) => {
     const value = Number(event.target.value || 18);
     localStorage.setItem(JSON_VIEW_FONT_SIZE_KEY, String(value));
