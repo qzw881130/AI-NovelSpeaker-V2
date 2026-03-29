@@ -350,6 +350,7 @@ function renderJsonViewMode() {
   const editBtn = document.getElementById("editJsonViewBtn");
   const saveBtn = document.getElementById("saveJsonViewBtn");
   const autosaveHint = document.getElementById("jsonAutosaveHint");
+  const shortcutHint = document.getElementById("jsonShortcutHint");
   const rawBtn = document.getElementById("viewJsonRawBtn");
   const jubenBtn = document.getElementById("viewJsonJubenBtn");
   const rolesBtn = document.getElementById("viewJsonRolesBtn");
@@ -379,6 +380,9 @@ function renderJsonViewMode() {
   replaceAllBtn.classList.toggle("hidden", !(jsonViewMode === "raw" && jsonViewEditing));
   if (autosaveHint) {
     autosaveHint.classList.toggle("hidden", !(jsonViewEditing && jsonViewMode === "juben"));
+  }
+  if (shortcutHint) {
+    shortcutHint.classList.toggle("hidden", !(jsonViewEditing && jsonViewMode === "juben"));
   }
 
   if (jsonViewEditing) {
