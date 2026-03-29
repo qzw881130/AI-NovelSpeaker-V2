@@ -878,6 +878,7 @@ class Handler(BaseHTTPRequestHandler):
         m_line_audio_tasks = re.match(r"^/api/novels/(\d+)/line-audio-tasks$", route)
         if m_line_audio_tasks:
             ensure_task_worker()
+            kick_line_audio_queue_once()
             novel_id = int(m_line_audio_tasks.group(1))
             query = parse_qs(parsed.query or "")
             limit = int((query.get("limit") or ["100"])[0])
@@ -1606,6 +1607,7 @@ class Handler(BaseHTTPRequestHandler):
             if not ok:
                 self.send_json({"error": msg}, 409)
                 return
+            kick_line_audio_queue_once()
             self.send_json({"status": "queued", "taskId": task_id})
             return
 
@@ -1636,6 +1638,7 @@ class Handler(BaseHTTPRequestHandler):
             if not ok:
                 self.send_json({"error": msg}, 409)
                 return
+            kick_line_audio_queue_once()
             self.send_json({"status": "queued", **data})
             return
 
@@ -1648,6 +1651,7 @@ class Handler(BaseHTTPRequestHandler):
                 code = 404 if "不存在" in msg or "not found" in msg else 409
                 self.send_json({"error": msg}, code)
                 return
+            kick_line_audio_queue_once()
             self.send_json({"status": msg})
             return
 
@@ -2200,6 +2204,7 @@ class Handler(BaseHTTPRequestHandler):
                 code = 404 if "not found" in msg else 409
                 self.send_json({"error": msg}, code)
                 return
+            kick_line_audio_queue_once()
             self.send_json({"status": "deleted"})
             return
 

@@ -24,3 +24,7 @@ output/*
 # Keep temp directory, ignore generated temp files
 temp/*
 !temp/.gitkeep
+
+# Keep logs directory, ignore runtime log files
+logs/*
+!logs/.gitkeep

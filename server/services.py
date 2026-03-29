@@ -41,6 +41,11 @@ CAPTURE_BIND: tuple[str, int] | None = None
 CAPTURE_LOCK = threading.Lock()
 TASK_WORKER_THREAD: threading.Thread | None = None
 TASK_WORKER_STOP = threading.Event()
+TASK_WORKER_LOCK = threading.Lock()
+TASK_WORKER_HEARTBEAT_TS = 0.0
+TASK_WORKER_LAST_PROGRESS_TS = 0.0
+TASK_WORKER_GENERATION = 0
+TASK_WORKER_KICK_THREAD: threading.Thread | None = None
 LEGACY_SYSTEM_WORKFLOW_NAME = "古典小说默认工作流"
 
 
@@ -1848,27 +1853,82 @@ def advance_status(conn: sqlite3.Connection, table: str) -> None:
 
 
 def task_worker_loop() -> None:
+    global TASK_WORKER_HEARTBEAT_TS, TASK_WORKER_LAST_PROGRESS_TS
     from .line_audio import run_line_audio_queue_once
 
-    while not TASK_WORKER_STOP.is_set():
+    generation = TASK_WORKER_GENERATION
+    while not TASK_WORKER_STOP.is_set() and generation == TASK_WORKER_GENERATION:
+        TASK_WORKER_HEARTBEAT_TS = time.time()
         has_json_work = False
         has_line_audio_work = False
-        try:
-            has_json_work = run_json_queue_once()
-        except Exception as exc:
-            print(f"[task-worker] json queue error: {exc}")
-        try:
-            has_line_audio_work = run_line_audio_queue_once()
-        except Exception as exc:
-            print(f"[task-worker] line audio queue error: {exc}")
+        with TASK_WORKER_LOCK:
+            try:
+                has_json_work = run_json_queue_once()
+            except Exception as exc:
+                print(f"[task-worker] json queue error: {exc}")
+            try:
+                has_line_audio_work = run_line_audio_queue_once()
+            except Exception as exc:
+                print(f"[task-worker] line audio queue error: {exc}")
+        TASK_WORKER_HEARTBEAT_TS = time.time()
+        if has_json_work or has_line_audio_work:
+            TASK_WORKER_LAST_PROGRESS_TS = TASK_WORKER_HEARTBEAT_TS
         TASK_WORKER_STOP.wait(1.0 if (has_json_work or has_line_audio_work) else 3.0)
 
 
+def _has_active_line_audio_tasks() -> bool:
+    conn = db_conn()
+    row = conn.execute(
+        "SELECT COUNT(1) AS c FROM line_audio_tasks WHERE status IN ('running','processing')"
+    ).fetchone()
+    conn.close()
+    return bool(row and int(row["c"] or 0) > 0)
+
+
+def kick_line_audio_queue_once() -> None:
+    global \
+        TASK_WORKER_KICK_THREAD, \
+        TASK_WORKER_HEARTBEAT_TS, \
+        TASK_WORKER_LAST_PROGRESS_TS
+    from .line_audio import run_line_audio_queue_once
+
+    if TASK_WORKER_KICK_THREAD and TASK_WORKER_KICK_THREAD.is_alive():
+        return
+
+    def _runner() -> None:
+        global TASK_WORKER_HEARTBEAT_TS, TASK_WORKER_LAST_PROGRESS_TS
+        with TASK_WORKER_LOCK:
+            TASK_WORKER_HEARTBEAT_TS = time.time()
+            try:
+                did_work = run_line_audio_queue_once()
+                TASK_WORKER_HEARTBEAT_TS = time.time()
+                if did_work:
+                    TASK_WORKER_LAST_PROGRESS_TS = TASK_WORKER_HEARTBEAT_TS
+            except Exception as exc:
+                TASK_WORKER_HEARTBEAT_TS = time.time()
+                print(f"[task-worker] line audio kick error: {exc}")
+
+    TASK_WORKER_KICK_THREAD = threading.Thread(target=_runner, daemon=True)
+    TASK_WORKER_KICK_THREAD.start()
+
+
 def ensure_task_worker() -> None:
-    global TASK_WORKER_THREAD
+    global TASK_WORKER_THREAD, TASK_WORKER_GENERATION, TASK_WORKER_HEARTBEAT_TS
+    stale_seconds = 15.0
+    now = time.time()
     if TASK_WORKER_THREAD and TASK_WORKER_THREAD.is_alive():
+        if (
+            TASK_WORKER_HEARTBEAT_TS > 0
+            and now - TASK_WORKER_HEARTBEAT_TS > stale_seconds
+            and not _has_active_line_audio_tasks()
+        ):
+            print("[task-worker] heartbeat stale, restarting worker")
+            TASK_WORKER_GENERATION += 1
+            TASK_WORKER_THREAD = threading.Thread(target=task_worker_loop, daemon=True)
+            TASK_WORKER_THREAD.start()
         return
     TASK_WORKER_STOP.clear()
+    TASK_WORKER_GENERATION += 1
     TASK_WORKER_THREAD = threading.Thread(target=task_worker_loop, daemon=True)
     TASK_WORKER_THREAD.start()
 

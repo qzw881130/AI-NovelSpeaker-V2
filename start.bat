@@ -3,6 +3,8 @@ setlocal enabledelayedexpansion
 
 cd /d "%~dp0"
 set "PORT=8080"
+set "LOG_DIR=logs"
+set "LOG_FILE=%LOG_DIR%\server.log"
 
 for %%A in (%*) do (
   set "ARG=%%~A"
@@ -41,6 +43,8 @@ if not exist "data\novels.db" (
   %PY_CMD% scripts\init_storage.py
 )
 
+if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
+
 echo [start] Accessible URLs:
 echo   - Local: http://127.0.0.1:%PORT%/index.html
 
@@ -65,8 +69,9 @@ if "%LAN_PRINTED%"=="0" (
 )
 
 echo [start] Starting server...
+echo [start] Log file: %LOG_FILE%
 set "NOVELSPEAKER_PORT=%PORT%"
-%PY_CMD% app_server.py
+%PY_CMD% app_server.py >> "%LOG_FILE%" 2>&1
 
 endlocal
 goto :eof

@@ -5,6 +5,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
 
 PORT="8080"
+LOG_DIR="$ROOT_DIR/logs"
+LOG_FILE="$LOG_DIR/server.log"
 
 usage() {
   cat <<'EOF'
@@ -54,6 +56,8 @@ if [[ ! -f "data/novels.db" ]]; then
   python3 scripts/init_storage.py
 fi
 
+mkdir -p "$LOG_DIR"
+
 echo "[start] Accessible URLs:"
 echo "  - Local: http://127.0.0.1:${PORT}/index.html"
 
@@ -85,5 +89,6 @@ if [[ "${LAN_PRINTED}" -eq 0 ]]; then
 fi
 
 echo "[start] Starting server..."
-NOVELSPEAKER_PORT="$PORT" nohup python3 app_server.py > /dev/null 2>&1 &
+echo "[start] Log file: ${LOG_FILE}"
+NOVELSPEAKER_PORT="$PORT" nohup python3 app_server.py >> "$LOG_FILE" 2>&1 &
 echo "[start] Server started in background (PID: $!)"
