@@ -24,6 +24,13 @@ let lineAudioTotalCount = 0;
 let lineAudioPendingCount = 0;
 let lineAudioLoadingMore = false;
 
+function updateLineAudioDocumentTitle() {
+  const baseTitle = activeNovel
+    ? `${activeNovel.name} - ${translateText("台词音频任务队列")}`
+    : translateText("台词音频任务队列");
+  document.title = `【${translateText("待执行")}：${lineAudioPendingCount}】${baseTitle}`;
+}
+
 function isTaskDetailAudioPlaying() {
   const player = document.getElementById("lineAudioTaskPlayer");
   return Boolean(player && !player.paused && !player.ended);
@@ -44,6 +51,7 @@ function getNovelByQueryOrActive() {
 
 function setHeader(novel) {
   document.getElementById("lineAudioPageTitle").textContent = `${novel.name} - ${translateText("台词音频任务队列")}`;
+  updateLineAudioDocumentTitle();
 }
 
 function statusText(status) {
@@ -123,6 +131,7 @@ function renderLineAudioTaskList() {
   if (pendingCountEl) {
     pendingCountEl.textContent = `${t("common.status.pending")} ${lineAudioPendingCount}`;
   }
+  updateLineAudioDocumentTitle();
   if (listMetaEl) {
     listMetaEl.textContent = `${lineAudioTasks.length} / ${lineAudioTotalCount}`;
   }
