@@ -268,6 +268,12 @@ function resetChapterAudioPlayer() {
   player.load();
 }
 
+function getChapterAudioStreamUrl(chapterNum) {
+  if (!activeNovel) return "";
+  const nonce = Date.now();
+  return `/api/novels/${Number(activeNovel.id)}/chapters/${Number(chapterNum)}/audio-stream?rand=${nonce}`;
+}
+
 function refreshChapterAudioState(detail) {
   const downloadBtn = document.getElementById("downloadAudioBtn");
   if (!activeNovel || !detail?.hasAudio) {
@@ -279,7 +285,7 @@ function refreshChapterAudioState(detail) {
   const box = document.getElementById("chapterAudioBox");
   const player = document.getElementById("chapterAudioPlayer");
   const duration = document.getElementById("chapterAudioDuration");
-  player.src = `/api/novels/${Number(activeNovel.id)}/chapters/${Number(detail.chapterNum)}/audio-stream`;
+  player.src = getChapterAudioStreamUrl(detail.chapterNum);
   duration.textContent = "...";
   box.classList.remove("hidden");
   downloadBtn.classList.remove("hidden");
