@@ -1,5 +1,6 @@
 import {
   fetchChapterCompareData,
+  fetchNovelChapters,
   getActiveNovelId,
   getData,
 } from "./store.js";
@@ -8,6 +9,8 @@ import { localizeDocumentText, t, translateText } from "./i18n.js";
 
 let allNovels = [];
 let activeNovel = null;
+let compareSelectionText = "";
+let chapterItems = [];
 
 function escapeHtml(text) {
   return String(text || "")
@@ -43,13 +46,25 @@ function parseJubenLines(jsonText) {
   }
 }
 
-function normalizeChars(text) {
-  return Array.from(String(text || "").replace(/\s+/g, "").trim());
+function tokenizeCompareText(text) {
+  return Array.from(String(text || "")).map((char) => ({
+    char,
+    comparable: /[“”‘’"'，。！？、；：,.!?;:（）()《》〈〉【】\[\]…—\-]/.test(char) || /\s/.test(char) ? null : char,
+  }));
 }
 
 function diffChars(aText, bText) {
-  const a = normalizeChars(aText);
-  const b = normalizeChars(bText);
+  const aTokens = tokenizeCompareText(aText);
+  const bTokens = tokenizeCompareText(bText);
+  const aComparable = aTokens
+    .map((token, index) => ({ index, value: token.comparable }))
+    .filter((token) => token.value !== null);
+  const bComparable = bTokens
+    .map((token, index) => ({ index, value: token.comparable }))
+    .filter((token) => token.value !== null);
+
+  const a = aComparable.map((token) => token.value);
+  const b = bComparable.map((token) => token.value);
   const m = a.length;
   const n = b.length;
   const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
@@ -62,40 +77,47 @@ function diffChars(aText, bText) {
     }
   }
 
-  const aTokens = [];
-  const bTokens = [];
+  const aTypes = aTokens.map((token) => (token.comparable === null ? "ignore" : "same"));
+  const bTypes = bTokens.map((token) => (token.comparable === null ? "ignore" : "same"));
   let i = 0;
   let j = 0;
   while (i < m && j < n) {
     if (a[i] === b[j]) {
-      aTokens.push({ type: "same", text: a[i] });
-      bTokens.push({ type: "same", text: b[j] });
       i += 1;
       j += 1;
     } else if (dp[i + 1][j] >= dp[i][j + 1]) {
-      aTokens.push({ type: "del", text: a[i] });
+      aTypes[aComparable[i].index] = "del";
       i += 1;
     } else {
-      bTokens.push({ type: "add", text: b[j] });
+      bTypes[bComparable[j].index] = "add";
       j += 1;
     }
   }
   while (i < m) {
-    aTokens.push({ type: "del", text: a[i] });
+    aTypes[aComparable[i].index] = "del";
     i += 1;
   }
   while (j < n) {
-    bTokens.push({ type: "add", text: b[j] });
+    bTypes[bComparable[j].index] = "add";
     j += 1;
   }
 
-  return { aTokens, bTokens, exactMatch: a.join("") === b.join("") };
+  return {
+    aTokens: aTokens.map((token, index) => ({ type: aTypes[index], text: token.char })),
+    bTokens: bTokens.map((token, index) => ({ type: bTypes[index], text: token.char })),
+    exactMatch: a.join("") === b.join(""),
+    comparableCount: b.length,
+  };
 }
 
 function tokensToHtml(tokens) {
   return tokens
     .map((token) => {
-      const cls = token.type === "same" ? "compare-char-same" : token.type === "add" ? "compare-char-add" : "compare-char-del";
+      const cls = token.type === "same" || token.type === "ignore"
+        ? "compare-char-same"
+        : token.type === "add"
+          ? "compare-char-add"
+          : "compare-char-del";
       return `<span class="${cls}">${escapeHtml(token.text)}</span>`;
     })
     .join("");
@@ -108,18 +130,137 @@ function renderDiffBlocks(parsedLines, originalText) {
 
   const parsedJoined = parsedLines.join("\n");
   const originalJoined = String(originalText || "").trim();
-  const { aTokens, bTokens, exactMatch } = diffChars(parsedJoined, originalJoined);
+  const { aTokens, bTokens, exactMatch, comparableCount } = diffChars(parsedJoined, originalJoined);
+  const missingCount = bTokens.filter((token) => token.type === "add").length;
 
   parsedEl.innerHTML = `<div class="compare-block compare-rich-block">${tokensToHtml(aTokens)}</div>`;
   originalEl.innerHTML = `<div class="compare-block compare-rich-block">${tokensToHtml(bTokens)}</div>`;
 
   summaryEl.textContent = exactMatch
     ? translateText("解析结果与原文完全一致")
-    : `${translateText("解析后台词行数")}: ${parsedLines.length} · ${translateText("原文字符数")}: ${normalizeChars(originalJoined).length}`;
+    : `${translateText("解析后台词行数")}: ${parsedLines.length} · ${translateText("原文字符数")}: ${comparableCount} · ${translateText("丢失")} ${missingCount} ${translateText("个")}`;
+}
+
+function hideSelectionBubble() {
+  const bubble = document.getElementById("compareSelectionBubble");
+  if (!bubble) return;
+  bubble.classList.add("hidden");
+  bubble.textContent = "";
+  compareSelectionText = "";
+}
+
+function normalizeSelectedText(text) {
+  return String(text || "")
+    .replace(/[“”‘’"']/g, "")
+    .replace(/\s+/g, "")
+    .trim();
+}
+
+function showSelectionBubble(selection, rect) {
+  const bubble = document.getElementById("compareSelectionBubble");
+  if (!bubble) return;
+  const cleaned = normalizeSelectedText(selection);
+  if (!cleaned) {
+    hideSelectionBubble();
+    return;
+  }
+  compareSelectionText = `旁白: ${cleaned}`;
+  bubble.textContent = compareSelectionText;
+  bubble.classList.remove("hidden");
+
+  const bubbleRect = bubble.getBoundingClientRect();
+  const top = Math.max(12, rect.top - bubbleRect.height - 14);
+  const left = Math.min(
+    Math.max(12, rect.left + rect.width / 2 - bubbleRect.width / 2),
+    window.innerWidth - bubbleRect.width - 12
+  );
+  bubble.style.top = `${top}px`;
+  bubble.style.left = `${left}px`;
+}
+
+function bindSelectionBubble() {
+  const bubble = document.getElementById("compareSelectionBubble");
+  const columns = document.getElementById("compareColumns");
+  if (!bubble || !columns) return;
+
+  const updateFromSelection = () => {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !sel.rangeCount) {
+      hideSelectionBubble();
+      return;
+    }
+    const text = sel.toString();
+    const range = sel.getRangeAt(0);
+    const commonAncestor = range.commonAncestorContainer;
+    const withinCompare = columns.contains(commonAncestor.nodeType === 1 ? commonAncestor : commonAncestor.parentElement);
+    if (!withinCompare) {
+      hideSelectionBubble();
+      return;
+    }
+    const rect = range.getBoundingClientRect();
+    if (!rect || (!rect.width && !rect.height)) {
+      hideSelectionBubble();
+      return;
+    }
+    showSelectionBubble(text, rect);
+  };
+
+  document.addEventListener("selectionchange", updateFromSelection);
+  document.addEventListener("scroll", () => {
+    if (compareSelectionText) {
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed || !sel.rangeCount) {
+        hideSelectionBubble();
+        return;
+      }
+      const rect = sel.getRangeAt(0).getBoundingClientRect();
+      showSelectionBubble(sel.toString(), rect);
+    }
+  }, true);
+  document.addEventListener("mousedown", (event) => {
+    if (bubble.contains(event.target)) return;
+    if (!columns.contains(event.target)) {
+      hideSelectionBubble();
+    }
+  });
+
+  bubble.addEventListener("click", async () => {
+    if (!compareSelectionText) return;
+    await navigator.clipboard.writeText(compareSelectionText);
+    toast(translateText("已复制"));
+  });
+
+  bubble.addEventListener("keydown", async (event) => {
+    if ((event.key === "Enter" || event.key === " ") && compareSelectionText) {
+      event.preventDefault();
+      await navigator.clipboard.writeText(compareSelectionText);
+      toast(translateText("已复制"));
+    }
+  });
+}
+
+function updateChapterNav(chapterNum) {
+  const prevBtn = document.getElementById("prevCompareChapterBtn");
+  const nextBtn = document.getElementById("nextCompareChapterBtn");
+  const idx = chapterItems.findIndex((item) => Number(item.chapterNum) === Number(chapterNum));
+  prevBtn.disabled = idx <= 0;
+  nextBtn.disabled = idx < 0 || idx >= chapterItems.length - 1;
+
+  prevBtn.onclick = () => {
+    if (idx <= 0) return;
+    const prev = chapterItems[idx - 1];
+    window.location.href = `./chapters-compare.html?novelId=${Number(activeNovel.id)}&chapterNum=${Number(prev.chapterNum)}`;
+  };
+  nextBtn.onclick = () => {
+    if (idx < 0 || idx >= chapterItems.length - 1) return;
+    const next = chapterItems[idx + 1];
+    window.location.href = `./chapters-compare.html?novelId=${Number(activeNovel.id)}&chapterNum=${Number(next.chapterNum)}`;
+  };
 }
 
 async function init() {
   renderNav();
+  bindSelectionBubble();
   const data = await getData();
   allNovels = data.novels || [];
   activeNovel = getNovelByQueryOrActive();
@@ -135,10 +276,12 @@ async function init() {
   document.getElementById("backToChaptersBtn").href = `./chapters.html?novelId=${activeNovel.id}`;
 
   try {
+    chapterItems = await fetchNovelChapters(activeNovel.id);
     const { detail, jsonOutput } = await fetchChapterCompareData(activeNovel.id, chapterNum);
     const parsedLines = parseJubenLines(jsonOutput?.jsonText || "");
     document.getElementById("comparePageTitle").textContent = `${activeNovel.name} - ${detail.title}`;
     document.getElementById("comparePageMeta").textContent = `${translateText("章节")}: ${detail.chapterNum}`;
+    updateChapterNav(detail.chapterNum);
 
     if (!parsedLines.length) {
       document.getElementById("compareEmpty").textContent = translateText("当前章节暂无可对比的台词数据");

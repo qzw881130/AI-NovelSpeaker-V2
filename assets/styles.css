@@ -1307,6 +1307,39 @@ menu {
   gap: 12px;
 }
 
+.compare-selection-bubble {
+  position: fixed;
+  z-index: 1200;
+  max-width: min(560px, calc(100vw - 32px));
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(164, 74, 28, 0.24);
+  background: linear-gradient(180deg, rgba(255, 252, 246, 0.98) 0%, rgba(248, 236, 216, 0.96) 100%);
+  color: #7b3718;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.45;
+  box-shadow: 0 18px 40px rgba(69, 42, 20, 0.16);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.compare-selection-bubble::after {
+  content: "";
+  position: absolute;
+  left: 24px;
+  bottom: -7px;
+  width: 12px;
+  height: 12px;
+  transform: rotate(45deg);
+  background: rgba(248, 236, 216, 0.96);
+  border-right: 1px solid rgba(164, 74, 28, 0.24);
+  border-bottom: 1px solid rgba(164, 74, 28, 0.24);
+}
+
 .compare-columns {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);

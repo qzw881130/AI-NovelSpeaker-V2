@@ -16,6 +16,8 @@
             <p id="comparePageMeta" class="meta">请选择章节</p>
           </div>
           <div class="header-actions">
+            <button id="prevCompareChapterBtn" class="ghost-btn" type="button">上一回</button>
+            <button id="nextCompareChapterBtn" class="ghost-btn" type="button">下一回</button>
             <a id="backToChaptersBtn" class="ghost-btn" href="./chapters.html">返回章节管理</a>
           </div>
         </header>
@@ -24,6 +26,7 @@
           <div class="compare-toolbar">
             <span id="compareSummary" class="reader-status">就绪</span>
           </div>
+          <div id="compareSelectionBubble" class="compare-selection-bubble hidden" role="button" tabindex="0"></div>
           <div id="compareColumns" class="compare-columns hidden">
             <section class="compare-column">
               <div class="panel-head compare-column-head">
