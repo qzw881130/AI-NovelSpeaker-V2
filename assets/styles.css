@@ -1305,6 +1305,31 @@ menu {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  flex-wrap: wrap;
+}
+
+.compare-font-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+}
+
+.compare-font-control label {
+  color: var(--muted);
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.compare-font-control input[type="range"] {
+  width: min(220px, 48vw);
+  accent-color: var(--primary);
+}
+
+.compare-font-control strong {
+  min-width: 48px;
+  color: #7b3718;
+  font-size: 14px;
 }
 
 .compare-selection-bubble {
@@ -1379,7 +1404,7 @@ menu {
 
 .compare-rich-block {
   font-family: "Iowan Old Style", "Palatino Linotype", "Noto Serif SC", serif;
-  font-size: 17px;
+  font-size: var(--compare-font-size, 17px);
   word-break: break-word;
 }
 

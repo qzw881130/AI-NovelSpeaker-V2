@@ -11,6 +11,41 @@ let allNovels = [];
 let activeNovel = null;
 let compareSelectionText = "";
 let chapterItems = [];
+const COMPARE_FONT_SIZE_KEY = "compareFontSizePx";
+
+function getSavedCompareFontSize() {
+  const raw = Number(localStorage.getItem(COMPARE_FONT_SIZE_KEY) || 17);
+  if (!Number.isFinite(raw)) return 17;
+  return Math.min(30, Math.max(14, Math.round(raw)));
+}
+
+function applyCompareFontSize(px) {
+  const size = Math.min(30, Math.max(14, Math.round(Number(px) || 17)));
+  const range = document.getElementById("compareFontSizeRange");
+  const value = document.getElementById("compareFontSizeValue");
+  document.documentElement.style.setProperty("--compare-font-size", `${size}px`);
+  if (range) {
+    range.value = String(size);
+  }
+  if (value) {
+    value.textContent = `${size}px`;
+  }
+}
+
+function saveCompareFontSize(px) {
+  const size = Math.min(30, Math.max(14, Math.round(Number(px) || 17)));
+  localStorage.setItem(COMPARE_FONT_SIZE_KEY, String(size));
+  applyCompareFontSize(size);
+}
+
+function bindCompareFontSizeControl() {
+  const range = document.getElementById("compareFontSizeRange");
+  applyCompareFontSize(getSavedCompareFontSize());
+  if (!range) return;
+  range.addEventListener("input", (event) => {
+    saveCompareFontSize(event.target.value);
+  });
+}
 
 function escapeHtml(text) {
   return String(text || "")
@@ -261,6 +296,7 @@ function updateChapterNav(chapterNum) {
 async function init() {
   renderNav();
   bindSelectionBubble();
+  bindCompareFontSizeControl();
   const data = await getData();
   allNovels = data.novels || [];
   activeNovel = getNovelByQueryOrActive();
