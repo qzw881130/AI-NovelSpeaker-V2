@@ -1240,6 +1240,50 @@ menu {
   font: 13px/1.5 Menlo, Monaco, Consolas, "Courier New", monospace;
 }
 
+.code-editor {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fffdf7;
+  overflow: hidden;
+  max-height: 54vh;
+}
+
+.code-editor-surface {
+  width: 100%;
+  height: 54vh;
+  min-height: 320px;
+}
+
+.code-editor .ace_editor,
+.code-editor .ace_gutter,
+.code-editor .ace_scroller,
+.code-editor .ace_content {
+  font-family: Menlo, Monaco, Consolas, "Courier New", monospace !important;
+}
+
+.code-editor .ace_editor {
+  background: #fffdf7;
+}
+
+.code-editor .ace_gutter {
+  background: #fbf3e7;
+  color: #ad8c6c;
+  border-right: 1px solid rgba(167, 132, 101, 0.2);
+}
+
+.code-editor .ace_print-margin {
+  display: none;
+}
+
+.code-editor-input {
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  resize: none;
+  max-height: 54vh;
+}
+
 .json-find-replace {
   display: flex;
   gap: 8px;
@@ -1267,8 +1311,11 @@ menu {
   background: #f8e4cd;
 }
 
-.json-font-control {
+#checkIllegalColonBtn {
   margin-left: auto;
+}
+
+.json-font-control {
   display: inline-flex;
   align-items: center;
   gap: 8px;

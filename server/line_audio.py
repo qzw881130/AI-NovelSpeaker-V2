@@ -391,22 +391,11 @@ def invalidate_obsolete_chapter_line_audio_tasks(
     conn.commit()
     conn.close()
 
-    merged_path = get_chapter_merged_audio_path(novel_id, chapter_id)
-    if merged_path is not None:
-        try:
-            merged_path.unlink(missing_ok=True)
-        except OSError:
-            pass
-
     return len(obsolete_ids)
 
 
 def is_chapter_merged_audio_stale(novel_id: int, chapter_id: int) -> bool:
     merged_path = get_chapter_merged_audio_path(novel_id, chapter_id)
-    if not merged_path or not merged_path.exists() or not merged_path.is_file():
-        return False
-
-    merged_mtime = merged_path.stat().st_mtime
     conn = db_conn()
     rows = conn.execute(
         """
@@ -418,6 +407,7 @@ def is_chapter_merged_audio_stale(novel_id: int, chapter_id: int) -> bool:
     ).fetchall()
     conn.close()
 
+    completed_paths: list[Path] = []
     for row in rows:
         file_path = str(row["downloaded_file_path"] or "").strip()
         if not file_path:
@@ -425,6 +415,14 @@ def is_chapter_merged_audio_stale(novel_id: int, chapter_id: int) -> bool:
         abs_path = (ROOT_DIR / file_path).resolve()
         if not abs_path.exists() or not abs_path.is_file():
             continue
+        completed_paths.append(abs_path)
+
+    if not merged_path or not merged_path.exists() or not merged_path.is_file():
+        return bool(completed_paths)
+
+    merged_mtime = merged_path.stat().st_mtime
+
+    for abs_path in completed_paths:
         if abs_path.stat().st_mtime > merged_mtime:
             return True
     return False

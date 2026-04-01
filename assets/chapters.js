@@ -33,6 +33,7 @@ let jsonViewMode = "raw";
 let jsonViewRawText = "";
 let jsonViewParsed = null;
 let jsonViewEditing = false;
+let jsonAceEditor = null;
 let lastJsonFindQuery = "";
 let lastJsonFindIndex = -1;
 const CHAPTER_FONT_SIZE_KEY = "ai_novel_reader_font_size";
@@ -345,10 +346,14 @@ function downloadText(filename, content) {
   URL.revokeObjectURL(url);
 }
 
-function renderJsonViewMode() {
+function renderJsonViewMode(options = {}) {
+  const { preserveEditorView = false } = options;
   const preview = document.getElementById("chapterJsonPreview");
   const readOnly = document.getElementById("chapterJsonReadOnly");
   const editor = document.getElementById("chapterJsonEditor");
+  const editorWrap = document.getElementById("chapterJsonEditorWrap");
+  const aceHost = document.getElementById("chapterJsonAceEditor");
+  const illegalColonBtn = document.getElementById("checkIllegalColonBtn");
   const findWrap = document.getElementById("jsonFindReplaceWrap");
   const replaceBtn = document.getElementById("jsonReplaceBtn");
   const replaceAllBtn = document.getElementById("jsonReplaceAllBtn");
@@ -364,6 +369,7 @@ function renderJsonViewMode() {
   preview.style.fontSize = `${normalizedFontSize}px`;
   readOnly.style.fontSize = `${normalizedFontSize}px`;
   editor.style.fontSize = `${normalizedFontSize}px`;
+  setJsonEditorFontSize(normalizedFontSize);
   const fontRange = document.getElementById("jsonViewFontSizeRange");
   const fontValue = document.getElementById("jsonViewFontSizeValue");
   if (fontRange) fontRange.value = String(normalizedFontSize);
@@ -373,13 +379,17 @@ function renderJsonViewMode() {
   rolesBtn.classList.toggle("active", jsonViewMode === "roles");
 
   const canEdit = jsonViewMode === "raw" || jsonViewMode === "juben" || jsonViewMode === "roles";
+  const useAceEditor = jsonViewEditing && jsonViewMode === "juben" && Boolean(ensureJsonAceEditor());
   editBtn.classList.toggle("hidden", !canEdit);
   saveBtn.classList.toggle("hidden", !jsonViewEditing);
   editBtn.textContent = jsonViewEditing ? t("common.cancelEdit") : "编辑JSON";
   const rawReadOnlyVisible = jsonViewMode === "raw" && !jsonViewEditing;
   preview.classList.toggle("hidden", jsonViewEditing || rawReadOnlyVisible);
   readOnly.classList.toggle("hidden", !rawReadOnlyVisible);
-  editor.classList.toggle("hidden", !jsonViewEditing);
+  editorWrap.classList.toggle("hidden", !jsonViewEditing);
+  aceHost.classList.toggle("hidden", !useAceEditor);
+  editor.classList.toggle("hidden", !jsonViewEditing || useAceEditor);
+  illegalColonBtn.classList.toggle("hidden", !(jsonViewEditing && jsonViewMode === "juben"));
   findWrap.classList.toggle("hidden", jsonViewMode !== "raw");
   replaceBtn.classList.toggle("hidden", !(jsonViewMode === "raw" && jsonViewEditing));
   replaceAllBtn.classList.toggle("hidden", !(jsonViewMode === "raw" && jsonViewEditing));
@@ -393,21 +403,21 @@ function renderJsonViewMode() {
   if (jsonViewEditing) {
     if (jsonViewMode === "raw") {
       if (jsonViewParsed && typeof jsonViewParsed === "object") {
-        editor.value = JSON.stringify(jsonViewParsed, null, 2);
+        setJsonEditorValue(JSON.stringify(jsonViewParsed, null, 2), { preserveView: preserveEditorView });
       } else {
         try {
-          editor.value = JSON.stringify(JSON.parse(jsonViewRawText || "{}"), null, 2);
+          setJsonEditorValue(JSON.stringify(JSON.parse(jsonViewRawText || "{}"), null, 2), { preserveView: preserveEditorView });
         } catch {
-          editor.value = jsonViewRawText || JSON.stringify({ role_list: [], juben: "" }, null, 2);
+          setJsonEditorValue(jsonViewRawText || JSON.stringify({ role_list: [], juben: "" }, null, 2), { preserveView: preserveEditorView });
         }
       }
     } else if (jsonViewMode === "juben") {
-      editor.value = String(jsonViewParsed?.juben || "").trim();
+      setJsonEditorValue(String(jsonViewParsed?.juben || "").trim(), { preserveView: preserveEditorView });
     } else if (jsonViewMode === "roles") {
       const roles = Array.isArray(jsonViewParsed?.role_list) ? jsonViewParsed.role_list : [];
-      editor.value = JSON.stringify(roles, null, 2);
+      setJsonEditorValue(JSON.stringify(roles, null, 2), { preserveView: preserveEditorView });
     } else {
-      editor.value = jsonViewRawText || "";
+      setJsonEditorValue(jsonViewRawText || "", { preserveView: preserveEditorView });
     }
     updateJsonAutosaveState();
     return;
@@ -466,9 +476,7 @@ function updateJsonAutosaveState() {
   if (jsonAutosaveTimerId) return;
   jsonAutosaveTimerId = window.setInterval(async () => {
     if (!jsonViewEditing || jsonViewMode !== "juben" || jsonAutosaveSaving) return;
-    const editor = document.getElementById("chapterJsonEditor");
-    if (!editor) return;
-    const currentText = String(editor.value || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
+    const currentText = String(getJsonEditorValue() || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
     const savedText = String(jsonViewParsed?.juben || "").trim();
     if (currentText === savedText) return;
     jsonAutosaveSaving = true;
@@ -486,14 +494,14 @@ async function saveJsonViewEdit(options = {}) {
     toast("当前章节 JSON 不可编辑");
     return;
   }
-  const editor = document.getElementById("chapterJsonEditor");
+  const editorValue = getJsonEditorValue();
   let draft = jsonViewParsed && typeof jsonViewParsed === "object"
     ? JSON.parse(JSON.stringify(jsonViewParsed))
     : null;
 
   if (jsonViewMode === "raw") {
     try {
-      draft = JSON.parse(String(editor.value || "{}"));
+      draft = JSON.parse(String(editorValue || "{}"));
     } catch {
       toast("JSON 内容不是合法格式");
       return;
@@ -502,11 +510,11 @@ async function saveJsonViewEdit(options = {}) {
     toast("当前章节 JSON 不可编辑");
     return;
   } else if (jsonViewMode === "juben") {
-    draft.juben = String(editor.value || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
+    draft.juben = String(editorValue || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
   } else if (jsonViewMode === "roles") {
     let roles;
     try {
-      roles = JSON.parse(String(editor.value || "[]"));
+      roles = JSON.parse(String(editorValue || "[]"));
     } catch {
       toast("角色编辑内容必须是合法 JSON 数组");
       return;
@@ -530,7 +538,7 @@ async function saveJsonViewEdit(options = {}) {
   jsonViewParsed = draft;
   jsonViewRawText = merged;
   jsonViewEditing = keepEditing;
-  renderJsonViewMode();
+  renderJsonViewMode({ preserveEditorView: keepEditing && jsonViewMode === "juben" });
   await updateChapterActionWarnings();
   setStatus(autosave ? "台词已自动保存" : "JSON 已保存");
   if (!silent) {
@@ -546,6 +554,151 @@ function getActiveJsonTextEl() {
     return document.getElementById("chapterJsonReadOnly");
   }
   return null;
+}
+
+function ensureJsonAceEditor() {
+  if (jsonAceEditor) return jsonAceEditor;
+  const ace = window.ace;
+  const host = document.getElementById("chapterJsonAceEditor");
+  if (!ace || !host) return null;
+  jsonAceEditor = ace.edit(host);
+  jsonAceEditor.setTheme("ace/theme/textmate");
+  jsonAceEditor.session.setMode("ace/mode/text");
+  jsonAceEditor.session.setUseWrapMode(true);
+  jsonAceEditor.session.setUseWorker(false);
+  jsonAceEditor.setShowPrintMargin(false);
+  jsonAceEditor.setHighlightActiveLine(false);
+  jsonAceEditor.setHighlightGutterLine(false);
+  jsonAceEditor.setOption("scrollPastEnd", 0);
+  jsonAceEditor.setOption("fontFamily", 'Menlo, Monaco, Consolas, "Courier New", monospace');
+  jsonAceEditor.commands.addCommand({
+    name: "saveJubenEditor",
+    bindKey: { win: "Ctrl-S", mac: "Command-S" },
+    exec: () => {
+      if (!jsonViewEditing || jsonViewMode !== "juben") return;
+      saveJsonViewEdit({ keepEditing: true });
+    },
+  });
+  return jsonAceEditor;
+}
+
+function setJsonEditorFontSize(size) {
+  const normalized = Math.max(14, Math.min(30, Number(size) || 18));
+  const aceEditor = ensureJsonAceEditor();
+  if (aceEditor) {
+    aceEditor.setFontSize(normalized);
+    aceEditor.resize();
+  }
+}
+
+function setJsonEditorValue(value, options = {}) {
+  const { preserveView = false } = options;
+  const text = String(value || "");
+  const editor = document.getElementById("chapterJsonEditor");
+  if (editor) {
+    editor.value = text;
+  }
+  if (jsonViewMode === "juben") {
+    const aceEditor = ensureJsonAceEditor();
+    if (aceEditor) {
+      const currentValue = aceEditor.getValue();
+      const changed = currentValue !== text;
+      const cursor = aceEditor.getCursorPosition();
+      const scrollTop = aceEditor.session.getScrollTop();
+      const scrollLeft = aceEditor.session.getScrollLeft();
+      if (changed) {
+        aceEditor.setValue(text, -1);
+      }
+      if (preserveView) {
+        aceEditor.moveCursorToPosition(cursor);
+        aceEditor.clearSelection();
+        aceEditor.session.setScrollTop(scrollTop);
+        aceEditor.session.setScrollLeft(scrollLeft);
+      } else {
+        aceEditor.clearSelection();
+        aceEditor.session.setScrollTop(0);
+        aceEditor.session.setScrollLeft(0);
+      }
+      aceEditor.resize();
+    }
+  }
+}
+
+function getJsonEditorValue() {
+  if (jsonViewEditing && jsonViewMode === "juben") {
+    const aceEditor = ensureJsonAceEditor();
+    if (aceEditor) {
+      return aceEditor.getValue();
+    }
+  }
+  return String(document.getElementById("chapterJsonEditor")?.value || "");
+}
+
+function getFirstRoleSeparatorIndex(line) {
+  const text = String(line || "");
+  const positions = [text.indexOf(":"), text.indexOf("：")].filter((pos) => pos >= 0);
+  return positions.length ? Math.min(...positions) : -1;
+}
+
+function findIllegalColonInJuben(text) {
+  const normalized = String(text || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const lines = normalized.split("\n");
+  let offset = 0;
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const separatorIndex = getFirstRoleSeparatorIndex(line);
+    if (separatorIndex >= 0) {
+      const dialogueRaw = line.slice(separatorIndex + 1);
+      const trimmedDialogue = dialogueRaw.replace(/\s+$/g, "");
+      const scanText = /[:：]$/.test(trimmedDialogue)
+        ? trimmedDialogue.slice(0, -1)
+        : trimmedDialogue;
+      const matchIndex = scanText.search(/[:：]/);
+      if (matchIndex >= 0) {
+        return {
+          lineNumber: index + 1,
+          lineStart: offset,
+          lineEnd: offset + line.length,
+          colonIndex: offset + separatorIndex + 1 + matchIndex,
+          column: separatorIndex + 1 + matchIndex,
+        };
+      }
+    }
+    offset += line.length + 1;
+  }
+  return null;
+}
+
+function focusIllegalColonInJubenEditor(location) {
+  if (!location) return;
+  const aceEditor = ensureJsonAceEditor();
+  if (jsonViewEditing && jsonViewMode === "juben" && aceEditor) {
+    const row = Math.max(0, location.lineNumber - 1);
+    const column = Math.max(0, location.column || 0);
+    aceEditor.focus();
+    aceEditor.gotoLine(location.lineNumber, column, true);
+    aceEditor.selection.setSelectionRange({
+      start: { row, column },
+      end: { row, column: column + 1 },
+    });
+    aceEditor.centerSelection();
+    return;
+  }
+  const editor = document.getElementById("chapterJsonEditor");
+  if (!editor) return;
+  editor.focus();
+  editor.setSelectionRange(location.colonIndex, location.colonIndex + 1);
+}
+
+function checkIllegalColonInJubenEditor() {
+  if (!(jsonViewEditing && jsonViewMode === "juben")) return;
+  const found = findIllegalColonInJuben(getJsonEditorValue());
+  if (!found) {
+    toast("未发现非法冒号");
+    return;
+  }
+  focusIllegalColonInJubenEditor(found);
+  toast(`发现非法冒号：第 ${found.lineNumber} 行`);
 }
 
 function selectJsonMatch(start, length) {
@@ -757,7 +910,7 @@ function bindActions() {
 
   document.getElementById("copyJsonBtn").addEventListener("click", () => {
     const text = jsonViewEditing
-      ? document.getElementById("chapterJsonEditor").value || ""
+      ? getJsonEditorValue() || ""
       : jsonViewMode === "raw"
         ? document.getElementById("chapterJsonReadOnly").value || ""
         : document.getElementById("chapterJsonPreview").textContent || "";
@@ -778,6 +931,9 @@ function bindActions() {
   });
   document.getElementById("jsonReplaceAllBtn").addEventListener("click", () => {
     replaceAllInJsonEditor();
+  });
+  document.getElementById("checkIllegalColonBtn").addEventListener("click", () => {
+    checkIllegalColonInJubenEditor();
   });
 
   document.getElementById("chapterJsonEditor").addEventListener("keydown", async (event) => {

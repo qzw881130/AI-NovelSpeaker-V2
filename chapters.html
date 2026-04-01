@@ -82,6 +82,7 @@
           <button id="viewJsonRawBtn" class="ghost-btn" type="button">查看JSON</button>
           <button id="viewJsonJubenBtn" class="ghost-btn" type="button">查看台词</button>
           <button id="viewJsonRolesBtn" class="ghost-btn" type="button">查看角色</button>
+          <button id="checkIllegalColonBtn" class="ghost-btn hidden" type="button">检查非法冒号</button>
           <label class="json-font-control">
             <span>字号</span>
             <input id="jsonViewFontSizeRange" type="range" min="14" max="30" step="1" value="18" />
@@ -97,7 +98,10 @@
           <button id="jsonReplaceAllBtn" class="ghost-btn hidden" type="button">全部替换</button>
         </div>
         <textarea id="chapterJsonReadOnly" class="code-block hidden" rows="16" readonly></textarea>
-        <textarea id="chapterJsonEditor" class="code-block hidden" rows="16"></textarea>
+        <div id="chapterJsonEditorWrap" class="code-editor hidden">
+          <div id="chapterJsonAceEditor" class="code-editor-surface hidden" aria-label="台词编辑器"></div>
+          <textarea id="chapterJsonEditor" class="code-block code-editor-input hidden" rows="16" wrap="off"></textarea>
+        </div>
         <p id="jsonAutosaveHint" class="caption hidden">编辑状态下每15秒自动保存</p>
         <p id="jsonShortcutHint" class="caption hidden">Ctrl/Cmd + S 保存台词</p>
         <menu>
@@ -199,6 +203,7 @@
 
     <div id="toast" class="toast"></div>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.36.2/ace.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script type="module" src="./assets/chapters.js"></script>
   </body>
   </html>
