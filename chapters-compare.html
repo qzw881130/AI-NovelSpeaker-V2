@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>章节原文对比 - AI NovelSpeaker V2</title>
+    <link rel="stylesheet" href="./assets/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="main-nav" id="mainNav"></aside>
+      <main class="page compare-page">
+        <header class="page-header compare-page-header">
+          <div>
+            <h1 id="comparePageTitle">章节原文对比</h1>
+            <p id="comparePageMeta" class="meta">请选择章节</p>
+          </div>
+          <div class="header-actions">
+            <a id="backToChaptersBtn" class="ghost-btn" href="./chapters.html">返回章节管理</a>
+          </div>
+        </header>
+
+        <section class="panel compare-panel">
+          <div class="compare-toolbar">
+            <span id="compareSummary" class="reader-status">就绪</span>
+          </div>
+          <div id="compareColumns" class="compare-columns hidden">
+            <section class="compare-column">
+              <div class="panel-head compare-column-head">
+                <h2>解析后台词</h2>
+              </div>
+              <div id="compareParsed" class="compare-content"></div>
+            </section>
+            <section class="compare-column">
+              <div class="panel-head compare-column-head">
+                <h2>章回原文</h2>
+              </div>
+              <div id="compareOriginal" class="compare-content"></div>
+            </section>
+          </div>
+          <div id="compareEmpty" class="empty-state">正在加载对比数据...</div>
+        </section>
+      </main>
+    </div>
+
+    <div id="toast" class="toast"></div>
+    <script type="module" src="./assets/chapters-compare.js"></script>
+  </body>
+</html>

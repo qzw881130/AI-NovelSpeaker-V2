@@ -302,6 +302,14 @@ async function fetchChapterJsonOutput(novelId, chapterNum) {
   return api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/json-output`);
 }
 
+async function fetchChapterCompareData(novelId, chapterNum) {
+  const [detail, jsonOutput] = await Promise.all([
+    fetchChapterDetail(novelId, chapterNum),
+    fetchChapterJsonOutput(novelId, chapterNum),
+  ]);
+  return { detail, jsonOutput };
+}
+
 async function requestConvertJson(novelId, chapterNum) {
   return api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/convert-json`, {
     method: "POST",
@@ -543,6 +551,7 @@ export {
   duplicateWorkflow,
   duplicatePrompt,
   fetchChapterDetail,
+  fetchChapterCompareData,
   fetchChapterJsonOutput,
   fetchJsonTaskDetail,
   fetchNovelChapters,

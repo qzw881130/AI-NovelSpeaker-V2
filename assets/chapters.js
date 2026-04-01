@@ -716,6 +716,11 @@ function bindActions() {
     document.getElementById("jsonDialog").showModal();
   });
 
+  document.getElementById("compareChapterBtn").addEventListener("click", () => {
+    if (!activeNovel || !activeChapterNum) return;
+    window.open(`./chapters-compare.html?novelId=${Number(activeNovel.id)}&chapterNum=${Number(activeChapterNum)}`, "_blank");
+  });
+
   document.getElementById("viewJsonRawBtn").addEventListener("click", () => {
     jsonViewMode = "raw";
     jsonViewEditing = false;
