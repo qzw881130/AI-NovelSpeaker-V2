@@ -164,7 +164,7 @@ function showSelectionBubble(selection, rect) {
     hideSelectionBubble();
     return;
   }
-  compareSelectionText = `旁白: ${cleaned}`;
+  compareSelectionText = `旁白:${cleaned}`;
   bubble.textContent = compareSelectionText;
   bubble.classList.remove("hidden");
 
