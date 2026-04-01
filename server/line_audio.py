@@ -351,6 +351,56 @@ def get_chapter_line_audio_entries(novel_id: int, chapter_id: int) -> list[dict]
     return items
 
 
+def invalidate_obsolete_chapter_line_audio_tasks(
+    novel_id: int, chapter_id: int, json_text: str
+) -> int:
+    """将已不属于当前章节剧本的台词音频任务标记为失效"""
+    active_hashes = {
+        str(item["line_hash"])
+        for item in parse_juben_lines_from_json_text(str(json_text or ""))
+    }
+
+    conn = db_conn()
+    rows = conn.execute(
+        "SELECT id, line_hash FROM line_audio_tasks WHERE novel_id=? AND chapter_id=?",
+        (novel_id, chapter_id),
+    ).fetchall()
+    obsolete_ids = [
+        int(row["id"])
+        for row in rows
+        if str(row["line_hash"] or "").strip() not in active_hashes
+    ]
+
+    if obsolete_ids:
+        placeholders = ",".join("?" for _ in obsolete_ids)
+        conn.execute(
+            f"""
+            UPDATE line_audio_tasks
+            SET status='cancelled', comfy_status='cancelled',
+                error_message='台词已修改，旧音频任务已失效',
+                updated_at=CURRENT_TIMESTAMP,
+                comfy_finished_at=CASE
+                    WHEN status IN ('running', 'processing') AND comfy_finished_at IS NULL THEN CURRENT_TIMESTAMP
+                    ELSE comfy_finished_at
+                END
+            WHERE id IN ({placeholders})
+            """,
+            obsolete_ids,
+        )
+
+    conn.commit()
+    conn.close()
+
+    merged_path = get_chapter_merged_audio_path(novel_id, chapter_id)
+    if merged_path is not None:
+        try:
+            merged_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    return len(obsolete_ids)
+
+
 def is_chapter_merged_audio_stale(novel_id: int, chapter_id: int) -> bool:
     merged_path = get_chapter_merged_audio_path(novel_id, chapter_id)
     if not merged_path or not merged_path.exists() or not merged_path.is_file():
@@ -782,19 +832,21 @@ def process_line_audio_task(task_id: int) -> None:
 
         # 更新任务完成状态
         conn = db_conn()
-        conn.execute(
+        cur = conn.execute(
             """
             UPDATE line_audio_tasks
             SET status='completed', comfy_status='completed',
                 output_filename=?, output_subfolder=?, output_type=?,
                 downloaded_file_path=?, error_message=NULL,
                 comfy_finished_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP
-            WHERE id=?
+            WHERE id=? AND status IN ('running', 'processing')
             """,
             (out_filename, out_subfolder, out_type, rel_path, task_id),
         )
         conn.commit()
         conn.close()
+        if int(cur.rowcount or 0) <= 0:
+            return
 
     except Exception as exc:
         conn = db_conn()
@@ -807,7 +859,7 @@ def process_line_audio_task(task_id: int) -> None:
                     WHEN comfy_started_at IS NOT NULL AND comfy_finished_at IS NULL THEN CURRENT_TIMESTAMP
                     ELSE comfy_finished_at
                 END
-            WHERE id=?
+            WHERE id=? AND status IN ('running', 'processing')
             """,
             (str(exc), task_id),
         )

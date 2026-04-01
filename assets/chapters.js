@@ -1030,11 +1030,7 @@ function bindActions() {
     editingLineOriginalText = "";
     updateLineAudioToolbarState();
     renderLineAudioTable();
-    if (lineEditEnabled) {
-      stopLineAudioRefreshLoop();
-    } else {
-      startLineAudioRefreshLoop();
-    }
+    startLineAudioRefreshLoop();
   });
 
   document.getElementById("lineAudioDialog")?.addEventListener("close", () => {
@@ -1225,6 +1221,12 @@ function stopLineAudioRefreshLoop() {
   }
 }
 
+function refreshVisibleLineAudioRows() {
+  getFilteredLinePreviewRows().forEach((row) => {
+    updateLineAudioRow(row.index);
+  });
+}
+
 function hasPlayingLineAudio() {
   const dialog = document.getElementById("lineAudioDialog");
   if (!dialog) return false;
@@ -1235,18 +1237,17 @@ function hasPlayingLineAudio() {
 
 function startLineAudioRefreshLoop() {
   stopLineAudioRefreshLoop();
-  if (lineEditEnabled) return;
   const dialog = document.getElementById("lineAudioDialog");
   if (!dialog?.open || !activeNovel || !activeChapterNum) return;
   lineAudioRefreshTimerId = window.setInterval(async () => {
-    if (!dialog.open || lineEditEnabled) {
+    if (!dialog.open) {
       stopLineAudioRefreshLoop();
       return;
     }
     if (hasPlayingLineAudio()) {
       return;
     }
-    await loadLineAudios({ silent: true });
+    await loadLineAudios({ silent: true, preserveEditing: true });
   }, 3000);
 }
 
@@ -1307,6 +1308,10 @@ async function loadLineAudios(options = {}) {
   if (!activeNovel || !activeChapterNum) return;
   try {
     lineAudioEntries = await fetchChapterLineAudios(activeNovel.id, activeChapterNum);
+    if (options.preserveEditing && lineEditEnabled && editingLineIndex >= 0) {
+      refreshVisibleLineAudioRows();
+      return;
+    }
     if (options.partialLineIndex != null && hasPlayingLineAudio()) {
       updateLineAudioRow(Number(options.partialLineIndex));
       return;

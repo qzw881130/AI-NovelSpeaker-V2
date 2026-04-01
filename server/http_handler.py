@@ -21,6 +21,7 @@ from .line_audio import (
     get_line_audio_task,
     get_chapter_line_audio_entries,
     is_chapter_merged_audio_stale,
+    invalidate_obsolete_chapter_line_audio_tasks,
     enqueue_line_audio_task,
     enqueue_all_line_audio_tasks,
     merge_chapter_line_audio,
@@ -1768,6 +1769,9 @@ class Handler(BaseHTTPRequestHandler):
             )
             conn.commit()
             conn.close()
+            invalidate_obsolete_chapter_line_audio_tasks(
+                novel_id, int(chapter["id"]), merged
+            )
             self.send_json({"status": "ok"})
             return
 
