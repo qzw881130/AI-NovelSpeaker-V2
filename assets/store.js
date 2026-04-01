@@ -532,11 +532,11 @@ async function retryLineAudioTask(taskId) {
   await api(`/api/line-audio-tasks/${Number(taskId)}/retry`, { method: "POST", body: "{}" });
 }
 
-async function getLineAudioFileUrl(taskId) {
+function getLineAudioFileUrl(taskId) {
   return `/api/line-audio-tasks/${Number(taskId)}/file`;
 }
 
-async function getMergedAudioUrl(novelId, chapterNum) {
+function getMergedAudioUrl(novelId, chapterNum) {
   return `/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/merged-audio`;
 }
 

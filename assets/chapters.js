@@ -16,7 +16,6 @@ import {
   enqueueLineAudio,
   enqueueAllLineAudios,
   mergeChapterLineAudio,
-  getMergedAudioUrl,
 } from "./store.js";
 import { fmtDateTime, fmtNumber, incrementNavBadge, renderNav, showPageError, toast } from "./ui.js";
 import { localizeDocumentText, t, translateText } from "./i18n.js";
@@ -986,9 +985,6 @@ function bindActions() {
       await refreshChapters();
       setStatus(translateText("音频已合并"));
       toast(translateText("音频已合并"));
-      const url = getMergedAudioUrl(activeNovel.id, activeChapterNum);
-      const audio = new Audio(url);
-      audio.play();
     } catch (err) {
       toast(err.message);
     }
