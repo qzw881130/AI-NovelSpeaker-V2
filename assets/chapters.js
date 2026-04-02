@@ -840,6 +840,10 @@ function bindActions() {
 
   document.getElementById("convertJsonBtn").addEventListener("click", async () => {
     if (!activeNovel || !activeChapterNum) return;
+    if (activeChapterDetail?.hasJson) {
+      const confirmed = window.confirm("当前章节已存在解析后的 JSON，继续 AI转JSON 将覆盖现有结果。确定继续吗？");
+      if (!confirmed) return;
+    }
     try {
       await requestConvertJson(activeNovel.id, activeChapterNum);
       incrementNavBadge("json", 1);
