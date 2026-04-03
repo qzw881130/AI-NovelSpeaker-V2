@@ -48,6 +48,8 @@ TASK_WORKER_HEARTBEAT_TS = 0.0
 TASK_WORKER_LAST_PROGRESS_TS = 0.0
 TASK_WORKER_GENERATION = 0
 TASK_WORKER_KICK_THREAD: threading.Thread | None = None
+DURATION_CACHE_LOCK = threading.Lock()
+DURATION_CACHE_PENDING: set[int] = set()
 LEGACY_SYSTEM_WORKFLOW_NAME = "古典小说默认工作流"
 
 
@@ -163,6 +165,40 @@ def update_novel_total_audio_duration_seconds(
         (total, novel_id),
     )
     return total
+
+
+def refresh_novel_audio_duration_cache_async(
+    novel_id: int,
+    chapter_id: int | None = None,
+    audio_rel_path: str | None = None,
+) -> bool:
+    with DURATION_CACHE_LOCK:
+        if novel_id in DURATION_CACHE_PENDING:
+            return False
+        DURATION_CACHE_PENDING.add(novel_id)
+
+    def _runner() -> None:
+        try:
+            conn = db_conn()
+            try:
+                if chapter_id is not None:
+                    abs_audio = None
+                    raw_path = str(audio_rel_path or "").strip()
+                    if raw_path:
+                        abs_audio = (ROOT_DIR / raw_path).resolve()
+                    update_chapter_audio_duration_cache(conn, chapter_id, abs_audio)
+                update_novel_total_audio_duration_seconds(conn, novel_id)
+                conn.commit()
+            finally:
+                conn.close()
+        except Exception as exc:
+            print(f"[audio-duration] refresh failed for novel {novel_id}: {exc}")
+        finally:
+            with DURATION_CACHE_LOCK:
+                DURATION_CACHE_PENDING.discard(novel_id)
+
+    threading.Thread(target=_runner, daemon=True).start()
+    return True
 
 
 def ensure_novel_dirs(english_dir: str) -> None:

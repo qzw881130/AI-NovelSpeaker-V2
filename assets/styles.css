@@ -856,8 +856,46 @@ textarea {
 }
 
 .chapter-actions > .ghost-btn,
-.chapter-actions > .primary-btn {
+.chapter-actions > .primary-btn,
+.chapter-actions > .compare-entry-btn {
   flex: 0 0 auto;
+}
+
+.compare-entry-btn {
+  position: relative;
+  border: 1px solid #bb4b1e;
+  border-radius: 12px;
+  padding: 9px 16px 9px 14px;
+  color: #fff8f2;
+  background: linear-gradient(135deg, #d75a1f 0%, #a83f12 55%, #7f2d0a 100%);
+  box-shadow: 0 10px 22px rgba(167, 63, 18, 0.24);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.compare-entry-btn::before {
+  content: "对比";
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 8px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(255, 241, 228, 0.18);
+  border: 1px solid rgba(255, 226, 200, 0.34);
+  font-size: 11px;
+  font-weight: 800;
+  color: #fff3e2;
+}
+
+.compare-entry-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 28px rgba(167, 63, 18, 0.28);
+  filter: saturate(1.05);
+}
+
+.compare-entry-btn:active {
+  transform: translateY(0);
 }
 
 .reader-font-controls,

@@ -1696,17 +1696,17 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path:
                 conn = db_conn()
-                abs_audio = (ROOT_DIR / path).resolve()
-                update_chapter_audio_duration_cache(
-                    conn, int(chapter_row["id"]), abs_audio
-                )
-                update_novel_total_audio_duration_seconds(conn, novel_id)
                 conn.execute(
                     "UPDATE chapters SET audio_file_path=?,has_audio=1,updated_at=CURRENT_TIMESTAMP WHERE novel_id=? AND chapter_num=?",
                     (path, novel_id, chapter_num),
                 )
                 conn.commit()
                 conn.close()
+                refresh_novel_audio_duration_cache_async(
+                    novel_id,
+                    chapter_id=int(chapter_row["id"]),
+                    audio_rel_path=path,
+                )
             self.send_json({"status": "merged", "path": path})
             return
 
