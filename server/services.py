@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 import ipaddress
+import hashlib
 import mimetypes
 import re
 import shutil
 import sqlite3
+import subprocess
 import threading
 import time
 from datetime import datetime, timezone
@@ -64,6 +66,102 @@ def dir_size_bytes(path: Path) -> int:
     for item in path.rglob("*"):
         if item.is_file():
             total += item.stat().st_size
+    return total
+
+
+def probe_audio_duration_seconds(file_path: Path) -> float:
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                str(file_path),
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return max(0.0, float(str(result.stdout or "0").strip() or 0.0))
+    except (subprocess.CalledProcessError, FileNotFoundError, ValueError):
+        return 0.0
+
+
+def file_md5_hex(file_path: Path) -> str:
+    hasher = hashlib.md5()
+    try:
+        with file_path.open("rb") as fp:
+            while True:
+                chunk = fp.read(1024 * 1024)
+                if not chunk:
+                    break
+                hasher.update(chunk)
+    except OSError:
+        return ""
+    return hasher.hexdigest()
+
+
+def update_chapter_audio_duration_cache(
+    conn: sqlite3.Connection, chapter_id: int, audio_path: Path | None
+) -> float:
+    if audio_path is None or not audio_path.exists() or not audio_path.is_file():
+        conn.execute(
+            "UPDATE chapters SET audio_duration_seconds=0, audio_duration_md5='', updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            (chapter_id,),
+        )
+        return 0.0
+
+    md5_hex = file_md5_hex(audio_path)
+    row = conn.execute(
+        "SELECT audio_duration_seconds, audio_duration_md5 FROM chapters WHERE id=?",
+        (chapter_id,),
+    ).fetchone()
+    if row and str(row["audio_duration_md5"] or "") == md5_hex:
+        return float(row["audio_duration_seconds"] or 0)
+
+    duration = probe_audio_duration_seconds(audio_path)
+    conn.execute(
+        "UPDATE chapters SET audio_duration_seconds=?, audio_duration_md5=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+        (duration, md5_hex, chapter_id),
+    )
+    return duration
+
+
+def calculate_novel_total_audio_duration_seconds(
+    conn: sqlite3.Connection, novel_id: int
+) -> float:
+    rows = conn.execute(
+        "SELECT id, audio_file_path, audio_duration_seconds, audio_duration_md5 FROM chapters WHERE novel_id=?",
+        (novel_id,),
+    ).fetchall()
+    total = 0.0
+    for row in rows:
+        raw_path = str(row["audio_file_path"] or "").strip()
+        if not raw_path:
+            continue
+        abs_path = (ROOT_DIR / raw_path).resolve()
+        if not abs_path.exists() or not abs_path.is_file():
+            continue
+        md5_hex = file_md5_hex(abs_path)
+        if md5_hex and str(row["audio_duration_md5"] or "") == md5_hex:
+            total += float(row["audio_duration_seconds"] or 0)
+            continue
+        total += update_chapter_audio_duration_cache(conn, int(row["id"]), abs_path)
+    return total
+
+
+def update_novel_total_audio_duration_seconds(
+    conn: sqlite3.Connection, novel_id: int
+) -> float:
+    total = calculate_novel_total_audio_duration_seconds(conn, novel_id)
+    conn.execute(
+        "UPDATE novels SET total_audio_duration_seconds=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+        (total, novel_id),
+    )
     return total
 
 
@@ -349,7 +447,8 @@ def fetch_novels(conn: sqlite3.Connection) -> list[dict]:
     rows = conn.execute(
         """
         SELECT n.id,n.name,n.author,n.english_dir,n.intro,n.chapter_count,n.total_words,
-               n.prompt_id,n.workflow_id,n.voice_sample_workflow_id,n.line_audio_workflow_id,n.voice_transcribe_workflow_id,n.created_at,n.updated_at,
+               n.prompt_id,n.workflow_id,n.voice_sample_workflow_id,n.line_audio_workflow_id,n.voice_transcribe_workflow_id,
+               n.total_audio_duration_seconds,n.created_at,n.updated_at,
                COALESCE(SUM(CASE WHEN c.has_audio=1 THEN 1 ELSE 0 END),0) AS audio_done,
                COALESCE(COUNT(c.id),0) AS chapter_total,
                COALESCE(SUM(c.word_count),0) AS chapter_words
@@ -424,6 +523,9 @@ def fetch_novels(conn: sqlite3.Connection) -> list[dict]:
                 else None,
                 "jsonProgress": json_progress,
                 "audioProgress": audio_progress,
+                "totalAudioDurationSeconds": float(
+                    r["total_audio_duration_seconds"] or 0
+                ),
                 "storage": {
                     "txtBytes": txt_bytes,
                     "audioBytes": audio_bytes,

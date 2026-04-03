@@ -7,6 +7,7 @@ import {
   getActiveNovelId,
   getData,
   listNovelBundles,
+  refreshNovelAudioDuration,
   saveNovel,
   setActiveNovelId,
 } from "./store.js";
@@ -42,6 +43,18 @@ function progressBar(value) {
   return `<div class="progress"><i style="width:${value}%"></i></div>`;
 }
 
+function formatDuration(totalSeconds) {
+  const safe = Math.max(0, Math.round(Number(totalSeconds) || 0));
+  const hours = Math.floor(safe / 3600);
+  const minutes = Math.floor((safe % 3600) / 60);
+  const seconds = safe % 60;
+  const parts = [];
+  if (hours > 0) parts.push(`${hours}小时`);
+  if (hours > 0 || minutes > 0) parts.push(`${minutes}分钟`);
+  parts.push(`${seconds}秒`);
+  return parts.join("");
+}
+
 function renderNovelCards() {
   const data = currentData;
   const keyword = document.getElementById("novelKeyword").value.trim().toLowerCase();
@@ -72,6 +85,10 @@ function renderNovelCards() {
         </div>
         <div><p class="meta">JSON处理 ${n.jsonProgress}%</p>${progressBar(n.jsonProgress)}</div>
         <div><p class="meta">音频生成 ${n.audioProgress}%</p>${progressBar(n.audioProgress)}</div>
+        <div class="novel-duration-row">
+          <p class="meta">总时长：${formatDuration(n.totalAudioDurationSeconds || 0)}</p>
+          <button class="ghost-btn icon-btn" data-action="refresh-audio-duration" data-id="${n.id}" title="刷新总时长" aria-label="刷新总时长" type="button">↻</button>
+        </div>
         <div class="card-actions">
           <button class="ghost-btn" data-action="chapters" data-id="${n.id}">章节管理</button>
           <button class="ghost-btn" data-action="download" data-id="${n.id}">打包下载</button>
@@ -96,11 +113,12 @@ function renderStorageTable(data) {
         <span>${bytesToText(n.storage?.txtBytes || 0)}</span>
         <span>${bytesToText(n.storage?.audioBytes || 0)}</span>
         <span>${bytesToText(n.storage?.tempBytes || 0)}</span>
+        <span>${formatDuration(n.totalAudioDurationSeconds || 0)}</span>
       </div>
     `
     )
     .join("");
-  document.getElementById("storageTable").innerHTML = `<div class="storage-row head"><span>小说</span><span>txt</span><span>音频</span><span>Temp存储</span></div>${rows}`;
+  document.getElementById("storageTable").innerHTML = `<div class="storage-row head"><span>小说</span><span>txt</span><span>音频</span><span>Temp存储</span><span>总时长</span></div>${rows}`;
   localizeDocumentText(document);
 }
 
@@ -240,6 +258,25 @@ async function onNovelAction(action, id) {
       await deleteNovel(id);
       toast(t("toast.deleted"));
       await refresh();
+    }
+    if (action === "refresh-audio-duration") {
+      const btn = document.querySelector(`[data-action="refresh-audio-duration"][data-id="${String(id)}"]`);
+      const previousText = btn?.textContent || "↻";
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = "...";
+      }
+      try {
+        await refreshNovelAudioDuration(id);
+        renderNovelCards();
+        toast("总时长已更新");
+      } finally {
+        const nextBtn = document.querySelector(`[data-action="refresh-audio-duration"][data-id="${String(id)}"]`);
+        if (nextBtn) {
+          nextBtn.disabled = false;
+          nextBtn.textContent = previousText;
+        }
+      }
     }
   } catch (err) {
     toast(t("error.operationFailed", { msg: err.message }));

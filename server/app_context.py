@@ -79,6 +79,28 @@ def migrate_novels_table(conn: sqlite3.Connection) -> None:
             "ALTER TABLE novels ADD COLUMN voice_transcribe_workflow_id INTEGER REFERENCES comfy_workflows(id)"
         )
 
+    # 添加总音频时长缓存字段（秒）
+    if "total_audio_duration_seconds" not in column_names:
+        conn.execute(
+            "ALTER TABLE novels ADD COLUMN total_audio_duration_seconds REAL NOT NULL DEFAULT 0"
+        )
+
+
+def migrate_chapters_table(conn: sqlite3.Connection) -> None:
+    """迁移：为 chapters 表添加章节音频时长缓存字段"""
+    columns = conn.execute("PRAGMA table_info(chapters)").fetchall()
+    column_names = [col[1] for col in columns]
+
+    if "audio_duration_seconds" not in column_names:
+        conn.execute(
+            "ALTER TABLE chapters ADD COLUMN audio_duration_seconds REAL NOT NULL DEFAULT 0"
+        )
+
+    if "audio_duration_md5" not in column_names:
+        conn.execute(
+            "ALTER TABLE chapters ADD COLUMN audio_duration_md5 TEXT NOT NULL DEFAULT ''"
+        )
+
 
 def migrate_line_audio_tasks_table(conn: sqlite3.Connection) -> None:
     """迁移：为 line_audio_tasks 表添加调度字段"""
@@ -115,5 +137,6 @@ def db_conn() -> sqlite3.Connection:
     )
     # 执行迁移
     migrate_novels_table(conn)
+    migrate_chapters_table(conn)
     migrate_line_audio_tasks_table(conn)
     return conn

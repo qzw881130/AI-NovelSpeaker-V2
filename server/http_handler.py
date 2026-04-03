@@ -440,6 +440,25 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"novels": data})
             return
 
+        m_refresh_audio_duration = re.match(
+            r"^/api/novels/(\d+)/audio-duration$", route
+        )
+        if m_refresh_audio_duration:
+            novel_id = int(m_refresh_audio_duration.group(1))
+            conn = db_conn()
+            row = conn.execute(
+                "SELECT id FROM novels WHERE id=?", (novel_id,)
+            ).fetchone()
+            if not row:
+                conn.close()
+                self.send_json({"error": "novel not found"}, 404)
+                return
+            total_seconds = update_novel_total_audio_duration_seconds(conn, novel_id)
+            conn.commit()
+            conn.close()
+            self.send_json({"status": "ok", "totalAudioDurationSeconds": total_seconds})
+            return
+
         m_bundle = re.match(r"^/api/novels/(\d+)/bundle$", route)
         if m_bundle:
             novel_id = int(m_bundle.group(1))
@@ -1677,6 +1696,11 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path:
                 conn = db_conn()
+                abs_audio = (ROOT_DIR / path).resolve()
+                update_chapter_audio_duration_cache(
+                    conn, int(chapter_row["id"]), abs_audio
+                )
+                update_novel_total_audio_duration_seconds(conn, novel_id)
                 conn.execute(
                     "UPDATE chapters SET audio_file_path=?,has_audio=1,updated_at=CURRENT_TIMESTAMP WHERE novel_id=? AND chapter_num=?",
                     (path, novel_id, chapter_num),

@@ -145,6 +145,15 @@ async function deleteNovel(id) {
   }
 }
 
+async function refreshNovelAudioDuration(novelId) {
+  const data = await api(`/api/novels/${Number(novelId)}/audio-duration`);
+  const target = cache.novels.find((item) => String(item.id) === String(novelId));
+  if (target) {
+    target.totalAudioDurationSeconds = Number(data.totalAudioDurationSeconds || 0);
+  }
+  return Number(data.totalAudioDurationSeconds || 0);
+}
+
 async function downloadNovelBundle(novelId) {
   const a = document.createElement("a");
   a.href = `/api/novels/${Number(novelId)}/bundle`;
@@ -545,6 +554,7 @@ export {
   bytesToText,
   createJsonTask,
   deleteNovel,
+  refreshNovelAudioDuration,
   deletePrompt,
   deleteWorkflow,
   downloadNovelBundle,
