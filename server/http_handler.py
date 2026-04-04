@@ -570,6 +570,16 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"chapters": rows})
             return
 
+        m_download_chapters = re.match(r"^/api/novels/(\d+)/download-chapters$", route)
+        if m_download_chapters:
+            novel_id = int(m_download_chapters.group(1))
+            conn = db_conn()
+            rows = fetch_novel_download_chapters(conn, novel_id)
+            conn.commit()
+            conn.close()
+            self.send_json({"chapters": rows})
+            return
+
         m_audio_file = re.match(r"^/api/novels/(\d+)/chapters/(\d+)/audio-file$", route)
         if m_audio_file:
             novel_id = int(m_audio_file.group(1))

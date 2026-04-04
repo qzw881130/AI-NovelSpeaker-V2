@@ -68,6 +68,10 @@ function getNovelByQueryOrActive() {
 
 function setHeader(novel) {
   document.getElementById("rolesPageTitle").textContent = `${novel.name} - ${translateText("角色库")}`;
+  const downloadLink = document.getElementById("rolesNovelDownloadLink");
+  if (downloadLink) {
+    downloadLink.href = `./novel-download.html?novelId=${encodeURIComponent(novel.id)}`;
+  }
 }
 
 function renderNovelSelect() {

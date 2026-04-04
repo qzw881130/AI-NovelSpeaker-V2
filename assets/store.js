@@ -303,6 +303,11 @@ async function fetchNovelChapters(novelId) {
   return data.chapters || [];
 }
 
+async function fetchNovelDownloadChapters(novelId) {
+  const data = await api(`/api/novels/${Number(novelId)}/download-chapters`);
+  return data.chapters || [];
+}
+
 async function fetchChapterDetail(novelId, chapterNum) {
   return api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}`);
 }
@@ -565,6 +570,7 @@ export {
   fetchChapterJsonOutput,
   fetchJsonTaskDetail,
   fetchNovelChapters,
+  fetchNovelDownloadChapters,
   getActiveNovelId,
   getCachedData,
   getData,

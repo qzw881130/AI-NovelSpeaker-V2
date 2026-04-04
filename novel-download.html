@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>小说下载 - AI NovelSpeaker V2</title>
+    <link rel="stylesheet" href="./assets/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="main-nav" id="mainNav"></aside>
+      <main class="page">
+        <header class="page-header">
+          <div>
+            <h1 id="novelDownloadPageTitle">小说下载</h1>
+            <p id="novelDownloadPageMeta" class="meta">加载中...</p>
+          </div>
+          <div class="header-actions">
+            <label class="header-novel-switch">切换小说
+              <select id="novelDownloadNovelSelect"></select>
+            </label>
+            <a id="novelDownloadRolesLink" class="ghost-btn" href="./roles.html">返回角色库</a>
+            <a id="novelDownloadChaptersLink" class="ghost-btn" href="./chapters.html">返回章节管理</a>
+            <button id="refreshNovelDownloadBtn" class="primary-btn" type="button">刷新</button>
+          </div>
+        </header>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>章回音频下载</h2>
+            <span id="novelDownloadSummary" class="meta">-</span>
+          </div>
+          <div class="roles-table-wrap">
+            <table class="roles-table novel-download-table">
+              <thead>
+                <tr>
+                  <th>章回编号</th>
+                  <th>章回标题</th>
+                  <th>字数</th>
+                  <th>音频时长</th>
+                  <th>音频大小</th>
+                  <th>下载</th>
+                </tr>
+              </thead>
+              <tbody id="novelDownloadTableBody">
+                <tr>
+                  <td colspan="6" class="empty-text">正在加载...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div id="toast" class="toast"></div>
+    <script type="module" src="./assets/novel-download.js"></script>
+  </body>
+</html>

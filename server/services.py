@@ -716,6 +716,47 @@ def fetch_chapters(conn: sqlite3.Connection, novel_id: int) -> list[dict]:
     return result
 
 
+def fetch_novel_download_chapters(
+    conn: sqlite3.Connection, novel_id: int
+) -> list[dict]:
+    rows = conn.execute(
+        """
+        SELECT c.id,c.novel_id,c.chapter_num,c.title,c.word_count,c.audio_file_path,
+               c.audio_duration_seconds,c.audio_duration_md5,n.english_dir
+        FROM chapters c
+        JOIN novels n ON n.id = c.novel_id
+        WHERE c.novel_id=?
+        ORDER BY c.chapter_num ASC
+        """,
+        (novel_id,),
+    ).fetchall()
+    result: list[dict] = []
+    for row in rows:
+        abs_audio = resolve_audio_file(row)
+        size_bytes = 0
+        duration_seconds = float(row["audio_duration_seconds"] or 0)
+        download_url = ""
+        if abs_audio and abs_audio.exists() and abs_audio.is_file():
+            size_bytes = int(abs_audio.stat().st_size)
+            duration_seconds = update_chapter_audio_duration_cache(
+                conn, int(row["id"]), abs_audio
+            )
+            download_url = f"/api/novels/{int(row['novel_id'])}/chapters/{int(row['chapter_num'])}/audio-file"
+        result.append(
+            {
+                "id": int(row["id"]),
+                "chapterNum": int(row["chapter_num"]),
+                "title": str(row["title"] or ""),
+                "wordCount": int(row["word_count"] or 0),
+                "audioDurationSeconds": duration_seconds,
+                "audioSizeBytes": size_bytes,
+                "downloadUrl": download_url,
+                "hasAudio": bool(download_url),
+            }
+        )
+    return result
+
+
 def chapter_content(
     english_dir: str, chapter_num: int, title: str, file_path: str
 ) -> str:
