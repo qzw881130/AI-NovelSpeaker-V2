@@ -197,11 +197,45 @@ def _get_existing_line_task(novel_id: int, chapter_id: int, line_hash: str) -> A
     """获取已存在的台词任务"""
     conn = db_conn()
     row = conn.execute(
-        "SELECT * FROM line_audio_tasks WHERE novel_id=? AND chapter_id=? AND line_hash=? LIMIT 1",
+        """
+        SELECT *
+        FROM line_audio_tasks
+        WHERE novel_id=? AND chapter_id=? AND line_hash=?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
         (novel_id, chapter_id, line_hash),
     ).fetchone()
     conn.close()
     return row
+
+
+def _line_audio_task_priority(row: Any) -> tuple[int, int]:
+    if not row:
+        return (-1, -1)
+    status = str(row["status"] or "").strip().lower()
+    has_audio = bool(str(row["downloaded_file_path"] or "").strip())
+    if status == "completed" and has_audio:
+        base = 6
+    elif status in {"running", "processing"}:
+        base = 5
+    elif status == "pending":
+        base = 4
+    elif status == "completed":
+        base = 3
+    elif status == "failed":
+        base = 2
+    elif status == "cancelled":
+        base = 1
+    else:
+        base = 0
+    return (base, int(row["id"] or 0))
+
+
+def _pick_best_line_audio_task(rows: list[Any]) -> Any:
+    if not rows:
+        return None
+    return max(rows, key=_line_audio_task_priority)
 
 
 def get_line_audio_task(task_id: int) -> dict | None:
@@ -232,7 +266,7 @@ def list_line_audio_tasks(
         f"SELECT COUNT(1) AS c FROM line_audio_tasks {where_clause}", params
     ).fetchone()
     pending_row = conn.execute(
-        f"SELECT COUNT(1) AS c FROM line_audio_tasks {where_clause}{' AND' if where_clause else ' WHERE'} status='pending'",
+        f"SELECT COUNT(1) AS c FROM line_audio_tasks {where_clause}{' AND' if where_clause else ' WHERE'} status IN ('pending','running','processing')",
         params,
     ).fetchone()
 
@@ -304,17 +338,19 @@ def get_chapter_line_audio_entries(novel_id: int, chapter_id: int) -> list[dict]
 
     # 获取已有的任务
     task_rows = conn.execute(
-        "SELECT * FROM line_audio_tasks WHERE novel_id = ? AND chapter_id = ?",
+        "SELECT * FROM line_audio_tasks WHERE novel_id = ? AND chapter_id = ? ORDER BY id DESC",
         (novel_id, chapter_id),
     ).fetchall()
     conn.close()
 
-    task_map = {str(row["line_hash"]): row for row in task_rows}
+    task_groups: dict[str, list[Any]] = {}
+    for row in task_rows:
+        task_groups.setdefault(str(row["line_hash"] or ""), []).append(row)
 
     items: list[dict] = []
     for line in lines:
         line_hash = str(line["line_hash"])
-        row = task_map.get(line_hash)
+        row = _pick_best_line_audio_task(task_groups.get(line_hash, []))
         role_name = _normalize_role_name(line["role_name"])
         role = role_map.get(role_name)
         has_role_library = role is not None
@@ -463,11 +499,17 @@ def enqueue_line_audio_task(
         conn.close()
         return False, "当前章节没有可用的剧本数据", None
 
-    if line_index < 0 or line_index >= len(lines):
+    if line_index < 0:
         conn.close()
         return False, "行号超出范围", None
 
-    line = lines[line_index]
+    line = next(
+        (item for item in lines if int(item.get("line_index", -1)) == int(line_index)),
+        None,
+    )
+    if line is None:
+        conn.close()
+        return False, "行号超出范围", None
     role_name = _normalize_role_name(line["role_name"])
     line_text = str(line["line_text"] or "").strip()
 
@@ -1116,7 +1158,7 @@ def cancel_all_line_audio_tasks(novel_id: int | None = None) -> dict:
     conn = db_conn()
 
     params = []
-    where_clause = "status IN ('pending', 'running')"
+    where_clause = "status IN ('pending', 'running', 'processing')"
     if novel_id is not None:
         where_clause += " AND novel_id = ?"
         params.append(novel_id)

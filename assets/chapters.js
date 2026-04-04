@@ -1225,19 +1225,30 @@ function extractRoleName(line) {
 }
 
 function getJubenLinesFromParsed(parsed) {
-  const juben = String(parsed?.juben || "").trim();
-  if (!juben) {
+  const juben = String(parsed?.juben || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  if (!juben.trim()) {
     return [];
   }
   return juben
-    .split(/\r?\n/)
-    .map((line) => String(line || "").trim())
-    .filter(Boolean)
+    .split("\n")
     .map((line, index) => ({
+      raw: String(line || ""),
       index,
-      line,
-      roleName: extractRoleName(line),
+    }))
+    .map((item) => ({
+      ...item,
+      line: String(item.raw || "").trim(),
+    }))
+    .filter((item) => item.line)
+    .map((item) => ({
+      index: item.index,
+      line: item.line,
+      roleName: extractRoleName(item.line),
     }));
+}
+
+function getLinePreviewRow(lineIndex) {
+  return linePreviewRows.find((item) => Number(item.index) === Number(lineIndex)) || null;
 }
 
 function syncLineRoleFilterOptions() {
@@ -1623,7 +1634,7 @@ function bindLineEditingEvents(root) {
     icon.addEventListener("click", (event) => {
       event.stopPropagation();
       editingLineIndex = Number(icon.dataset.lineIndex || -1);
-      editingLineOriginalText = linePreviewRows[editingLineIndex]?.line || "";
+      editingLineOriginalText = getLinePreviewRow(editingLineIndex)?.line || "";
       renderLineAudioTable();
       const input = document.querySelector(`.juben-line-single-input[data-line-index="${editingLineIndex}"]`);
       input?.focus();
@@ -1641,7 +1652,7 @@ function bindLineEditingEvents(root) {
         return;
       }
       editingLineIndex = lineIndex;
-      editingLineOriginalText = linePreviewRows[lineIndex]?.line || "";
+      editingLineOriginalText = getLinePreviewRow(lineIndex)?.line || "";
       renderLineAudioTable();
       const input = document.querySelector(`.juben-line-single-input[data-line-index="${lineIndex}"]`);
       input?.focus();
@@ -1709,7 +1720,7 @@ async function saveLineText(lineIndex) {
     return;
   }
 
-  const nextRows = getJubenLinesFromParsed(parsed).map((item) => item.line);
+  const nextRows = String(parsed?.juben || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
   if (lineIndex >= nextRows.length) {
     toast("行号超出范围");
     return;
