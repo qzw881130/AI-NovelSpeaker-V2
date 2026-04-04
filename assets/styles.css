@@ -1802,6 +1802,29 @@ menu {
   top: 0;
 }
 
+.table-sort-btn {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  font: inherit;
+  font-weight: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.table-sort-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  color: var(--primary);
+  font-size: 13px;
+  line-height: 1;
+}
+
 .roles-table tr:hover,
 .line-audio-table tr:hover,
 .line-audio-tasks-table tr:hover {
