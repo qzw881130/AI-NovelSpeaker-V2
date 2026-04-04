@@ -54,14 +54,23 @@ function parseWorkflowJsonNodes(jsonText) {
   try {
     const parsed = JSON.parse(String(jsonText || "{}").trim() || "{}");
     if (!parsed || typeof parsed !== "object") return [];
+    const toOption = (nodeId, node) => {
+      const title = String(node?._meta?.title || node?.title || "").trim();
+      const classType = String(node?.class_type || node?.type || "").trim();
+      const label = title ? `#${nodeId} ${title}` : `#${nodeId} ${classType || "节点"}`;
+      return { nodeId: String(nodeId), label };
+    };
+
+    if (Array.isArray(parsed.nodes)) {
+      return parsed.nodes
+        .filter((node) => node && typeof node === "object" && node.id != null)
+        .map((node) => toOption(node.id, node))
+        .sort((a, b) => Number(a.nodeId) - Number(b.nodeId));
+    }
+
     return Object.entries(parsed)
-      .filter(([, node]) => node && typeof node === "object")
-      .map(([nodeId, node]) => {
-        const title = String(node?._meta?.title || node?.title || "").trim();
-        const classType = String(node?.class_type || "").trim();
-        const label = title ? `#${nodeId} ${title}` : `#${nodeId} ${classType || "节点"}`;
-        return { nodeId: String(nodeId), label };
-      })
+      .filter(([key, node]) => /^\d+$/.test(String(key)) && node && typeof node === "object")
+      .map(([nodeId, node]) => toOption(nodeId, node))
       .sort((a, b) => Number(a.nodeId) - Number(b.nodeId));
   } catch {
     return [];

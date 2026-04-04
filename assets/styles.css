@@ -355,6 +355,10 @@ a.ghost-btn {
   gap: 12px;
 }
 
+.hero-grid > :only-child {
+  grid-column: 1 / -1;
+}
+
 .roles-hero-grid {
   grid-template-columns: minmax(0, 1fr);
 }
@@ -364,7 +368,7 @@ a.ghost-btn {
 }
 
 .project-metrics {
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
 .project-metrics .metric {
@@ -398,7 +402,7 @@ a.ghost-btn {
 
 .hero-metrics {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 10px;
 }
 

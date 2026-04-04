@@ -59,6 +59,20 @@ SYSTEM_WORKFLOWS = [
         },
     },
     {
+        "file": WORKFLOWS_DIR / "line_audio_workflow_qwen3-tts.json",
+        "name": "Qwen3 TTS 生成台词音频【低显存】",
+        "description": "系统内置，使用 Qwen3 TTS 生成台词音频（低显存）",
+        "workflow_type": "line_audio",
+        "workflow_io_config": {
+            "inputs": {
+                "referenceAudio": {"nodeId": "6"},
+                "lineText": {"nodeId": "7"},
+                "referenceText": {"nodeId": "8"},
+            },
+            "outputs": {"audioFile": {"nodeId": "4"}},
+        },
+    },
+    {
         "file": WORKFLOWS_DIR / "voice_sample_workflow.json",
         "name": "生成示例音频",
         "description": "系统内置，使用 Qwen3-TTS VoiceDesign 生成示例音频",
@@ -69,6 +83,16 @@ SYSTEM_WORKFLOWS = [
                 "voiceDescription": {"nodeId": "6"},
             },
             "outputs": {"audioFile": {"nodeId": "9"}},
+        },
+    },
+    {
+        "file": WORKFLOWS_DIR / "voice_transcribe_workflow_qwen3-asr.json",
+        "name": "Qwen3-ASR提取声音文本【低显存】",
+        "description": "系统内置，使用 Qwen3-ASR 提取声音文本（低显存）",
+        "workflow_type": "voice_transcribe",
+        "workflow_io_config": {
+            "inputs": {"audioFile": {"nodeId": "12"}},
+            "outputs": {"textOutput": {"nodeId": "13"}},
         },
     },
 ]
