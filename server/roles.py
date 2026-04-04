@@ -23,6 +23,8 @@ from .services import (
     comfy_download_file,
     fetch_settings,
     comfy_upload_input_file,
+    create_workflow_log,
+    update_workflow_log_error,
 )
 
 
@@ -398,12 +400,14 @@ def get_role_library_map(novel_id: int) -> dict[str, dict]:
     return mapping
 
 
-def _get_voice_sample_workflow(novel_id: int) -> dict | None:
+def _get_voice_sample_workflow(
+    novel_id: int,
+) -> tuple[dict | None, dict, str, str, bool]:
     """获取小说的voice_sample工作流配置"""
     conn = db_conn()
     row = conn.execute(
         """
-        SELECT json_text FROM comfy_workflows w
+        SELECT w.json_text, w.workflow_io_config, w.name, w.workflow_type, w.workflow_log_enabled FROM comfy_workflows w
         JOIN novels n ON n.voice_sample_workflow_id = w.id
         WHERE n.id = ?
         """,
@@ -412,13 +416,28 @@ def _get_voice_sample_workflow(novel_id: int) -> dict | None:
     conn.close()
 
     if not row:
-        return None
+        return None, {}, "", "voice_sample", True
 
     try:
         workflow = json.loads(str(row["json_text"] or "{}"))
-        return workflow if isinstance(workflow, dict) else None
+        io_config = json.loads(str(row["workflow_io_config"] or "{}") or "{}")
+        if not isinstance(io_config, dict):
+            io_config = {}
+        return (
+            workflow if isinstance(workflow, dict) else None,
+            io_config,
+            str(row["name"] or ""),
+            str(row["workflow_type"] or "voice_sample"),
+            bool(int(row["workflow_log_enabled"] or 0)),
+        )
     except json.JSONDecodeError:
-        return None
+        return (
+            None,
+            {},
+            str(row["name"] or ""),
+            str(row["workflow_type"] or "voice_sample"),
+            bool(int(row["workflow_log_enabled"] or 0)),
+        )
 
 
 def generate_role_sample_audio(
@@ -450,13 +469,20 @@ def generate_role_sample_audio(
         return False, "Novel not found", None, None
 
     # 获取voice_sample工作流
-    workflow = _get_voice_sample_workflow(novel_id)
+    (
+        workflow,
+        workflow_io_config,
+        workflow_name,
+        workflow_category,
+        workflow_log_enabled,
+    ) = _get_voice_sample_workflow(novel_id)
     if not workflow:
         return False, "Voice sample workflow not configured for this novel", None, None
 
     # 查找并修改工作流中的节点
     # 假设工作流中有用于instruct和text的节点
     workflow_copy = deepcopy(workflow)
+    log_id = 0
 
     # 尝试找到instruct节点（通常是描述音色的prompt）
     # 尝试找到text节点（示例台词）
@@ -501,6 +527,12 @@ def generate_role_sample_audio(
 
     # 提交工作流到ComfyUI
     try:
+        if workflow_log_enabled:
+            log_id = create_workflow_log(
+                workflow_category or "voice_sample",
+                workflow_name or "生成示例音频",
+                workflow_copy,
+            )
         result = comfy_request_json(
             comfy_url=comfy_url,
             path="/prompt",
@@ -509,8 +541,10 @@ def generate_role_sample_audio(
         )
         prompt_id = result.get("prompt_id")
         if not prompt_id:
+            update_workflow_log_error(log_id, "Failed to submit workflow to ComfyUI")
             return False, "Failed to submit workflow to ComfyUI", None, workflow_copy
     except Exception as e:
+        update_workflow_log_error(log_id, f"Failed to submit workflow: {str(e)}")
         return False, f"Failed to submit workflow: {str(e)}", None, workflow_copy
 
     # 等待工作流完成
@@ -545,6 +579,9 @@ def generate_role_sample_audio(
         time.sleep(3)
 
     if output_info is None:
+        update_workflow_log_error(
+            log_id, "ComfyUI workflow timeout; sample audio output not found"
+        )
         return (
             False,
             "ComfyUI workflow timeout; sample audio output not found",
@@ -595,15 +632,18 @@ def generate_role_sample_audio(
         return True, "generated", _row_to_role(saved), workflow_copy
 
     except Exception as e:
+        update_workflow_log_error(log_id, f"Failed to save audio file: {str(e)}")
         return False, f"Failed to save audio file: {str(e)}", None, workflow_copy
 
 
-def _get_voice_transcribe_workflow(novel_id: int) -> dict | None:
+def _get_voice_transcribe_workflow(
+    novel_id: int,
+) -> tuple[dict | None, dict, str, str, bool]:
     """获取小说的voice_transcribe工作流配置"""
     conn = db_conn()
     row = conn.execute(
         """
-        SELECT json_text FROM comfy_workflows w
+        SELECT w.json_text, w.workflow_io_config, w.name, w.workflow_type, w.workflow_log_enabled FROM comfy_workflows w
         JOIN novels n ON n.voice_transcribe_workflow_id = w.id
         WHERE n.id = ?
         """,
@@ -612,13 +652,28 @@ def _get_voice_transcribe_workflow(novel_id: int) -> dict | None:
     conn.close()
 
     if not row:
-        return None
+        return None, {}, "", "voice_transcribe", True
 
     try:
         workflow = json.loads(str(row["json_text"] or "{}"))
-        return workflow if isinstance(workflow, dict) else None
+        io_config = json.loads(str(row["workflow_io_config"] or "{}") or "{}")
+        if not isinstance(io_config, dict):
+            io_config = {}
+        return (
+            workflow if isinstance(workflow, dict) else None,
+            io_config,
+            str(row["name"] or ""),
+            str(row["workflow_type"] or "voice_transcribe"),
+            bool(int(row["workflow_log_enabled"] or 0)),
+        )
     except json.JSONDecodeError:
-        return None
+        return (
+            None,
+            {},
+            str(row["name"] or ""),
+            str(row["workflow_type"] or "voice_transcribe"),
+            bool(int(row["workflow_log_enabled"] or 0)),
+        )
 
 
 def _extract_text_output_from_history(
@@ -708,7 +763,13 @@ def extract_role_sample_text(
         return False, "Role sample audio not found", None
 
     # 获取voice_transcribe工作流
-    workflow = _get_voice_transcribe_workflow(novel_id)
+    (
+        workflow,
+        workflow_io_config,
+        workflow_name,
+        workflow_category,
+        workflow_log_enabled,
+    ) = _get_voice_transcribe_workflow(novel_id)
     if not workflow:
         return False, "Voice transcribe workflow not configured for this novel", None
 
@@ -725,20 +786,40 @@ def extract_role_sample_text(
 
     # 修改工作流节点
     workflow_copy = deepcopy(workflow)
+    log_id = 0
+    input_node_id = (
+        str(
+            workflow_io_config.get("inputs", {}).get("audioFile", {}).get("nodeId")
+            or "2"
+        ).strip()
+        or "2"
+    )
+    output_node_id = (
+        str(
+            workflow_io_config.get("outputs", {}).get("textOutput", {}).get("nodeId")
+            or "4"
+        ).strip()
+        or "4"
+    )
 
-    if "2" not in workflow_copy:
+    if input_node_id not in workflow_copy:
         return (
             False,
-            f"Voice transcribe workflow missing node 2. Available nodes: {list(workflow_copy.keys())}",
+            f"Voice transcribe workflow missing node {input_node_id}. Available nodes: {list(workflow_copy.keys())}",
             None,
         )
-    if "inputs" not in workflow_copy["2"]:
-        return False, f"Node 2 missing inputs. Node 2: {workflow_copy['2']}", None
+    if "inputs" not in workflow_copy[input_node_id]:
+        return (
+            False,
+            f"Node {input_node_id} missing inputs. Node {input_node_id}: {workflow_copy[input_node_id]}",
+            None,
+        )
 
-    workflow_copy["2"]["inputs"]["audio"] = filename
-    workflow_copy["2"]["inputs"]["audioUI"] = (
-        f"/api/view?filename={filename}&type={file_type}&subfolder={subfolder}&rand={time.time():.6f}"
-    )
+    workflow_copy[input_node_id]["inputs"]["audio"] = filename
+    if "audioUI" in workflow_copy[input_node_id]["inputs"]:
+        workflow_copy[input_node_id]["inputs"]["audioUI"] = (
+            f"/api/view?filename={filename}&type={file_type}&subfolder={subfolder}&rand={time.time():.6f}"
+        )
 
     # 获取ComfyUI配置
     settings = fetch_settings(db_conn())
@@ -747,6 +828,12 @@ def extract_role_sample_text(
         return False, "ComfyUI URL not configured", None
 
     try:
+        if workflow_log_enabled:
+            log_id = create_workflow_log(
+                workflow_category or "voice_transcribe",
+                workflow_name or "提取声音文本",
+                workflow_copy,
+            )
         result = comfy_request_json(
             comfy_url=comfy_url,
             path="/prompt",
@@ -756,8 +843,12 @@ def extract_role_sample_text(
 
         prompt_id = result.get("prompt_id")
         if not prompt_id:
+            update_workflow_log_error(
+                log_id, f"Failed to submit workflow to ComfyUI: {result}"
+            )
             return False, f"Failed to submit workflow to ComfyUI: {result}", None
     except Exception as e:
+        update_workflow_log_error(log_id, f"Failed to submit workflow: {str(e)}")
         return False, f"Failed to submit workflow: {str(e)}", None
 
     # 等待工作流完成
@@ -771,7 +862,7 @@ def extract_role_sample_text(
                 comfy_url=comfy_url, path=f"/history/{prompt_id}", method="GET"
             )
             output_text = _extract_text_output_from_history(
-                history, prompt_id, node_id="1"
+                history, prompt_id, node_id=output_node_id
             )
             if output_text:
                 break
@@ -781,6 +872,9 @@ def extract_role_sample_text(
         time.sleep(2)
 
     if not output_text:
+        update_workflow_log_error(
+            log_id, "ComfyUI workflow timeout; extracted text not found"
+        )
         return False, "ComfyUI workflow timeout; extracted text not found", None
 
     return True, "ok", output_text

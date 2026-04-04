@@ -331,11 +331,19 @@ def fetch_workflows(conn: sqlite3.Connection) -> list[dict]:
     system_workflow_names = {str(item["name"]) for item in SYSTEM_WORKFLOWS}
     rows = conn.execute(
         """
-        SELECT id,name,workflow_type,description,json_text,created_at,updated_at
+        SELECT id,name,workflow_type,description,json_text,workflow_io_config,workflow_log_enabled,created_at,updated_at
         FROM comfy_workflows
         ORDER BY CASE WHEN workflow_type='system' OR workflow_type='voice_transcribe' OR workflow_type='line_audio' OR workflow_type='voice_sample' THEN 0 ELSE 1 END, id DESC
         """
     ).fetchall()
+
+    def parse_workflow_io_config(raw: str) -> dict:
+        try:
+            parsed = json.loads(str(raw or "{}") or "{}")
+            return parsed if isinstance(parsed, dict) else {}
+        except Exception:
+            return {}
+
     return [
         {
             "id": int(r["id"]),
@@ -344,11 +352,94 @@ def fetch_workflows(conn: sqlite3.Connection) -> list[dict]:
             "name": str(r["name"]),
             "description": str(r["description"] or ""),
             "jsonText": str(r["json_text"]),
+            "workflowIoConfig": parse_workflow_io_config(
+                str(r["workflow_io_config"] or "{}")
+            ),
+            "workflowLogEnabled": bool(int(r["workflow_log_enabled"] or 0)),
             "createdAt": str(r["created_at"]),
             "updatedAt": str(r["updated_at"]),
         }
         for r in rows
     ]
+
+
+def create_workflow_log(
+    workflow_category: str,
+    workflow_name: str,
+    workflow_json: dict | str,
+    error_log: str = "",
+) -> int:
+    conn = db_conn()
+    cur = conn.execute(
+        """
+        INSERT INTO comfy_workflow_logs (workflow_category, workflow_name, workflow_json, error_log)
+        VALUES (?, ?, ?, ?)
+        """,
+        (
+            str(workflow_category or "").strip(),
+            str(workflow_name or "").strip(),
+            workflow_json
+            if isinstance(workflow_json, str)
+            else json.dumps(workflow_json or {}, ensure_ascii=False, indent=2),
+            str(error_log or "").strip(),
+        ),
+    )
+    conn.commit()
+    log_id = int(cur.lastrowid or 0)
+    conn.close()
+    return log_id
+
+
+def update_workflow_log_error(log_id: int, error_log: str) -> None:
+    if int(log_id or 0) <= 0:
+        return
+    conn = db_conn()
+    conn.execute(
+        "UPDATE comfy_workflow_logs SET error_log=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+        (str(error_log or "").strip(), int(log_id)),
+    )
+    conn.commit()
+    conn.close()
+
+
+def update_workflow_log_json(log_id: int, workflow_json: dict | str) -> None:
+    if int(log_id or 0) <= 0:
+        return
+    conn = db_conn()
+    conn.execute(
+        "UPDATE comfy_workflow_logs SET workflow_json=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+        (
+            workflow_json
+            if isinstance(workflow_json, str)
+            else json.dumps(workflow_json or {}, ensure_ascii=False, indent=2),
+            int(log_id),
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+
+def list_workflow_logs(conn: sqlite3.Connection, limit: int = 500) -> list[dict]:
+    rows = conn.execute(
+        "SELECT id, workflow_category, workflow_name, workflow_json, error_log, created_at, updated_at FROM comfy_workflow_logs ORDER BY id DESC LIMIT ?",
+        (max(1, min(int(limit or 500), 2000)),),
+    ).fetchall()
+    return [
+        {
+            "id": int(r["id"]),
+            "workflowCategory": str(r["workflow_category"] or ""),
+            "workflowName": str(r["workflow_name"] or ""),
+            "workflowJson": str(r["workflow_json"] or ""),
+            "errorLog": str(r["error_log"] or ""),
+            "createdAt": str(r["created_at"] or ""),
+            "updatedAt": str(r["updated_at"] or ""),
+        }
+        for r in rows
+    ]
+
+
+def clear_workflow_logs(conn: sqlite3.Connection) -> None:
+    conn.execute("DELETE FROM comfy_workflow_logs")
 
 
 def load_system_workflow_file(file_path: Path) -> str:
@@ -394,6 +485,8 @@ def migrate_workflow_type_constraint(conn: sqlite3.Connection) -> None:
                 workflow_type TEXT NOT NULL,
                 description TEXT NOT NULL DEFAULT '',
                 json_text TEXT NOT NULL,
+                workflow_io_config TEXT NOT NULL DEFAULT '{}',
+                workflow_log_enabled INTEGER NOT NULL DEFAULT 1,
                 created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
@@ -403,8 +496,8 @@ def migrate_workflow_type_constraint(conn: sqlite3.Connection) -> None:
         # 复制数据
         conn.execute(
             """
-            INSERT INTO comfy_workflows_new (id, name, workflow_type, description, json_text, created_at, updated_at)
-            SELECT id, name, workflow_type, description, json_text, created_at, updated_at
+            INSERT INTO comfy_workflows_new (id, name, workflow_type, description, json_text, workflow_io_config, workflow_log_enabled, created_at, updated_at)
+            SELECT id, name, workflow_type, description, json_text, '{}', 1, created_at, updated_at
             FROM comfy_workflows
             """
         )
@@ -441,22 +534,30 @@ def sync_system_workflow_from_file(conn: sqlite3.Connection) -> None:
         json_text = load_system_workflow_file(wf_config["file"])
         conn.execute(
             """
-            INSERT INTO comfy_workflows (name,workflow_type,description,json_text)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO comfy_workflows (name,workflow_type,description,json_text,workflow_io_config,workflow_log_enabled)
+            VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(name) DO UPDATE SET
                 workflow_type=excluded.workflow_type,
                 description=excluded.description,
                 json_text=excluded.json_text,
+                workflow_io_config=excluded.workflow_io_config,
+                workflow_log_enabled=excluded.workflow_log_enabled,
                 updated_at=CURRENT_TIMESTAMP
             WHERE comfy_workflows.workflow_type<>excluded.workflow_type
                OR comfy_workflows.description<>excluded.description
                OR comfy_workflows.json_text<>excluded.json_text
+               OR comfy_workflows.workflow_io_config<>excluded.workflow_io_config
+               OR comfy_workflows.workflow_log_enabled<>excluded.workflow_log_enabled
             """,
             (
                 wf_config["name"],
                 wf_config["workflow_type"],
                 wf_config["description"],
                 json_text,
+                json.dumps(
+                    wf_config.get("workflow_io_config") or {}, ensure_ascii=False
+                ),
+                1,
             ),
         )
 

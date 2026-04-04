@@ -23,6 +23,11 @@
           <div class="panel-head">
             <h2>工作流列表</h2>
           </div>
+          <div id="workflowTypeTabs" class="json-view-tabs workflow-type-tabs">
+            <button class="ghost-btn active" data-workflow-tab="voice_sample" type="button">生成示例音频</button>
+            <button class="ghost-btn" data-workflow-tab="line_audio" type="button">生成台词音频</button>
+            <button class="ghost-btn" data-workflow-tab="voice_transcribe" type="button">提取声音文本</button>
+          </div>
           <div id="workflowList" class="asset-list"></div>
         </section>
       </main>
@@ -43,6 +48,13 @@
           </label>
           <label class="full">描述<input name="description" /></label>
           <label class="full">工作流JSON<textarea name="jsonText" rows="10" required></textarea></label>
+          <section class="full workflow-io-panel">
+            <div class="panel-head compact">
+              <h4>配置输入输出</h4>
+              <span id="workflowIoHint" class="meta">系统工作流使用默认配置，自定义工作流可编辑</span>
+            </div>
+            <div id="workflowIoConfig" class="workflow-io-grid"></div>
+          </section>
         </div>
         <menu>
           <button class="ghost-btn" id="workflowCancelBtn" type="button">取消</button>

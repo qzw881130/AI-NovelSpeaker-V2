@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI NovelSpeaker V2 - 工作流日志</title>
+    <link rel="stylesheet" href="./assets/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="main-nav" id="mainNav"></aside>
+      <main class="page">
+        <header class="page-header">
+          <div>
+            <p class="eyebrow">工作流追踪</p>
+            <h1>工作流日志</h1>
+          </div>
+          <div class="header-actions">
+            <button id="clearWorkflowLogsBtn" class="ghost-btn" type="button">清除所有日志</button>
+            <button id="refreshWorkflowLogsBtn" class="primary-btn" type="button">刷新</button>
+          </div>
+        </header>
+        <section class="panel">
+          <div class="panel-head">
+            <h2>日志列表</h2>
+            <span id="workflowLogsSummary" class="meta">-</span>
+          </div>
+          <div id="workflowLogsList" class="asset-list"></div>
+        </section>
+      </main>
+    </div>
+    <div id="toast" class="toast"></div>
+    <script type="module" src="./assets/workflow-logs.js"></script>
+  </body>
+</html>

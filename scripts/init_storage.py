@@ -55,6 +55,8 @@ DDL_STATEMENTS = [
         workflow_type TEXT NOT NULL,
         description TEXT NOT NULL DEFAULT '',
         json_text TEXT NOT NULL,
+        workflow_io_config TEXT NOT NULL DEFAULT '{}',
+        workflow_log_enabled INTEGER NOT NULL DEFAULT 1,
         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
@@ -128,6 +130,17 @@ DDL_STATEMENTS = [
     CREATE TABLE IF NOT EXISTS app_settings (
         setting_key TEXT PRIMARY KEY,
         setting_value TEXT NOT NULL,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS comfy_workflow_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        workflow_category TEXT NOT NULL DEFAULT '',
+        workflow_name TEXT NOT NULL DEFAULT '',
+        workflow_json TEXT NOT NULL DEFAULT '{}',
+        error_log TEXT NOT NULL DEFAULT '',
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
     """,

@@ -39,18 +39,37 @@ SYSTEM_WORKFLOWS = [
         "name": "提取声音文本",
         "description": "系统内置，使用 Whisper 提取音频中的文本",
         "workflow_type": "voice_transcribe",
+        "workflow_io_config": {
+            "inputs": {"audioFile": {"nodeId": "2"}},
+            "outputs": {"textOutput": {"nodeId": "4"}},
+        },
     },
     {
         "file": WORKFLOWS_DIR / "line_audio_workflow.json",
         "name": "生成台词音频",
         "description": "系统内置，使用 FishS2 Voice Clone 生成台词音频",
         "workflow_type": "line_audio",
+        "workflow_io_config": {
+            "inputs": {
+                "referenceAudio": {"nodeId": "27"},
+                "lineText": {"nodeId": "33"},
+                "referenceText": {"nodeId": "40"},
+            },
+            "outputs": {"audioFile": {"nodeId": "41"}},
+        },
     },
     {
         "file": WORKFLOWS_DIR / "voice_sample_workflow.json",
         "name": "生成示例音频",
         "description": "系统内置，使用 Qwen3-TTS VoiceDesign 生成示例音频",
         "workflow_type": "voice_sample",
+        "workflow_io_config": {
+            "inputs": {
+                "lineText": {"nodeId": "7"},
+                "voiceDescription": {"nodeId": "6"},
+            },
+            "outputs": {"audioFile": {"nodeId": "9"}},
+        },
     },
 ]
 
@@ -115,6 +134,35 @@ def migrate_line_audio_tasks_table(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE line_audio_tasks ADD COLUMN scheduled_at DATETIME")
 
 
+def migrate_workflow_io_config_column(conn: sqlite3.Connection) -> None:
+    columns = conn.execute("PRAGMA table_info(comfy_workflows)").fetchall()
+    column_names = [col[1] for col in columns]
+    if "workflow_io_config" not in column_names:
+        conn.execute(
+            "ALTER TABLE comfy_workflows ADD COLUMN workflow_io_config TEXT NOT NULL DEFAULT '{}'"
+        )
+    if "workflow_log_enabled" not in column_names:
+        conn.execute(
+            "ALTER TABLE comfy_workflows ADD COLUMN workflow_log_enabled INTEGER NOT NULL DEFAULT 1"
+        )
+
+
+def migrate_workflow_logs_table(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS comfy_workflow_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            workflow_category TEXT NOT NULL DEFAULT '',
+            workflow_name TEXT NOT NULL DEFAULT '',
+            workflow_json TEXT NOT NULL DEFAULT '{}',
+            error_log TEXT NOT NULL DEFAULT '',
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+
+
 def db_conn() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH, timeout=12.0)
     conn.row_factory = sqlite3.Row
@@ -139,4 +187,6 @@ def db_conn() -> sqlite3.Connection:
     migrate_novels_table(conn)
     migrate_chapters_table(conn)
     migrate_line_audio_tasks_table(conn)
+    migrate_workflow_io_config_column(conn)
+    migrate_workflow_logs_table(conn)
     return conn

@@ -1193,6 +1193,134 @@ textarea {
   grid-column: 1 / -1;
 }
 
+.panel-head.compact {
+  margin-bottom: 8px;
+}
+
+.panel-head.compact h4 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.workflow-io-panel {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fffdf8;
+}
+
+.workflow-type-tabs {
+  margin-bottom: 14px;
+}
+
+.workflow-log-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.workflow-log-toggle {
+  position: relative;
+  width: 48px;
+  height: 28px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: #e9e0d0;
+}
+
+.workflow-log-toggle.is-on {
+  background: linear-gradient(135deg, #9ecf5b 0%, #66b43d 100%);
+  border-color: #67a63e;
+}
+
+.workflow-log-toggle-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.16);
+  transition: transform 0.18s ease;
+}
+
+.workflow-log-toggle.is-on .workflow-log-toggle-thumb {
+  transform: translateX(20px);
+}
+
+.text-success {
+  color: #579a2b;
+}
+
+.text-muted {
+  color: var(--muted);
+}
+
+.workflow-log-card {
+  gap: 10px;
+}
+
+.workflow-log-error {
+  border-color: rgba(196, 78, 49, 0.28);
+  background: linear-gradient(180deg, rgba(255, 248, 245, 0.94), rgba(255, 252, 247, 0.98));
+}
+
+.workflow-log-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.workflow-log-block h4 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.workflow-log-block pre {
+  margin: 0;
+  padding: 10px 12px;
+  max-height: 240px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fffdf8;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font: 12px/1.55 Menlo, Monaco, Consolas, "Courier New", monospace;
+}
+
+.workflow-io-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.workflow-io-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.workflow-io-section h5 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.workflow-io-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.workflow-io-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 menu {
   margin: 12px 0 0;
   padding: 0;
@@ -1681,6 +1809,10 @@ menu {
   }
 
   .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .workflow-io-grid {
     grid-template-columns: 1fr;
   }
 

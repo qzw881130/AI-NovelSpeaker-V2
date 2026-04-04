@@ -17,9 +17,12 @@ from .services import (
     comfy_download_file,
     comfy_request_json,
     comfy_upload_input_file,
+    create_workflow_log,
     extract_audio_output_from_history,
     fetch_settings,
     parse_datetime_utc,
+    update_workflow_log_error,
+    update_workflow_log_json,
 )
 
 
@@ -45,6 +48,17 @@ def _chapter_line_audio_path(
 
 def _novel_audio_output_dir(english_dir: str) -> Path:
     return NOVEL_DIR / english_dir / "audio"
+
+
+def _assign_text_input(node: dict, value: str, purpose: str) -> None:
+    inputs = node.get("inputs")
+    if not isinstance(inputs, dict):
+        raise RuntimeError(f"台词音频工作流缺少{purpose}节点输入")
+    for key in ("prompt", "text", "string", "value"):
+        if key in inputs:
+            inputs[key] = value
+            return
+    raise RuntimeError(f"台词音频工作流缺少{purpose}节点文本输入字段")
 
 
 def _chapter_merged_output_path(english_dir: str, chapter_num: int) -> Path:
@@ -638,12 +652,12 @@ def enqueue_all_line_audio_tasks(
     return True, "queued", {"queued": queued, "taskIds": task_ids, "skipped": skipped}
 
 
-def _get_line_audio_workflow_json(novel_id: int) -> dict:
+def _get_line_audio_workflow_info(novel_id: int) -> tuple[dict, dict, str, str, bool]:
     """获取小说的台词音频工作流JSON"""
     conn = db_conn()
     row = conn.execute(
         """
-        SELECT w.json_text
+        SELECT w.json_text, w.workflow_io_config, w.name, w.workflow_type, w.workflow_log_enabled
         FROM novels n
         LEFT JOIN comfy_workflows w ON w.id = n.line_audio_workflow_id
         WHERE n.id = ?
@@ -654,10 +668,19 @@ def _get_line_audio_workflow_json(novel_id: int) -> dict:
 
     if row and row["json_text"]:
         try:
-            return json.loads(str(row["json_text"]))
+            io_config = json.loads(str(row["workflow_io_config"] or "{}") or "{}")
+            if not isinstance(io_config, dict):
+                io_config = {}
+            return (
+                json.loads(str(row["json_text"])),
+                io_config,
+                str(row["name"] or ""),
+                str(row["workflow_type"] or "line_audio"),
+                bool(int(row["workflow_log_enabled"] or 0)),
+            )
         except json.JSONDecodeError:
             pass
-    return {}
+    return {}, {}, "", "line_audio", True
 
 
 def process_line_audio_task(task_id: int) -> None:
@@ -684,6 +707,7 @@ def process_line_audio_task(task_id: int) -> None:
     line_hash = str(row["line_hash"] or "").strip()
     existing_prompt_id = str(row["comfy_prompt_id"] or "").strip()
     existing_comfy_status = str(row["comfy_status"] or "").strip()
+    workflow_log_id = 0
 
     if not reference_audio_path or not line_text or not reference_text or not line_hash:
         conn = db_conn()
@@ -755,15 +779,60 @@ def process_line_audio_task(task_id: int) -> None:
             file_type = str(upload_info.get("type") or "input").strip() or "input"
 
             # 获取工作流并填充
-            workflow = deepcopy(_get_line_audio_workflow_json(novel_id))
+            (
+                workflow_json,
+                workflow_io_config,
+                workflow_name,
+                workflow_category,
+                workflow_log_enabled,
+            ) = _get_line_audio_workflow_info(novel_id)
+            workflow = deepcopy(workflow_json)
             if not workflow:
                 raise RuntimeError("台词音频工作流未配置")
+            if workflow_log_enabled:
+                workflow_log_id = create_workflow_log(
+                    workflow_category or "line_audio",
+                    workflow_name or "生成台词音频",
+                    workflow,
+                )
 
             # 优先兼容旧项目工作流节点ID，再回退到启发式匹配
-            audio_input_node = "27" if "27" in workflow else None
-            text_prompt_node = "33" if "33" in workflow else None
-            ref_text_node = "40" if "40" in workflow else None
-            output_node = "41" if "41" in workflow else None
+            audio_input_node = (
+                str(
+                    workflow_io_config.get("inputs", {})
+                    .get("referenceAudio", {})
+                    .get("nodeId")
+                    or ("27" if "27" in workflow else "")
+                ).strip()
+                or None
+            )
+            text_prompt_node = (
+                str(
+                    workflow_io_config.get("inputs", {})
+                    .get("lineText", {})
+                    .get("nodeId")
+                    or ("33" if "33" in workflow else "")
+                ).strip()
+                or None
+            )
+            ref_text_node = (
+                str(
+                    workflow_io_config.get("inputs", {})
+                    .get("referenceText", {})
+                    .get("nodeId")
+                    or ("40" if "40" in workflow else "")
+                ).strip()
+                or None
+            )
+            output_node = (
+                str(
+                    workflow_io_config.get("outputs", {})
+                    .get("audioFile", {})
+                    .get("nodeId")
+                    or ("41" if "41" in workflow else "")
+                ).strip()
+                or None
+            )
 
             for node_id, node in workflow.items():
                 if not isinstance(node, dict):
@@ -792,8 +861,8 @@ def process_line_audio_task(task_id: int) -> None:
                 workflow[audio_input_node]["inputs"]["audioUI"] = (
                     f"/api/view?filename={filename}&type={file_type}&subfolder={subfolder}&rand={time.time():.6f}"
                 )
-            workflow[text_prompt_node]["inputs"]["prompt"] = line_text
-            workflow[ref_text_node]["inputs"]["text"] = reference_text
+            _assign_text_input(workflow[text_prompt_node], line_text, "目标文本")
+            _assign_text_input(workflow[ref_text_node], reference_text, "参考文本")
             workflow[output_node]["inputs"]["filename_prefix"] = (
                 f"temp/chapter-{chapter_id:03d}"
             )
@@ -805,6 +874,9 @@ def process_line_audio_task(task_id: int) -> None:
                 if "seed" in inputs:
                     inputs["seed"] = random.randint(0, 2**31 - 1)
 
+            if workflow_log_enabled:
+                update_workflow_log_json(workflow_log_id, workflow)
+
             submit_result = comfy_request_json(
                 comfy_url=comfy_url,
                 path="/prompt",
@@ -813,6 +885,7 @@ def process_line_audio_task(task_id: int) -> None:
             )
             prompt_id = str(submit_result.get("prompt_id") or "").strip()
             if not prompt_id:
+                update_workflow_log_error(workflow_log_id, "ComfyUI 未返回 prompt_id")
                 raise RuntimeError("ComfyUI 未返回 prompt_id")
 
             conn = db_conn()
@@ -889,6 +962,7 @@ def process_line_audio_task(task_id: int) -> None:
             return
 
     except Exception as exc:
+        update_workflow_log_error(workflow_log_id, str(exc))
         conn = db_conn()
         conn.execute(
             """

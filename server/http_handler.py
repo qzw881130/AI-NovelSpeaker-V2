@@ -756,6 +756,13 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"workflows": data})
             return
 
+        if route == "/api/workflow-logs":
+            conn = db_conn()
+            data = list_workflow_logs(conn)
+            conn.close()
+            self.send_json({"logs": data})
+            return
+
         if route == "/api/settings":
             conn = db_conn()
             data = fetch_settings(conn)
@@ -1393,6 +1400,10 @@ class Handler(BaseHTTPRequestHandler):
             conn = db_conn()
             try:
                 workflow_type = str(body.get("workflowType") or "").strip()
+                workflow_io_config = body.get("workflowIoConfig") or {}
+                if not isinstance(workflow_io_config, dict):
+                    workflow_io_config = {}
+                workflow_log_enabled = 1 if body.get("workflowLogEnabled", True) else 0
                 if workflow_type not in {
                     "voice_sample",
                     "line_audio",
@@ -1402,12 +1413,14 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_json({"error": "invalid workflowType"}, 400)
                     return
                 conn.execute(
-                    "INSERT INTO comfy_workflows (name,workflow_type,description,json_text) VALUES (?, ?, ?, ?)",
+                    "INSERT INTO comfy_workflows (name,workflow_type,description,json_text,workflow_io_config,workflow_log_enabled) VALUES (?, ?, ?, ?, ?, ?)",
                     (
                         str(body.get("name") or ""),
                         workflow_type,
                         str(body.get("description") or ""),
                         str(body.get("jsonText") or ""),
+                        json.dumps(workflow_io_config, ensure_ascii=False),
+                        workflow_log_enabled,
                     ),
                 )
                 conn.commit()
@@ -1426,7 +1439,7 @@ class Handler(BaseHTTPRequestHandler):
             workflow_id = int(m_copy_workflow.group(1))
             conn = db_conn()
             src = conn.execute(
-                "SELECT name,json_text,workflow_type FROM comfy_workflows WHERE id=?",
+                "SELECT name,json_text,workflow_type,workflow_io_config,workflow_log_enabled FROM comfy_workflows WHERE id=?",
                 (workflow_id,),
             ).fetchone()
             if not src:
@@ -1438,12 +1451,14 @@ class Handler(BaseHTTPRequestHandler):
                 src_workflow_type = str(src["workflow_type"] or "").strip()
                 new_name = next_workflow_copy_name(conn, src_name)
                 conn.execute(
-                    "INSERT INTO comfy_workflows (name,workflow_type,description,json_text) VALUES (?, ?, ?, ?)",
+                    "INSERT INTO comfy_workflows (name,workflow_type,description,json_text,workflow_io_config,workflow_log_enabled) VALUES (?, ?, ?, ?, ?, ?)",
                     (
                         new_name,
                         src_workflow_type,
                         f"基于 {src_name} 复制",
                         str(src["json_text"]),
+                        str(src["workflow_io_config"] or "{}"),
+                        int(src["workflow_log_enabled"] or 0),
                     ),
                 )
                 conn.commit()
@@ -1950,7 +1965,8 @@ class Handler(BaseHTTPRequestHandler):
             workflow_id = int(m_workflow.group(1))
             conn = db_conn()
             row = conn.execute(
-                "SELECT workflow_type FROM comfy_workflows WHERE id=?", (workflow_id,)
+                "SELECT workflow_type, name FROM comfy_workflows WHERE id=?",
+                (workflow_id,),
             ).fetchone()
             if not row:
                 conn.close()
@@ -1960,15 +1976,41 @@ class Handler(BaseHTTPRequestHandler):
                 conn.close()
                 self.send_json({"error": "system workflow can not be edited"}, 409)
                 return
+            workflow_io_config = body.get("workflowIoConfig") or {}
+            if not isinstance(workflow_io_config, dict):
+                workflow_io_config = {}
+            workflow_log_enabled = 1 if body.get("workflowLogEnabled", True) else 0
+            workflow_type = str(
+                body.get("workflowType") or row["workflow_type"] or ""
+            ).strip()
+            if workflow_type not in {
+                "voice_sample",
+                "line_audio",
+                "voice_transcribe",
+            }:
+                conn.close()
+                self.send_json({"error": "invalid workflowType"}, 400)
+                return
             conn.execute(
-                "UPDATE comfy_workflows SET name=?,description=?,json_text=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                "UPDATE comfy_workflows SET name=?,workflow_type=?,description=?,json_text=?,workflow_io_config=?,workflow_log_enabled=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
                 (
                     str(body.get("name") or ""),
+                    workflow_type,
                     str(body.get("description") or ""),
                     str(body.get("jsonText") or ""),
+                    json.dumps(workflow_io_config, ensure_ascii=False),
+                    workflow_log_enabled,
                     workflow_id,
                 ),
             )
+            conn.commit()
+            conn.close()
+            self.send_json({"status": "ok"})
+            return
+
+        if route == "/api/workflow-logs":
+            conn = db_conn()
+            clear_workflow_logs(conn)
             conn.commit()
             conn.close()
             self.send_json({"status": "ok"})
@@ -2218,6 +2260,14 @@ class Handler(BaseHTTPRequestHandler):
             conn.commit()
             conn.close()
             self.send_json({"status": "ok"})
+            return
+
+        if route == "/api/workflow-logs":
+            conn = db_conn()
+            clear_workflow_logs(conn)
+            conn.commit()
+            conn.close()
+            self.send_json({"status": "deleted"})
             return
 
         # 角色库DELETE API

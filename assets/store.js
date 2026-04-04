@@ -274,6 +274,8 @@ async function saveWorkflow(input, id) {
     workflowType: String(input.workflowType || "").trim(),
     description: String(input.description || "").trim(),
     jsonText: String(input.jsonText || "").trim(),
+    workflowIoConfig: input.workflowIoConfig || {},
+    workflowLogEnabled: input.workflowLogEnabled !== false,
   };
   if (id) {
     await api(`/api/workflows/${Number(id)}`, { method: "PUT", body: JSON.stringify(payload) });
@@ -291,6 +293,15 @@ async function deleteWorkflow(id) {
 async function duplicateWorkflow(id) {
   await api(`/api/workflows/${Number(id)}/duplicate`, { method: "POST", body: "{}" });
   return refreshCache();
+}
+
+async function fetchWorkflowLogs() {
+  const data = await api("/api/workflow-logs");
+  return data.logs || [];
+}
+
+async function clearWorkflowLogs() {
+  await api("/api/workflow-logs", { method: "DELETE" });
 }
 
 async function saveSettings(nextSettings) {
@@ -564,6 +575,7 @@ export {
   deleteWorkflow,
   downloadNovelBundle,
   duplicateWorkflow,
+  fetchWorkflowLogs,
   duplicatePrompt,
   fetchChapterDetail,
   fetchChapterCompareData,
@@ -593,6 +605,7 @@ export {
   saveSettings,
   saveWorkflow,
   setActiveNovelId,
+  clearWorkflowLogs,
   // 角色库
   fetchRoles,
   createRole,
