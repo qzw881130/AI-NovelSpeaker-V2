@@ -680,7 +680,7 @@ def fetch_json_tasks(conn: sqlite3.Connection) -> list[dict]:
     rows = conn.execute(
         """
         SELECT t.id,t.novel_id,t.chapter_num,t.chapter_title,t.prompt_id,t.status,t.progress,t.updated_at,
-               t.created_at,t.error_message,
+               t.created_at,t.started_at,t.error_message,
                (SELECT COUNT(1) FROM task_batches b WHERE b.task_id=t.id) AS batch_total,
                (SELECT COUNT(1) FROM task_batches b WHERE b.task_id=t.id AND b.status='completed') AS batch_done,
                (SELECT COUNT(1) FROM task_batches b WHERE b.task_id=t.id AND b.status='failed') AS batch_failed,
@@ -718,6 +718,7 @@ def fetch_json_tasks(conn: sqlite3.Connection) -> list[dict]:
             "batchDone": int(r["batch_done"] or 0),
             "batchFailed": int(r["batch_failed"] or 0),
             "createdAt": str(r["created_at"]),
+            "startedAt": str(r["started_at"] or ""),
             "updatedAt": str(r["updated_at"]),
         }
         for r in rows
@@ -1768,7 +1769,8 @@ def run_json_queue_once() -> bool:
     conn.execute(
         """
         UPDATE json_tasks
-        SET status='running',progress=5,error_message=NULL,updated_at=CURRENT_TIMESTAMP
+        SET status='running',progress=5,error_message=NULL,
+            started_at=COALESCE(started_at, CURRENT_TIMESTAMP),updated_at=CURRENT_TIMESTAMP
         WHERE id=?
         """,
         (task_id,),

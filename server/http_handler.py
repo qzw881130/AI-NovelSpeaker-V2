@@ -784,7 +784,7 @@ class Handler(BaseHTTPRequestHandler):
             task = conn.execute(
                 """
                 SELECT id,novel_id,chapter_num,chapter_title,status,progress,error_message,
-                       created_at,updated_at,merged_result_json
+                       created_at,started_at,updated_at,merged_result_json
                 FROM json_tasks WHERE id=?
                 """,
                 (task_id,),
@@ -812,6 +812,7 @@ class Handler(BaseHTTPRequestHandler):
                     "progress": int(task["progress"] or 0),
                     "errorMessage": str(task["error_message"] or ""),
                     "createdAt": str(task["created_at"]),
+                    "startedAt": str(task["started_at"] or ""),
                     "updatedAt": str(task["updated_at"]),
                     "mergedResultJson": str(task["merged_result_json"] or ""),
                     "batches": [
@@ -1279,7 +1280,7 @@ class Handler(BaseHTTPRequestHandler):
             conn.execute(
                 """
                 UPDATE json_tasks
-                SET status='pending',progress=0,error_message=NULL,updated_at=CURRENT_TIMESTAMP
+                SET status='pending',progress=0,error_message=NULL,started_at=NULL,updated_at=CURRENT_TIMESTAMP
                 WHERE id=?
                 """,
                 (task_id,),

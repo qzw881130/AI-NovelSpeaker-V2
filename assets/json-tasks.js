@@ -183,8 +183,8 @@ function render() {
         </div>
         <p class="meta json-meta-time">${createdAtLabel} ${formatServerTime(task.createdAt || task.updatedAt)} · ${updatedAtLabel} ${formatServerTime(task.updatedAt)}${
           task.status === "running"
-            ? ` · ${elapsedLabel} <span data-elapsed-from="${task.createdAt || task.updatedAt}">${formatElapsedFrom(task.createdAt || task.updatedAt)}</span>`
-            : ` · ${elapsedLabel} ${formatElapsedBetween(task.createdAt || task.updatedAt, task.updatedAt)}`
+            ? ` · ${elapsedLabel} <span data-elapsed-from="${task.startedAt || task.createdAt || task.updatedAt}">${formatElapsedFrom(task.startedAt || task.createdAt || task.updatedAt)}</span>`
+            : ` · ${elapsedLabel} ${formatElapsedBetween(task.startedAt || task.createdAt || task.updatedAt, task.updatedAt)}`
         }</p>
         ${task.status === "failed" && task.errorMessage ? `<p class="task-error">${escapeHtml(task.errorMessage)}</p>` : ""}
         ${

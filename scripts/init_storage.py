@@ -159,6 +159,7 @@ DDL_STATEMENTS = [
         error_message TEXT,
         retry_count INTEGER NOT NULL DEFAULT 0,
         next_retry_at DATETIME,
+        started_at DATETIME,
         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY(novel_id) REFERENCES novels(id) ON DELETE CASCADE,
