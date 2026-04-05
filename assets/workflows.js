@@ -57,7 +57,9 @@ function parseWorkflowJsonNodes(jsonText) {
     const toOption = (nodeId, node) => {
       const title = String(node?._meta?.title || node?.title || "").trim();
       const classType = String(node?.class_type || node?.type || "").trim();
-      const label = title ? `#${nodeId} ${title}` : `#${nodeId} ${classType || "节点"}`;
+      const label = title
+        ? (title.startsWith(`#${nodeId}`) ? title : `#${nodeId} ${title}`)
+        : `#${nodeId} ${classType || "节点"}`;
       return { nodeId: String(nodeId), label };
     };
 

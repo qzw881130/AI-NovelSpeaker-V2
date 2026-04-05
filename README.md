@@ -15,16 +15,18 @@
 
 ## 功能概览
 
-- 小说管理：创建/编辑/删除小说，项目统计，自动刷新，打包下载真实 ZIP，支持小说级提示词与工作流绑定
+- 小说管理：创建/编辑/删除小说，项目统计，自动刷新，打包下载真实 ZIP，支持小说级提示词与工作流绑定，可刷新并缓存小说总音频时长
 - 章节管理：章节 CRUD，正文查看与复制，章节搜索，AI 转 JSON，JSON 查看/编辑/查找替换，角色查看，台词预览与生成，章节音频播放/下载/合并
 - 台词音频：支持单条生成、批量生成并进入台词任务队列，可立即或定时执行；任务页支持自动刷新、详情、播放、删除与 pending 数量显示
 - 角色库：角色管理、等级筛选、章节角色对比，支持加入/替换角色库、示例音频上传/生成、声音文本提取
 - 任务队列：JSON 任务队列与台词音频任务队列，支持状态查看、按小说筛选、自动刷新；音频合并前会提示未生成台词数量
-- 提示词与工作流：系统/用户模板管理，可复制为用户模板；内置提取声音文本、生成台词音频、生成示例音频等 ComfyUI 工作流
+- 提示词与工作流：系统/用户模板管理，可复制为用户模板；工作流按三类分组查看，支持输入输出节点配置、日志开关、系统/用户工作流切换
+- 工作流日志：记录工作流调用时间、工作流类别、工作流名称、最终提交给 ComfyUI 的 JSON 与错误日志，支持清空全部日志
+- 小说下载：提供小说章回音频下载页，展示章回编号、标题、字数、音频时长、音频大小与下载链接
 - 系统配置：ComfyUI 地址、LLM 参数、Proxy、批量文本字数、台词队列执行方式、UI 语言与时区设置
 - 多语言界面：支持 `zh-CN` / `zh-TW` / `en-US` / `ja-JP` / `ko-KR`
 - 音频体验：章节音频、台词音频、合并音频支持拖动进度条快进
-- 调试与文档：提供 ComfyUI debug 工作流、调试样例资源与“小说转有声小说”流程图
+- 调试与文档：提供 ComfyUI debug 工作流、低显存工作流样例、调试音频样例与“小说转有声小说”流程图
 
 ## 目录说明
 
@@ -35,7 +37,7 @@
 - `scripts/init_storage.py`：初始化数据库与目录
 - `prompts/xhz_system_prompt.txt`：系统提示词文件
 - `workflows/*.json`：系统内置 ComfyUI 工作流文件
-- `debug/`：ComfyUI 调试工作流与调试音频样例
+- `debug/`：ComfyUI 调试工作流截图、JSON 与调试音频样例
 - `output/`：本地导出目录（保留目录本身，忽略目录内生成文件）
 
 ## 平台安装与启动
@@ -135,22 +137,39 @@ python3 app_server.py
 
 ## ComfyUI 依赖说明
 
-### 调试工作流文件
+### 调试工作流与低显存样例
 
 - `debug/qwen3-tts-generate-character-samples-no-llm.json`：Qwen3 TTS 角色示例音频生成
 - `debug/fishaudio-s2-tts-generate-dialogue-audio.json`：Fish Audio S2 台词音频生成
 - `debug/extract-voice-text.json`：Whisper 音频转文本
+- `debug/line_audio_workflow_qwen3-tts.png`：Qwen3 TTS 低显存台词音频工作流截图
+- `debug/voice_transcribe_workflow_qwen3-asr.png`：Qwen3-ASR 低显存提取文本工作流截图
 - `debug/1-旁白.flac`：Fish Audio S2 调试工作流使用的参考音频样例
+
+### 工作流配置说明
+
+- 本项目现支持三类工作流：
+  - `生成示例音频`
+  - `生成台词音频`
+  - `提取声音文本`
+- 每个工作流都可以配置输入输出节点映射：
+  - `生成示例音频`：输入 `音色描述`、`台词`；输出 `生成的声音文件`
+  - `生成台词音频`：输入 `参考音频文件`、`台词`、`参考音频的文本`；输出 `生成的声音文件`
+  - `提取声音文本`：输入 `音频文件`；输出 `提取的文本`
+- 系统工作流使用默认映射，不允许编辑；复制为用户工作流后，会连同输入输出配置一起复制。
+- 工作流日志默认开启。开启时，系统会记录“最终提交给 ComfyUI 的工作流 JSON”；关闭时，不再记录该工作流的执行日志。
+- 工作流 JSON 既兼容 ComfyUI 的 API prompt 格式，也兼容图编辑器导出格式（`nodes/links` 结构）。
 
 ### 需要的第三方节点（仅列第三方）
 
 | 插件（第三方） | 仓库 | 本项目工作流使用到的节点 |
 | --- | --- | --- |
-| Qwen3-TTS ComfyUI | [firadiskin/qwen3-tts-comfyui](https://github.com/firadiskin/qwen3-tts-comfyui) | `FB_Qwen3TTSVoiceDesign` |
+| Qwen3-TTS ComfyUI | [firadiskin/qwen3-tts-comfyui](https://github.com/firadiskin/qwen3-tts-comfyui) | `FB_Qwen3TTSVoiceDesign`、`FB_Qwen3TTSVoiceClone` |
 | ComfyUI-FishAudioS2 | [Saganaki22/ComfyUI-FishAudioS2](https://github.com/Saganaki22/ComfyUI-FishAudioS2) | `FishS2VoiceCloneTTS` |
 | ComfyUI_Comfyroll_CustomNodes | [Suzie1/ComfyUI_Comfyroll_CustomNodes](https://github.com/Suzie1/ComfyUI_Comfyroll_CustomNodes) | `CR Text` |
 | ComfyUI-MTB | [melMass/comfy_mtb](https://github.com/melMass/comfy_mtb) | `Load Whisper (mtb)`、`Audio To Text (mtb)` |
 | ComfyUI-Custom-Scripts | [pythongosssss/ComfyUI-Custom-Scripts](https://github.com/pythongosssss/ComfyUI-Custom-Scripts) | `ShowText|pysssss` |
+| Comfyui_SynVow_Qwen3ASR | [SynVow/Comfyui_SynVow_Qwen3ASR](https://github.com/SynVow/Comfyui_SynVow_Qwen3ASR) | `Qwen3ASRLoader`、`Qwen3ASRTranscribe` |
 
 说明：`LoadAudio`、`SaveAudio`、`Text Multiline` 等节点来自 ComfyUI Core，不属于第三方节点。
 
@@ -159,10 +178,13 @@ python3 app_server.py
 - Qwen3 TTS：
   - `Qwen/Qwen3-TTS-12Hz-1.7B-Base`
   - `Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign`
+  - `Qwen3-TTS-1.7B`（低显存台词音频工作流）
 - Fish Audio S2：
   - `s2-pro-fp8`
 - Whisper 转写：
   - `large-v3`
+- Qwen3 ASR：
+  - `Qwen3-ASR-1.7B`
 
 ### 当前内置工作流与依赖对应关系
 
@@ -171,6 +193,8 @@ python3 app_server.py
 | `workflows/voice_sample_workflow.json` | 生成角色示例音频 | `FB_Qwen3TTSVoiceDesign`、`CR Prompt Text` | `Qwen/Qwen3-TTS-12Hz-1.7B-Base`、`Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign` |
 | `workflows/line_audio_workflow.json` | 生成台词音频 | `FishS2VoiceCloneTTS`、`CR Prompt Text` | `s2-pro-fp8` |
 | `workflows/voice_transcribe_workflow.json` | 从参考音频提取文本 | `Load Whisper (mtb)`、`Audio To Text (mtb)`、`ShowText|pysssss` | `large-v3` |
+| `workflows/line_audio_workflow_qwen3-tts.json` | 低显存生成台词音频 | `FB_Qwen3TTSVoiceClone`、`CR Prompt Text` | `Qwen3-TTS-1.7B` |
+| `workflows/voice_transcribe_workflow_qwen3-asr.json` | 低显存提取声音文本 | `Qwen3ASRLoader`、`Qwen3ASRTranscribe`、`ShowText|pysssss` | `Qwen3-ASR-1.7B` |
 
 ## 页面入口
 
@@ -178,7 +202,11 @@ python3 app_server.py
 - `chapters.html`：章节管理
 - `json-tasks.html`：JSON 任务
 - `audio-queue.html`：有声队列
+- `line-audio-tasks.html`：台词音频任务队列
+- `roles.html`：角色库
+- `novel-download.html`：小说下载
 - `prompts.html`：提示词管理
 - `workflows.html`：工作流管理
+- `workflow-logs.html`：工作流日志
 - `settings.html`：系统配置
 - `novel-capture.html`：小说抓取
