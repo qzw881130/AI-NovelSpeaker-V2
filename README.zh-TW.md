@@ -121,7 +121,7 @@ start.bat --port=8081
 | ComfyUI-FishAudioS2 | [Saganaki22/ComfyUI-FishAudioS2](https://github.com/Saganaki22/ComfyUI-FishAudioS2) | `FishS2VoiceCloneTTS` |
 | ComfyUI_Comfyroll_CustomNodes | [Suzie1/ComfyUI_Comfyroll_CustomNodes](https://github.com/Suzie1/ComfyUI_Comfyroll_CustomNodes) | `CR Text` |
 | ComfyUI-MTB | [melMass/comfy_mtb](https://github.com/melMass/comfy_mtb) | `Load Whisper (mtb)`、`Audio To Text (mtb)` |
-| ComfyUI-Custom-Scripts | [pythongosssss/ComfyUI-Custom-Scripts](https://github.com/pythongosssss/ComfyUI-Custom-Scripts) | `ShowText|pysssss` |
+| ComfyUI-Custom-Scripts | [pythongosssss/ComfyUI-Custom-Scripts](https://github.com/pythongosssss/ComfyUI-Custom-Scripts) | `ShowText\|pysssss` |
 | Comfyui_SynVow_Qwen3ASR | [SynVow/Comfyui_SynVow_Qwen3ASR](https://github.com/SynVow/Comfyui_SynVow_Qwen3ASR) | `Qwen3ASRLoader`、`Qwen3ASRTranscribe` |
 
 說明：`LoadAudio`、`SaveAudio`、`Text Multiline` 等節點來自 ComfyUI Core，不屬於第三方節點。
@@ -145,9 +145,9 @@ start.bat --port=8081
 | --- | --- | --- | --- |
 | `workflows/voice_sample_workflow.json` | 生成角色示例音訊 | `FB_Qwen3TTSVoiceDesign`、`CR Prompt Text` | `Qwen/Qwen3-TTS-12Hz-1.7B-Base`、`Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign` |
 | `workflows/line_audio_workflow.json` | 生成台詞音訊 | `FishS2VoiceCloneTTS`、`CR Prompt Text` | `s2-pro-fp8` |
-| `workflows/voice_transcribe_workflow.json` | 從參考音訊提取文本 | `Load Whisper (mtb)`、`Audio To Text (mtb)`、`ShowText|pysssss` | `large-v3` |
+| `workflows/voice_transcribe_workflow.json` | 從參考音訊提取文本 | `Load Whisper (mtb)`、`Audio To Text (mtb)`、`ShowText\|pysssss` | [QwenLM/Qwen3-TTS](https://github.com/QwenLM/Qwen3-TTS) |
 | `workflows/line_audio_workflow_qwen3-tts.json` | 低顯存生成台詞音訊 | `FB_Qwen3TTSVoiceClone`、`CR Prompt Text` | `Qwen3-TTS-1.7B` |
-| `workflows/voice_transcribe_workflow_qwen3-asr.json` | 低顯存提取聲音文本 | `Qwen3ASRLoader`、`Qwen3ASRTranscribe`、`ShowText|pysssss` | `Qwen3-ASR-1.7B` |
+| `workflows/voice_transcribe_workflow_qwen3-asr.json` | 低顯存提取聲音文本 | `Qwen3ASRLoader`、`Qwen3ASRTranscribe`、`ShowText\|pysssss` | `Qwen3-ASR-1.7B` |
 
 ## 頁面入口
 
