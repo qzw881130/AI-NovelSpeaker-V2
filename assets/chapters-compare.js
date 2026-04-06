@@ -173,7 +173,7 @@ function renderDiffBlocks(parsedLines, originalText) {
 
   summaryEl.textContent = exactMatch
     ? translateText("解析结果与原文完全一致")
-    : `${translateText("解析后台词行数")}: ${parsedLines.length} · ${translateText("原文字符数")}: ${comparableCount} · ${translateText("丢失")} ${missingCount} ${translateText("个")}`;
+    : `${translateText("解析后台词行数")}: ${parsedLines.length} · ${translateText("去标点后字符数")}: ${comparableCount} · ${translateText("丢失")} ${missingCount} ${translateText("个")}`;
 }
 
 function hideSelectionBubble() {

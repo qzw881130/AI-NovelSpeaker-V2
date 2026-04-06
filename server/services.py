@@ -1656,6 +1656,7 @@ def process_json_task(task_id: int) -> None:
 
         parsed_outputs: list[dict] = []
         for idx, batch_text in enumerate(batches, start=1):
+            raw = ""
             conn = db_conn()
             conn.execute(
                 """
@@ -1704,10 +1705,10 @@ def process_json_task(task_id: int) -> None:
                 conn.execute(
                     """
                     UPDATE task_batches
-                    SET status='failed',error_message=?,updated_at=CURRENT_TIMESTAMP
+                    SET status='failed',llm_response_text=?,error_message=?,updated_at=CURRENT_TIMESTAMP
                     WHERE task_id=? AND batch_index=?
                     """,
-                    (str(exc), task_id, idx),
+                    (raw, str(exc), task_id, idx),
                 )
                 conn.commit()
                 conn.close()
