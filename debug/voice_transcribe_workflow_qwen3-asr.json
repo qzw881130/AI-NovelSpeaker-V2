@@ -1,0 +1,278 @@
+{
+  "id": "3a4765b1-1b97-4a01-9882-b2234678bf4d",
+  "revision": 0,
+  "last_node_id": 21,
+  "last_link_id": 25,
+  "nodes": [
+    {
+      "id": 10,
+      "type": "Qwen3ASRLoader",
+      "pos": [
+        -146.8113836108074,
+        502.1290966585815
+      ],
+      "size": [
+        336.5584374772744,
+        58
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "model_name",
+          "name": "model_name",
+          "type": "COMBO",
+          "widget": {
+            "name": "model_name"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "label": "model",
+          "name": "model",
+          "type": "QWEN3ASR_MODEL",
+          "links": [
+            10
+          ]
+        }
+      ],
+      "title": "#10 Qwen3-ASR Loader",
+      "properties": {
+        "aux_id": "shumoLR/Comfyui_SynVow_Qwen3ASR",
+        "ver": "ddb3039bbaed4d562aae9ad616a7b6379885d155",
+        "Node name for S&R": "Qwen3ASRLoader",
+        "ue_properties": {
+          "widget_ue_connectable": {
+            "model_name": true
+          },
+          "version": "7.7",
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "Qwen3-ASR-1.7B"
+      ]
+    },
+    {
+      "id": 13,
+      "type": "ShowText|pysssss",
+      "pos": [
+        573.1619381984962,
+        524.4062501936328
+      ],
+      "size": [
+        363.2198754985577,
+        88
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "text",
+          "type": "STRING",
+          "link": 12
+        }
+      ],
+      "outputs": [
+        {
+          "label": "字符串",
+          "name": "STRING",
+          "shape": 6,
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "title": "#13 Show Text 🐍",
+      "properties": {
+        "cnr_id": "comfyui-custom-scripts",
+        "ver": "f2838ed5e59de4d73cde5c98354b87a8d3200190",
+        "Node name for S&R": "ShowText|pysssss",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "version": "7.7",
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "三位娘那里走了走，请不弃到韩家献茶。"
+      ]
+    },
+    {
+      "id": 11,
+      "type": "Qwen3ASRTranscribe",
+      "pos": [
+        217.08480678078303,
+        519.8334131224278
+      ],
+      "size": [
+        283.2199510760711,
+        89.71690153031926
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "model",
+          "name": "model",
+          "type": "QWEN3ASR_MODEL",
+          "link": 10
+        },
+        {
+          "label": "audio",
+          "name": "audio",
+          "type": "AUDIO",
+          "link": 11
+        },
+        {
+          "label": "language",
+          "name": "language",
+          "shape": 7,
+          "type": "COMBO",
+          "widget": {
+            "name": "language"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "label": "text",
+          "name": "text",
+          "type": "STRING",
+          "links": [
+            12
+          ]
+        },
+        {
+          "label": "language",
+          "name": "language",
+          "type": "STRING",
+          "links": []
+        }
+      ],
+      "title": "#11 Qwen3-ASR Transcribe",
+      "properties": {
+        "aux_id": "shumoLR/Comfyui_SynVow_Qwen3ASR",
+        "ver": "ddb3039bbaed4d562aae9ad616a7b6379885d155",
+        "Node name for S&R": "Qwen3ASRTranscribe",
+        "ue_properties": {
+          "widget_ue_connectable": {
+            "language": true
+          },
+          "version": "7.7",
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "Chinese"
+      ]
+    },
+    {
+      "id": 12,
+      "type": "LoadAudio",
+      "pos": [
+        -113.86630147106465,
+        632.0521295307819
+      ],
+      "size": [
+        270,
+        136
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "label": "音频",
+          "name": "AUDIO",
+          "type": "AUDIO",
+          "links": [
+            11
+          ]
+        }
+      ],
+      "title": "#12 Load Audio",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.11.1",
+        "Node name for S&R": "LoadAudio",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "version": "7.7",
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "142-贲四娘子 (1).flac",
+        null,
+        null
+      ]
+    }
+  ],
+  "links": [
+    [
+      10,
+      10,
+      0,
+      11,
+      0,
+      "QWEN3ASR_MODEL"
+    ],
+    [
+      11,
+      12,
+      0,
+      11,
+      1,
+      "AUDIO"
+    ],
+    [
+      12,
+      11,
+      0,
+      13,
+      0,
+      "STRING"
+    ]
+  ],
+  "groups": [
+    {
+      "id": 1,
+      "title": "https://modelscope.cn/collections/Qwen/Qwen3-ASR",
+      "bounding": [
+        -179.29162147051974,
+        143.69173965478478,
+        1129.2893654044517,
+        101.52203856749304
+      ],
+      "color": "#3f789e",
+      "font_size": 44,
+      "flags": {}
+    }
+  ],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 1.1671841070450026,
+      "offset": [
+        558.4638221123176,
+        42.04236851738675
+      ]
+    },
+    "workflowRendererVersion": "LG",
+    "ue_links": [],
+    "frontendVersion": "1.42.8",
+    "VHS_latentpreview": false,
+    "VHS_latentpreviewrate": 0,
+    "VHS_MetadataImage": true,
+    "VHS_KeepIntermediate": true,
+    "links_added_by_ue": []
+  },
+  "version": 0.4
+}
