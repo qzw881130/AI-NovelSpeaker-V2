@@ -167,13 +167,14 @@ function renderDiffBlocks(parsedLines, originalText) {
   const originalJoined = String(originalText || "").trim();
   const { aTokens, bTokens, exactMatch, comparableCount } = diffChars(parsedJoined, originalJoined);
   const missingCount = bTokens.filter((token) => token.type === "add").length;
+  const parsedCharCount = parsedLines.join("").replace(/\s+/g, "").length;
 
   parsedEl.innerHTML = `<div class="compare-block compare-rich-block">${tokensToHtml(aTokens)}</div>`;
   originalEl.innerHTML = `<div class="compare-block compare-rich-block">${tokensToHtml(bTokens)}</div>`;
 
   summaryEl.textContent = exactMatch
     ? translateText("解析结果与原文完全一致")
-    : `${translateText("解析后台词行数")}: ${parsedLines.length} · ${translateText("去标点后字符数")}: ${comparableCount} · ${translateText("丢失")} ${missingCount} ${translateText("个")}`;
+    : `${translateText("解析后台词行数")}: ${parsedLines.length} · ${translateText("解析后台词字符数")}: ${parsedCharCount} · ${translateText("去标点后字符数")}: ${comparableCount} · ${translateText("丢失")} ${missingCount} ${translateText("个")}`;
 }
 
 function hideSelectionBubble() {

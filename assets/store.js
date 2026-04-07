@@ -230,6 +230,14 @@ async function retryJsonTask(taskId) {
   return refreshCache();
 }
 
+async function retryJsonTaskBatch(taskId, batchIndex) {
+  await api(`/api/json-tasks/${Number(taskId)}/batches/${Number(batchIndex)}/retry`, {
+    method: "POST",
+    body: "{}",
+  });
+  return refreshCache();
+}
+
 async function deleteJsonTask(taskId) {
   await api(`/api/json-tasks/${Number(taskId)}`, { method: "DELETE" });
   return refreshCache();
@@ -589,6 +597,7 @@ export {
   requestConvertJson,
   saveChapterJsonOutput,
   retryJsonTask,
+  retryJsonTaskBatch,
   deleteJsonTask,
   importNovelTextChapters,
   downloadChapterAudio,

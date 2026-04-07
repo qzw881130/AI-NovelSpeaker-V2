@@ -796,7 +796,7 @@ class Handler(BaseHTTPRequestHandler):
             batches = conn.execute(
                 """
                 SELECT batch_index,input_word_count,status,error_message,
-                       input_text,llm_response_text,parsed_json_text,updated_at
+                       input_text,llm_response_text,parsed_json_text,retry_count,updated_at
                 FROM task_batches WHERE task_id=? ORDER BY batch_index ASC
                 """,
                 (task_id,),
@@ -824,6 +824,7 @@ class Handler(BaseHTTPRequestHandler):
                             "inputText": str(x["input_text"] or ""),
                             "llmResponseText": str(x["llm_response_text"] or ""),
                             "parsedJsonText": str(x["parsed_json_text"] or ""),
+                            "retryCount": int(x["retry_count"] or 0),
                             "updatedAt": str(x["updated_at"]),
                         }
                         for x in batches
@@ -1287,6 +1288,32 @@ class Handler(BaseHTTPRequestHandler):
             )
             conn.commit()
             conn.close()
+            self.send_json({"status": "ok"})
+            return
+
+        m_retry_json_batch = re.match(
+            r"^/api/json-tasks/(\d+)/batches/(\d+)/retry$", route
+        )
+        if m_retry_json_batch:
+            task_id = int(m_retry_json_batch.group(1))
+            batch_index = int(m_retry_json_batch.group(2))
+            ok, message = retry_json_task_batch(task_id, batch_index)
+            if not ok:
+                self.send_json({"error": message}, 409)
+                return
+            self.send_json({"status": "ok"})
+            return
+
+        m_retry_json_batch = re.match(
+            r"^/api/json-tasks/(\d+)/batches/(\d+)/retry$", route
+        )
+        if m_retry_json_batch:
+            task_id = int(m_retry_json_batch.group(1))
+            batch_index = int(m_retry_json_batch.group(2))
+            ok, message = retry_json_task_batch(task_id, batch_index)
+            if not ok:
+                self.send_json({"error": message}, 409)
+                return
             self.send_json({"status": "ok"})
             return
 

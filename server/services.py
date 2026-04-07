@@ -1657,6 +1657,8 @@ def process_json_task(task_id: int) -> None:
         parsed_outputs: list[dict] = []
         for idx, batch_text in enumerate(batches, start=1):
             raw = ""
+            parsed = None
+            last_exc: Exception | None = None
             conn = db_conn()
             conn.execute(
                 """
@@ -1676,31 +1678,26 @@ def process_json_task(task_id: int) -> None:
             )
             conn.commit()
             conn.close()
-            try:
-                raw = call_llm_json_parse(
-                    llm=llm,
-                    proxy_url=proxy_url,
-                    system_prompt=system_prompt,
-                    chapter_title=chapter_title,
-                    chapter_text=batch_text,
-                    batch_index=idx,
-                    batch_total=len(batches),
-                )
-                parsed = parse_model_json(raw)
-                parsed_outputs.append(parsed)
+            for attempt in range(1, 4):
+                try:
+                    raw = call_llm_json_parse(
+                        llm=llm,
+                        proxy_url=proxy_url,
+                        system_prompt=system_prompt,
+                        chapter_title=chapter_title,
+                        chapter_text=batch_text,
+                        batch_index=idx,
+                        batch_total=len(batches),
+                    )
+                    parsed = parse_model_json(raw)
+                    last_exc = None
+                    break
+                except Exception as exc:
+                    last_exc = exc
+                    if attempt < 3:
+                        time.sleep(0.8 * attempt)
 
-                conn = db_conn()
-                conn.execute(
-                    """
-                    UPDATE task_batches
-                    SET status='completed',llm_response_text=?,parsed_json_text=?,updated_at=CURRENT_TIMESTAMP
-                    WHERE task_id=? AND batch_index=?
-                    """,
-                    (raw, json.dumps(parsed, ensure_ascii=False), task_id, idx),
-                )
-                conn.commit()
-                conn.close()
-            except Exception as exc:
+            if last_exc is not None or parsed is None:
                 conn = db_conn()
                 conn.execute(
                     """
@@ -1708,11 +1705,24 @@ def process_json_task(task_id: int) -> None:
                     SET status='failed',llm_response_text=?,error_message=?,updated_at=CURRENT_TIMESTAMP
                     WHERE task_id=? AND batch_index=?
                     """,
-                    (raw, str(exc), task_id, idx),
+                    (raw, str(last_exc or "批次处理失败"), task_id, idx),
                 )
                 conn.commit()
                 conn.close()
-                raise
+                raise last_exc or RuntimeError("批次处理失败")
+
+            parsed_outputs.append(parsed)
+            conn = db_conn()
+            conn.execute(
+                """
+                UPDATE task_batches
+                SET status='completed',llm_response_text=?,parsed_json_text=?,error_message=NULL,updated_at=CURRENT_TIMESTAMP
+                WHERE task_id=? AND batch_index=?
+                """,
+                (raw, json.dumps(parsed, ensure_ascii=False), task_id, idx),
+            )
+            conn.commit()
+            conn.close()
 
         merged_obj = merge_batch_outputs(parsed_outputs)
         merged = json.dumps(merged_obj, ensure_ascii=False)
@@ -1747,6 +1757,247 @@ def process_json_task(task_id: int) -> None:
         )
         conn.commit()
         conn.close()
+
+
+def _load_json_task_context(task_id: int) -> dict:
+    conn = db_conn()
+    task = conn.execute(
+        """
+        SELECT t.id,t.novel_id,t.chapter_id,t.chapter_num,t.chapter_title,t.status,t.prompt_id,
+               n.prompt_id AS novel_prompt_id,
+               c.id AS c_id,c.title AS c_title,c.text_file_path,
+               p.content AS prompt_content
+        FROM json_tasks t
+        JOIN novels n ON n.id=t.novel_id
+        LEFT JOIN chapters c ON c.id=t.chapter_id
+        LEFT JOIN json_prompts p ON p.id=t.prompt_id
+        WHERE t.id=?
+        """,
+        (task_id,),
+    ).fetchone()
+    if not task:
+        conn.close()
+        raise RuntimeError("json task not found")
+
+    chapter_row = task
+    if chapter_row["c_id"] is None:
+        chapter_row = conn.execute(
+            """
+            SELECT id AS c_id,title AS c_title,text_file_path
+            FROM chapters WHERE novel_id=? AND chapter_num=?
+            ORDER BY id DESC LIMIT 1
+            """,
+            (int(task["novel_id"]), int(task["chapter_num"])),
+        ).fetchone()
+        if chapter_row:
+            conn.execute(
+                "UPDATE json_tasks SET chapter_id=? WHERE id=?",
+                (int(chapter_row["c_id"]), task_id),
+            )
+            conn.commit()
+
+    chapter_id = (
+        int(chapter_row["c_id"])
+        if chapter_row and chapter_row["c_id"] is not None
+        else None
+    )
+    chapter_title = (
+        str(chapter_row["c_title"])
+        if chapter_row and chapter_row["c_title"]
+        else str(task["chapter_title"] or f"第{int(task['chapter_num'])}回")
+    )
+    text_file_path = str(chapter_row["text_file_path"] or "") if chapter_row else ""
+
+    prompt_id = (
+        int(task["prompt_id"])
+        if task["prompt_id"] is not None
+        else (
+            int(task["novel_prompt_id"])
+            if task["novel_prompt_id"] is not None
+            else None
+        )
+    )
+    if prompt_id is None:
+        conn.close()
+        raise RuntimeError("novel prompt is not configured")
+
+    prompt_row = conn.execute(
+        "SELECT content FROM json_prompts WHERE id=?", (prompt_id,)
+    ).fetchone()
+    if not prompt_row:
+        conn.close()
+        raise RuntimeError("prompt not found")
+    system_prompt = str(prompt_row["content"] or "").strip()
+    if not system_prompt:
+        conn.close()
+        raise RuntimeError("prompt content is empty")
+
+    settings = fetch_settings(conn)
+    llm = settings.get("llm") or {}
+    proxy_url = str(settings.get("proxyUrl") or "")
+    model_name = str(llm.get("model") or "")
+    conn.close()
+    return {
+        "task": task,
+        "chapterId": chapter_id,
+        "chapterTitle": chapter_title,
+        "textFilePath": text_file_path,
+        "systemPrompt": system_prompt,
+        "llm": llm,
+        "proxyUrl": proxy_url,
+        "modelName": model_name,
+    }
+
+
+def _process_json_batch_once(
+    context: dict, batch_index: int, batch_text: str
+) -> tuple[str, dict]:
+    raw = ""
+    parsed = None
+    last_exc: Exception | None = None
+    for attempt in range(1, 4):
+        try:
+            raw = call_llm_json_parse(
+                llm=context["llm"],
+                proxy_url=context["proxyUrl"],
+                system_prompt=context["systemPrompt"],
+                chapter_title=context["chapterTitle"],
+                chapter_text=batch_text,
+                batch_index=batch_index,
+                batch_total=max(1, int(context.get("batchTotal") or 1)),
+            )
+            parsed = parse_model_json(raw)
+            last_exc = None
+            break
+        except Exception as exc:
+            last_exc = exc
+            if attempt < 3:
+                time.sleep(0.8 * attempt)
+    if last_exc is not None or parsed is None:
+        raise RuntimeError(str(last_exc or "批次处理失败")) from last_exc
+    return raw, parsed
+
+
+def _finalize_json_task_if_ready(task_id: int) -> bool:
+    conn = db_conn()
+    task = conn.execute(
+        "SELECT id, chapter_id FROM json_tasks WHERE id=?",
+        (task_id,),
+    ).fetchone()
+    if not task:
+        conn.close()
+        return False
+    rows = conn.execute(
+        "SELECT batch_index, status, parsed_json_text FROM task_batches WHERE task_id=? ORDER BY batch_index ASC",
+        (task_id,),
+    ).fetchall()
+    if not rows:
+        conn.close()
+        return False
+    if any(str(row["status"] or "") != "completed" for row in rows):
+        conn.close()
+        return False
+    parsed_outputs = []
+    for row in rows:
+        parsed_outputs.append(json.loads(str(row["parsed_json_text"] or "{}") or "{}"))
+    merged_obj = merge_batch_outputs(parsed_outputs)
+    merged = json.dumps(merged_obj, ensure_ascii=False)
+    conn.execute(
+        """
+        UPDATE json_tasks
+        SET status='completed',progress=100,merged_result_json=?,error_message=NULL,updated_at=CURRENT_TIMESTAMP
+        WHERE id=?
+        """,
+        (merged, task_id),
+    )
+    if task["chapter_id"] is not None:
+        conn.execute(
+            "UPDATE chapters SET has_json=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            (1 if json_payload_ready(merged_obj) else 0, int(task["chapter_id"])),
+        )
+    conn.commit()
+    conn.close()
+    return True
+
+
+def retry_json_task_batch(task_id: int, batch_index: int) -> tuple[bool, str]:
+    context = _load_json_task_context(task_id)
+    task = context["task"]
+    if str(task["status"] or "") not in {"failed", "completed"}:
+        return False, "only completed or failed task batches can be retried"
+
+    conn = db_conn()
+    batch = conn.execute(
+        "SELECT id, input_text, retry_count FROM task_batches WHERE task_id=? AND batch_index=?",
+        (task_id, batch_index),
+    ).fetchone()
+    if not batch:
+        conn.close()
+        return False, "batch not found"
+    retry_count = int(batch["retry_count"] or 0)
+    if retry_count >= 3:
+        conn.close()
+        return False, "batch retry limit reached"
+    conn.execute(
+        """
+        UPDATE task_batches
+        SET status='processing',parsed_json_text=NULL,error_message=NULL,updated_at=CURRENT_TIMESTAMP,retry_count=retry_count+1
+        WHERE task_id=? AND batch_index=?
+        """,
+        (task_id, batch_index),
+    )
+    conn.commit()
+    conn.close()
+
+    try:
+        batch_text = str(batch["input_text"] or "")
+        batch_total_conn = db_conn()
+        context["batchTotal"] = int(
+            batch_total_conn.execute(
+                "SELECT COUNT(1) AS c FROM task_batches WHERE task_id=?", (task_id,)
+            ).fetchone()["c"]
+            or 0
+        )
+        batch_total_conn.close()
+        raw, parsed = _process_json_batch_once(context, batch_index, batch_text)
+        conn = db_conn()
+        conn.execute(
+            """
+            UPDATE task_batches
+            SET status='completed',llm_response_text=?,parsed_json_text=?,error_message=NULL,updated_at=CURRENT_TIMESTAMP
+            WHERE task_id=? AND batch_index=?
+            """,
+            (raw, json.dumps(parsed, ensure_ascii=False), task_id, batch_index),
+        )
+        conn.commit()
+        conn.close()
+        merged = _finalize_json_task_if_ready(task_id)
+        if not merged:
+            conn = db_conn()
+            conn.execute(
+                "UPDATE json_tasks SET status='failed', error_message=NULL, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                (task_id,),
+            )
+            conn.commit()
+            conn.close()
+        return True, "ok"
+    except Exception as exc:
+        conn = db_conn()
+        conn.execute(
+            """
+            UPDATE task_batches
+            SET status='failed',llm_response_text=COALESCE(llm_response_text,''),error_message=?,updated_at=CURRENT_TIMESTAMP
+            WHERE task_id=? AND batch_index=?
+            """,
+            (str(exc), task_id, batch_index),
+        )
+        conn.execute(
+            "UPDATE json_tasks SET status='failed',error_message=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            (str(exc), task_id),
+        )
+        conn.commit()
+        conn.close()
+        return False, str(exc)
 
 
 def run_json_queue_once() -> bool:

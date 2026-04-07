@@ -194,6 +194,15 @@ def migrate_json_tasks_table(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE json_tasks ADD COLUMN started_at DATETIME")
 
 
+def migrate_task_batches_table(conn: sqlite3.Connection) -> None:
+    columns = conn.execute("PRAGMA table_info(task_batches)").fetchall()
+    column_names = [col[1] for col in columns]
+    if "retry_count" not in column_names:
+        conn.execute(
+            "ALTER TABLE task_batches ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0"
+        )
+
+
 def db_conn() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH, timeout=12.0)
     conn.row_factory = sqlite3.Row
@@ -219,6 +228,7 @@ def db_conn() -> sqlite3.Connection:
     migrate_chapters_table(conn)
     migrate_line_audio_tasks_table(conn)
     migrate_json_tasks_table(conn)
+    migrate_task_batches_table(conn)
     migrate_workflow_io_config_column(conn)
     migrate_workflow_logs_table(conn)
     return conn

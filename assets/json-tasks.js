@@ -1,4 +1,4 @@
-import { deleteJsonTask, fetchJsonTaskDetail, getData, retryJsonTask } from "./store.js";
+import { deleteJsonTask, fetchJsonTaskDetail, getData, retryJsonTask, retryJsonTaskBatch } from "./store.js";
 import { clearNavBadge, fmtDateTime, fmtNumber, renderNav, showPageError, toast } from "./ui.js";
 import { localizeDocumentText, t } from "./i18n.js";
 
@@ -132,9 +132,10 @@ function renderBatchDetails(taskId) {
       const key = batchKey(b);
       const shouldOpen = openSet ? openSet.has(key) : b.status === "failed";
       const err = b.errorMessage ? ` · 失败: ${escapeHtml(b.errorMessage)}` : "";
+      const canRetry = ["completed", "failed"].includes(String(data.status || ""));
       return `<details data-batch-detail="1" data-task-id="${taskId}" data-batch-key="${escapeHtml(key)}" ${shouldOpen ? "open" : ""}><summary>批次 ${b.batchIndex} · ${b.status} · ${wordsLabel} ${fmtNumber(b.inputWordCount || 0)}${err}</summary><p class="meta">${updatedLabel} ${formatServerTime(
         b.updatedAt
-      )}</p><div class="batch-block"><strong>${inputLabel}</strong><pre>${escapeHtml(b.inputText || "")}</pre></div><div class="batch-block"><strong>${llmLabel}</strong><pre>${escapeHtml(
+      )} · 重试 ${fmtNumber(b.retryCount || 0)}/3</p>${canRetry ? `<div class="card-actions"><button class="ghost-btn" data-batch-action="retry" data-task-id="${taskId}" data-batch-index="${b.batchIndex}">${t("common.retry")}</button></div>` : ""}<div class="batch-block"><strong>${inputLabel}</strong><pre>${escapeHtml(b.inputText || "")}</pre></div><div class="batch-block"><strong>${llmLabel}</strong><pre>${escapeHtml(
         b.llmResponseText || ""
       )}</pre></div><div class="batch-block"><strong>${parsedJsonLabel}</strong><pre>${escapeHtml(formatJsonPretty(b.parsedJsonText || ""))}</pre></div></details>`;
     })
@@ -226,8 +227,25 @@ function render() {
       if (!openSet.size) batchOpenStates.delete(taskId);
     });
   });
+  document.querySelectorAll("[data-batch-action]").forEach((el) => {
+    el.addEventListener("click", () => onBatchAction(el.dataset.batchAction, el.dataset.taskId, el.dataset.batchIndex));
+  });
   updateElapsedLabels();
   localizeDocumentText(document);
+}
+
+async function onBatchAction(action, taskId, batchIndex) {
+  try {
+    if (action !== "retry") return;
+    await retryJsonTaskBatch(taskId, batchIndex);
+    const detail = await fetchJsonTaskDetail(taskId);
+    taskDetails.set(String(taskId), detail);
+    currentData = await getData();
+    render();
+    toast("批次已重试");
+  } catch (err) {
+    toast(t("error.operationFailed", { msg: err.message }));
+  }
 }
 
 async function onTaskAction(action, id) {

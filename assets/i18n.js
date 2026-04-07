@@ -831,6 +831,7 @@ const STATIC_TEXT_MAP = {
   章回原文: { "en-US": "Original Chapter Text", "zh-TW": "章回原文", "ja-JP": "章回原文", "ko-KR": "원문 챕터 텍스트" },
   解析结果与原文完全一致: { "en-US": "Parsed result matches source exactly", "zh-TW": "解析結果與原文完全一致", "ja-JP": "解析結果は原文と完全一致", "ko-KR": "파싱 결과가 원문과 완전히 일치합니다" },
   解析后台词行数: { "en-US": "Parsed Lines", "zh-TW": "解析後台詞行數", "ja-JP": "解析台詞行数", "ko-KR": "파싱된 대사 줄 수" },
+  解析后台词字符数: { "en-US": "Parsed Characters", "zh-TW": "解析後台詞字元數", "ja-JP": "解析台詞文字数", "ko-KR": "파싱된 대사 문자 수" },
   原文字符数: { "en-US": "Source Characters", "zh-TW": "原文字元數", "ja-JP": "原文文字数", "ko-KR": "원문 문자 수" },
   去标点后字符数: { "en-US": "Characters Without Punctuation", "zh-TW": "去標點後字元數", "ja-JP": "句読点除外の文字数", "ko-KR": "문장부호 제외 문자 수" },
   丢失: { "en-US": "Missing", "zh-TW": "遺失", "ja-JP": "欠落", "ko-KR": "누락" },
