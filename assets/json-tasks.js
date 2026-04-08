@@ -1,6 +1,6 @@
 import { deleteJsonTask, fetchJsonTaskDetail, getData, retryJsonTask, retryJsonTaskBatch } from "./store.js";
 import { clearNavBadge, fmtDateTime, fmtNumber, renderNav, showPageError, toast } from "./ui.js";
-import { localizeDocumentText, t } from "./i18n.js";
+import { localizeDocumentText, t, translateText } from "./i18n.js";
 
 function statusLabel(status) {
   return t(`common.status.${status}`) || status;
@@ -135,7 +135,7 @@ function renderBatchDetails(taskId) {
       const canRetry = ["completed", "failed"].includes(String(data.status || ""));
       return `<details data-batch-detail="1" data-task-id="${taskId}" data-batch-key="${escapeHtml(key)}" ${shouldOpen ? "open" : ""}><summary>批次 ${b.batchIndex} · ${b.status} · ${wordsLabel} ${fmtNumber(b.inputWordCount || 0)}${err}</summary><p class="meta">${updatedLabel} ${formatServerTime(
         b.updatedAt
-      )} · 重试 ${fmtNumber(b.retryCount || 0)}/3</p>${canRetry ? `<div class="card-actions"><button class="ghost-btn" data-batch-action="retry" data-task-id="${taskId}" data-batch-index="${b.batchIndex}">${t("common.retry")}</button></div>` : ""}<div class="batch-block"><strong>${inputLabel}</strong><pre>${escapeHtml(b.inputText || "")}</pre></div><div class="batch-block"><strong>${llmLabel}</strong><pre>${escapeHtml(
+      )} · 重试 ${fmtNumber(b.retryCount || 0)}/10</p>${canRetry ? `<div class="card-actions"><button class="ghost-btn" data-batch-action="retry" data-task-id="${taskId}" data-batch-index="${b.batchIndex}">${t("common.retry")}</button></div>` : ""}<div class="batch-block"><strong>${inputLabel}</strong><pre>${escapeHtml(b.inputText || "")}</pre></div><div class="batch-block"><strong>${llmLabel}</strong><pre>${escapeHtml(
         b.llmResponseText || ""
       )}</pre></div><div class="batch-block"><strong>${parsedJsonLabel}</strong><pre>${escapeHtml(formatJsonPretty(b.parsedJsonText || ""))}</pre></div></details>`;
     })
@@ -148,7 +148,7 @@ function render() {
   const status = document.getElementById("taskStatusSelect").value;
   const createdAtLabel = t("common.createdAt");
   const updatedAtLabel = t("common.updatedAt");
-  const elapsedLabel = t("common.elapsed");
+  const elapsedLabel = translateText("本次执行耗时");
   const chapterLabel = t("章节");
   const wordsLabel = t("字数");
   const promptLabel = t("提示词");
@@ -237,6 +237,7 @@ function render() {
 async function onBatchAction(action, taskId, batchIndex) {
   try {
     if (action !== "retry") return;
+    if (!window.confirm(`确定要重试批次 ${Number(batchIndex)} 吗？`)) return;
     await retryJsonTaskBatch(taskId, batchIndex);
     const detail = await fetchJsonTaskDetail(taskId);
     taskDetails.set(String(taskId), detail);

@@ -1935,7 +1935,7 @@ def retry_json_task_batch(task_id: int, batch_index: int) -> tuple[bool, str]:
         conn.close()
         return False, "batch not found"
     retry_count = int(batch["retry_count"] or 0)
-    if retry_count >= 3:
+    if retry_count >= 10:
         conn.close()
         return False, "batch retry limit reached"
     conn.execute(
@@ -1945,6 +1945,10 @@ def retry_json_task_batch(task_id: int, batch_index: int) -> tuple[bool, str]:
         WHERE task_id=? AND batch_index=?
         """,
         (task_id, batch_index),
+    )
+    conn.execute(
+        "UPDATE json_tasks SET started_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+        (task_id,),
     )
     conn.commit()
     conn.close()

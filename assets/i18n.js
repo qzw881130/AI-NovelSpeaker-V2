@@ -834,6 +834,7 @@ const STATIC_TEXT_MAP = {
   解析后台词字符数: { "en-US": "Parsed Characters", "zh-TW": "解析後台詞字元數", "ja-JP": "解析台詞文字数", "ko-KR": "파싱된 대사 문자 수" },
   原文字符数: { "en-US": "Source Characters", "zh-TW": "原文字元數", "ja-JP": "原文文字数", "ko-KR": "원문 문자 수" },
   去标点后字符数: { "en-US": "Characters Without Punctuation", "zh-TW": "去標點後字元數", "ja-JP": "句読点除外の文字数", "ko-KR": "문장부호 제외 문자 수" },
+  本次执行耗时: { "en-US": "Current Run Time", "zh-TW": "本次執行耗時", "ja-JP": "今回の実行時間", "ko-KR": "이번 실행 시간" },
   丢失: { "en-US": "Missing", "zh-TW": "遺失", "ja-JP": "欠落", "ko-KR": "누락" },
   个: { "en-US": "chars", "zh-TW": "個", "ja-JP": "文字", "ko-KR": "개" },
   原文段落数: { "en-US": "Source Paragraphs", "zh-TW": "原文段落數", "ja-JP": "원문 단락 수", "ko-KR": "원문 단락 수" },
