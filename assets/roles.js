@@ -13,6 +13,7 @@ import {
   updateRole,
   updateRoleLevel,
   duplicateRole,
+  createRoleAlias,
   deleteRole,
   uploadRoleSampleAudio,
   generateRoleSampleAudio,
@@ -25,6 +26,7 @@ let activeNovel = null;
 let roleItems = [];
 let roleModalMode = "create";
 let editingRoleId = null;
+let aliasSourceRoleId = null;
 let roleAudioBase64 = "";
 let chapterItems = [];
 let chapterRoleNamesCache = new Map();
@@ -379,6 +381,7 @@ function renderRolesTable() {
           <button class="ghost-btn btn-sm role-json-btn" data-role-id="${role.id}" type="button" title="${translateText("复制角色JSON")}" aria-label="${translateText("复制角色JSON")}">{ }</button>
           <button class="ghost-btn btn-sm save-role-btn" data-role-id="${role.id}" type="button">${translateText("保存")}</button>
           <button class="ghost-btn btn-sm duplicate-role-btn" data-role-id="${role.id}" type="button">${translateText("复制")}</button>
+          <button class="ghost-btn btn-sm alias-role-btn" data-role-id="${role.id}" data-role-name="${escapeHtml(role.name || "")}" type="button">增加别名</button>
           <button class="ghost-btn btn-sm danger delete-role-btn" data-role-id="${role.id}" data-role-name="${escapeHtml(role.name || "")}" type="button">${translateText("删除")}</button>
         </div>
       </td>
@@ -478,6 +481,15 @@ function renderRolesTable() {
       } finally {
         btn.disabled = false;
       }
+    });
+  }
+
+  for (const btn of tbody.querySelectorAll(".alias-role-btn")) {
+    btn.addEventListener("click", () => {
+      aliasSourceRoleId = Number(btn.dataset.roleId || 0);
+      const currentName = String(btn.dataset.roleName || "");
+      document.getElementById("roleAliasNameInput").value = currentName ? `${currentName}-别名` : "";
+      document.getElementById("roleAliasModal").showModal();
     });
   }
 
@@ -741,6 +753,26 @@ function bindActions() {
 
   document.getElementById("roleCancelBtn").addEventListener("click", () => {
     document.getElementById("roleModal").close();
+  });
+  document.getElementById("roleAliasCancelBtn").addEventListener("click", () => {
+    document.getElementById("roleAliasModal").close();
+  });
+  document.getElementById("roleAliasForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const aliasName = String(document.getElementById("roleAliasNameInput").value || "").trim();
+    if (!aliasSourceRoleId || !aliasName) {
+      toast("别名不能为空");
+      return;
+    }
+    try {
+      const result = await createRoleAlias(activeNovel.id, aliasSourceRoleId, aliasName);
+      document.getElementById("roleAliasModal").close();
+      roleItems.push(result.role);
+      setRolesPageStatus(`已增加别名: ${result.role?.name || aliasName}`);
+      await refreshRolesPage();
+    } catch (err) {
+      toast(err.message || "增加别名失败");
+    }
   });
 
   document.getElementById("roleForm").addEventListener("submit", (e) => {

@@ -23,6 +23,7 @@ from .services import (
     parse_datetime_utc,
     update_workflow_log_error,
     update_workflow_log_json,
+    workflow_json_to_prompt_json,
 )
 
 
@@ -786,7 +787,7 @@ def process_line_audio_task(task_id: int) -> None:
                 workflow_category,
                 workflow_log_enabled,
             ) = _get_line_audio_workflow_info(novel_id)
-            workflow = deepcopy(workflow_json)
+            workflow = workflow_json_to_prompt_json(deepcopy(workflow_json))
             if not workflow:
                 raise RuntimeError("台词音频工作流未配置")
             if workflow_log_enabled:

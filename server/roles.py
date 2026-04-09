@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import random
 import re
 import time
 from copy import deepcopy
@@ -25,6 +26,8 @@ from .services import (
     comfy_upload_input_file,
     create_workflow_log,
     update_workflow_log_error,
+    update_workflow_log_json,
+    workflow_json_to_prompt_json,
 )
 
 
@@ -48,6 +51,25 @@ def _get_novel_english_dir(conn, novel_id: int) -> str:
         "SELECT english_dir FROM novels WHERE id=?", (novel_id,)
     ).fetchone()
     return str(row["english_dir"] or "").strip() if row else ""
+
+
+def _is_sample_audio_referenced_elsewhere(
+    conn, sample_audio_path: str, exclude_role_id: int | None = None
+) -> bool:
+    path = str(sample_audio_path or "").strip()
+    if not path:
+        return False
+    if exclude_role_id is None:
+        row = conn.execute(
+            "SELECT 1 FROM roles WHERE sample_audio_path=? LIMIT 1",
+            (path,),
+        ).fetchone()
+    else:
+        row = conn.execute(
+            "SELECT 1 FROM roles WHERE sample_audio_path=? AND id<>? LIMIT 1",
+            (path, int(exclude_role_id)),
+        ).fetchone()
+    return bool(row)
 
 
 def _normalize_role_level(level: object) -> int:
@@ -235,6 +257,13 @@ def update_role_fields(
 
     # Delete old audio file if sample text changed
     if should_clear_audio and old_audio_path:
+        conn = db_conn()
+        still_referenced = _is_sample_audio_referenced_elsewhere(
+            conn, old_audio_path, role_id
+        )
+        conn.close()
+        if still_referenced:
+            return True, "saved", _row_to_role(saved)
         old_full_path = (ROOT_DIR / old_audio_path).resolve()
         _remove_cached_playable_variants(old_full_path)
 
@@ -290,6 +319,41 @@ def duplicate_role(role_id: int) -> tuple[bool, str, dict | None]:
     return True, "duplicated", _row_to_role(saved)
 
 
+def create_role_alias(role_id: int, alias_name: str) -> tuple[bool, str, dict | None]:
+    conn = db_conn()
+    row = conn.execute("SELECT * FROM roles WHERE id=?", (role_id,)).fetchone()
+    if not row:
+        conn.close()
+        return False, "Role not found", None
+
+    novel_id = int(row["novel_id"])
+    target_name = str(alias_name or "").strip()
+    if not target_name:
+        conn.close()
+        return False, "Alias name cannot be empty", None
+
+    dup = conn.execute(
+        "SELECT 1 FROM roles WHERE novel_id=? AND name=? LIMIT 1",
+        (novel_id, target_name),
+    ).fetchone()
+    if dup:
+        conn.close()
+        return False, f"duplicate role name: {target_name}", None
+
+    cur = conn.execute(
+        """
+        INSERT INTO roles(novel_id, name, instruct, sample_text, sample_audio_path, sample_audio_source, role_level)
+        SELECT novel_id, ?, instruct, sample_text, sample_audio_path, sample_audio_source, role_level FROM roles WHERE id=?
+        """,
+        (target_name, role_id),
+    )
+    conn.commit()
+    new_id = int(cur.lastrowid or 0)
+    saved = conn.execute("SELECT * FROM roles WHERE id=?", (new_id,)).fetchone()
+    conn.close()
+    return True, "aliased", _row_to_role(saved)
+
+
 def delete_role(role_id: int) -> tuple[bool, str]:
     conn = db_conn()
     row = conn.execute("SELECT * FROM roles WHERE id=?", (role_id,)).fetchone()
@@ -303,6 +367,13 @@ def delete_role(role_id: int) -> tuple[bool, str]:
     conn.close()
 
     if audio_path:
+        conn = db_conn()
+        still_referenced = _is_sample_audio_referenced_elsewhere(
+            conn, audio_path, role_id
+        )
+        conn.close()
+        if still_referenced:
+            return True, "deleted"
         path = (ROOT_DIR / audio_path).resolve()
         root_path = ROOT_DIR.resolve()
         if root_path in path.parents and path != root_path:
@@ -481,7 +552,7 @@ def generate_role_sample_audio(
 
     # 查找并修改工作流中的节点
     # 假设工作流中有用于instruct和text的节点
-    workflow_copy = deepcopy(workflow)
+    workflow_copy = workflow_json_to_prompt_json(deepcopy(workflow))
     log_id = 0
 
     # 尝试找到instruct节点（通常是描述音色的prompt）
@@ -519,6 +590,13 @@ def generate_role_sample_audio(
     if not save_node_found:
         return False, "Workflow missing SaveAudio node", None, workflow_copy
 
+    for node in workflow_copy.values():
+        if not isinstance(node, dict):
+            continue
+        inputs = node.get("inputs", {})
+        if "seed" in inputs:
+            inputs["seed"] = random.randint(0, 2**63 - 1)
+
     # 获取ComfyUI配置
     settings = fetch_settings(db_conn())
     comfy_url = str(settings.get("comfyUrl") or "").strip()
@@ -533,6 +611,7 @@ def generate_role_sample_audio(
                 workflow_name or "生成示例音频",
                 workflow_copy,
             )
+            update_workflow_log_json(log_id, workflow_copy)
         result = comfy_request_json(
             comfy_url=comfy_url,
             path="/prompt",
@@ -785,7 +864,7 @@ def extract_role_sample_text(
         return False, f"Failed to upload audio to ComfyUI: {str(e)}", None
 
     # 修改工作流节点
-    workflow_copy = deepcopy(workflow)
+    workflow_copy = workflow_json_to_prompt_json(deepcopy(workflow))
     log_id = 0
     input_node_id = (
         str(

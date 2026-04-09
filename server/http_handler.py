@@ -10,6 +10,7 @@ from .roles import (
     update_role_fields,
     update_role_level,
     duplicate_role,
+    create_role_alias,
     delete_role,
     save_role_sample_audio,
     generate_role_sample_audio,
@@ -1629,6 +1630,19 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": msg}, code)
                 return
             self.send_json({"status": "ok", "text": text})
+            return
+
+        m_role_alias = re.match(r"^/api/novels/(\d+)/roles/(\d+)/alias$", route)
+        if m_role_alias and self.command == "POST":
+            body = self.read_json()
+            ok, msg, role = create_role_alias(
+                int(m_role_alias.group(2)),
+                str(body.get("aliasName") or ""),
+            )
+            if not ok:
+                self.send_json({"error": msg}, 409)
+                return
+            self.send_json({"status": msg, "role": role})
             return
 
         # 应用角色到全部章节

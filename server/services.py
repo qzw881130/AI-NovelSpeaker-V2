@@ -419,6 +419,105 @@ def update_workflow_log_json(log_id: int, workflow_json: dict | str) -> None:
     conn.close()
 
 
+WORKFLOW_WIDGET_KEY_FALLBACKS: dict[str, list[str]] = {
+    "CR Prompt Text": ["prompt"],
+    "Qwen3ASRLoader": ["model_name"],
+    "Qwen3ASRTranscribe": ["language"],
+    "FB_Qwen3TTSVoiceClone": [
+        "voice_clone_prompt",
+        "model_choice",
+        "device",
+        "precision",
+        "language",
+        "config",
+        "seed",
+        "control_after_generate",
+        "max_new_tokens",
+        "top_p",
+        "top_k",
+        "temperature",
+        "repetition_penalty",
+        "x_vector_only",
+        "attention",
+        "unload_model_after_generate",
+        "custom_model_path",
+    ],
+}
+
+
+def workflow_json_to_prompt_json(workflow: dict) -> dict:
+    if not isinstance(workflow, dict):
+        return {}
+    if workflow and all(str(key).isdigit() for key in workflow.keys()):
+        return deepcopy(workflow)
+    nodes = workflow.get("nodes")
+    links = workflow.get("links")
+    if not isinstance(nodes, list) or not isinstance(links, list):
+        return deepcopy(workflow)
+
+    link_map: dict[int, list] = {}
+    for item in links:
+        if isinstance(item, list) and len(item) >= 4:
+            try:
+                link_map[int(item[0])] = item
+            except Exception:
+                continue
+
+    prompt: dict[str, dict] = {}
+    for node in nodes:
+        if not isinstance(node, dict) or node.get("id") is None:
+            continue
+        node_id = str(node.get("id"))
+        properties = node.get("properties") or {}
+        class_type = str(
+            properties.get("Node name for S&R")
+            or node.get("type")
+            or node.get("class_type")
+            or ""
+        ).strip()
+        prompt_node = {
+            "inputs": {},
+            "class_type": class_type,
+            "_meta": {"title": str(node.get("title") or "")},
+        }
+
+        widget_keys = []
+        for input_item in node.get("inputs") or []:
+            if not isinstance(input_item, dict):
+                continue
+            widget = input_item.get("widget") or {}
+            widget_name = str(widget.get("name") or "").strip()
+            if widget_name:
+                widget_keys.append(widget_name)
+
+        fallback_widget_keys = WORKFLOW_WIDGET_KEY_FALLBACKS.get(class_type)
+        if fallback_widget_keys:
+            widget_keys = fallback_widget_keys
+        elif not widget_keys:
+            widget_keys = []
+
+        for key, value in zip(widget_keys, list(node.get("widgets_values") or [])):
+            prompt_node["inputs"][key] = value
+
+        for input_item in node.get("inputs") or []:
+            if not isinstance(input_item, dict):
+                continue
+            link_id = input_item.get("link")
+            if link_id is None:
+                continue
+            link_info = link_map.get(int(link_id))
+            if not link_info:
+                continue
+            input_name = str(input_item.get("name") or "").strip()
+            if not input_name:
+                continue
+            prompt_node["inputs"][input_name] = [str(link_info[1]), int(link_info[2])]
+
+        prompt[node_id] = prompt_node
+
+    return prompt
+
+
 def list_workflow_logs(conn: sqlite3.Connection, limit: int = 500) -> list[dict]:
     rows = conn.execute(
         "SELECT id, workflow_category, workflow_name, workflow_json, error_log, created_at, updated_at FROM comfy_workflow_logs ORDER BY id DESC LIMIT ?",

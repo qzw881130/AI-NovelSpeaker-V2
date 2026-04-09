@@ -473,6 +473,14 @@ async function duplicateRole(novelId, roleId) {
   return res;
 }
 
+async function createRoleAlias(novelId, roleId, aliasName) {
+  const res = await api(`/api/novels/${Number(novelId)}/roles/${Number(roleId)}/alias`, {
+    method: "POST",
+    body: JSON.stringify({ aliasName: String(aliasName || "").trim() }),
+  });
+  return res;
+}
+
 async function deleteRole(novelId, roleId) {
   await api(`/api/novels/${Number(novelId)}/roles/${Number(roleId)}`, { method: "DELETE" });
 }
@@ -621,6 +629,7 @@ export {
   updateRole,
   updateRoleLevel,
   duplicateRole,
+  createRoleAlias,
   deleteRole,
   uploadRoleSampleAudio,
   generateRoleSampleAudio,
