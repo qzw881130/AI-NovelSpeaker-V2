@@ -24,6 +24,12 @@ const DEFAULT_SETTINGS = {
     mode: "immediate",
     scheduledAt: "",
   },
+  copyrightAudio: {
+    introEnabled: false,
+    introPath: "",
+    outroEnabled: false,
+    outroPath: "",
+  },
 };
 
 let cache = {
@@ -50,6 +56,10 @@ function normalizeSettings(raw) {
     lineAudioQueue: {
       ...DEFAULT_SETTINGS.lineAudioQueue,
       ...(next.lineAudioQueue || {}),
+    },
+    copyrightAudio: {
+      ...DEFAULT_SETTINGS.copyrightAudio,
+      ...(next.copyrightAudio || {}),
     },
   };
 }

@@ -161,6 +161,7 @@ function load(settings) {
   const llm = settings.llm || {};
   const ui = settings.ui || {};
   const lineAudioQueue = settings.lineAudioQueue || {};
+  const copyrightAudio = settings.copyrightAudio || {};
   document.getElementById("comfyUrl").value = settings.comfyUrl || "";
   document.getElementById("proxyUrl").value = settings.proxyUrl || "";
   document.getElementById("llmProvider").value = llm.provider || "grok";
@@ -194,8 +195,42 @@ function load(settings) {
     ? "scheduled"
     : "immediate";
   document.getElementById("lineAudioQueueScheduledAt").value = toLocalDateTimeValue(lineAudioQueue.scheduledAt || "");
+  document.getElementById("copyrightIntroEnabled").checked = Boolean(copyrightAudio.introEnabled);
+  document.getElementById("copyrightOutroEnabled").checked = Boolean(copyrightAudio.outroEnabled);
+  applyCopyrightAudioState("intro", String(copyrightAudio.introPath || ""));
+  applyCopyrightAudioState("outro", String(copyrightAudio.outroPath || ""));
   syncLineAudioQueueModeVisibility();
   syncOllamaFieldVisibility();
+}
+
+function applyCopyrightAudioState(kind, path) {
+  const normalized = String(path || "").trim();
+  const player = document.getElementById(`copyright${kind === "intro" ? "Intro" : "Outro"}Player`);
+  const status = document.getElementById(`copyright${kind === "intro" ? "Intro" : "Outro"}Status`);
+  player.dataset.path = normalized;
+  player.classList.toggle("hidden", !normalized);
+  player.src = normalized ? `/api/settings/copyright-audio/${kind}/file?v=${Date.now()}` : "";
+  status.textContent = normalized ? "已上传音频" : "未上传音频";
+}
+
+async function uploadCopyrightAudio(kind, file) {
+  const buffer = await file.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  bytes.forEach((b) => {
+    binary += String.fromCharCode(b);
+  });
+  const audioBase64 = btoa(binary);
+  const res = await fetch(`/api/settings/copyright-audio/${kind}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ audioBase64, fileName: file.name }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || `HTTP ${res.status}`);
+  }
+  return String(data.path || "");
 }
 
 function toLocalDateTimeValue(raw) {
@@ -273,6 +308,12 @@ function readSettingsForm() {
       scheduledAt: document.getElementById("lineAudioQueueMode").value === "scheduled"
         ? toUtcIso(document.getElementById("lineAudioQueueScheduledAt").value)
         : "",
+    },
+    copyrightAudio: {
+      introEnabled: document.getElementById("copyrightIntroEnabled").checked,
+      introPath: document.getElementById("copyrightIntroPlayer").src ? document.getElementById("copyrightIntroPlayer").dataset.path || "" : "",
+      outroEnabled: document.getElementById("copyrightOutroEnabled").checked,
+      outroPath: document.getElementById("copyrightOutroPlayer").src ? document.getElementById("copyrightOutroPlayer").dataset.path || "" : "",
     },
   };
 }
@@ -374,6 +415,47 @@ function bindEvents() {
     markLlmDirty();
   });
   document.getElementById("lineAudioQueueScheduledAt").addEventListener("change", markLlmDirty);
+  document.getElementById("copyrightIntroEnabled").addEventListener("change", markLlmDirty);
+  document.getElementById("copyrightOutroEnabled").addEventListener("change", markLlmDirty);
+
+  document.getElementById("uploadCopyrightIntroBtn").addEventListener("click", () => {
+    document.getElementById("copyrightIntroFile").click();
+  });
+  document.getElementById("uploadCopyrightOutroBtn").addEventListener("click", () => {
+    document.getElementById("copyrightOutroFile").click();
+  });
+  document.getElementById("copyrightIntroFile").addEventListener("change", async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const path = await uploadCopyrightAudio("intro", file);
+      const player = document.getElementById("copyrightIntroPlayer");
+      player.dataset.path = path;
+      applyCopyrightAudioState("intro", path);
+      toast("章回开头申明音频已上传");
+      markLlmDirty();
+    } catch (err) {
+      toast(err.message);
+    } finally {
+      event.target.value = "";
+    }
+  });
+  document.getElementById("copyrightOutroFile").addEventListener("change", async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const path = await uploadCopyrightAudio("outro", file);
+      const player = document.getElementById("copyrightOutroPlayer");
+      player.dataset.path = path;
+      applyCopyrightAudioState("outro", path);
+      toast("章回结尾申明音频已上传");
+      markLlmDirty();
+    } catch (err) {
+      toast(err.message);
+    } finally {
+      event.target.value = "";
+    }
+  });
 
   document.getElementById("saveSettingsBtn").addEventListener("click", async () => {
     const payload = readSettingsForm();

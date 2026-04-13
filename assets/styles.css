@@ -1404,6 +1404,51 @@ menu {
   padding-bottom: 6px;
 }
 
+.copyright-audio-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.copyright-audio-item {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fffdf8;
+}
+
+.copyright-audio-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.copyright-audio-inline {
+  align-items: center;
+}
+
+.copyright-audio-actions-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: nowrap;
+  margin-left: auto;
+}
+
+.copyright-audio-actions-row audio {
+  width: 220px;
+}
+
+.switch-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .code-block {
   margin: 0;
   max-height: 54vh;

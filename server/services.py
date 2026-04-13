@@ -880,6 +880,14 @@ def fetch_settings(conn: sqlite3.Connection) -> dict:
                 kv.get("line_audio_queue_scheduled_at", "") or ""
             ).strip(),
         },
+        "copyrightAudio": {
+            "introEnabled": str(kv.get("copyright_audio_intro_enabled", "0") or "0")
+            == "1",
+            "introPath": str(kv.get("copyright_audio_intro_path", "") or "").strip(),
+            "outroEnabled": str(kv.get("copyright_audio_outro_enabled", "0") or "0")
+            == "1",
+            "outroPath": str(kv.get("copyright_audio_outro_path", "") or "").strip(),
+        },
     }
 
 

@@ -136,6 +136,36 @@
           <p class="caption">台词预览页点击“生成音频 / 批量生成所有”时，将按这里的设置进入台词队列。</p>
         </section>
 
+        <section class="panel form-panel">
+          <h2>版权音频申明</h2>
+          <div class="copyright-audio-grid">
+            <div class="copyright-audio-item">
+              <div class="copyright-audio-head copyright-audio-inline">
+                <strong>章回开头</strong>
+                <div class="audio-upload-row copyright-audio-actions-row">
+                  <label class="switch-row"><input id="copyrightIntroEnabled" type="checkbox" /> <span>开启</span></label>
+                  <input id="copyrightIntroFile" type="file" accept="audio/*,.flac,.wav,.mp3,.m4a,.aac" class="hidden" />
+                  <button id="uploadCopyrightIntroBtn" class="ghost-btn" type="button">上传</button>
+                  <audio id="copyrightIntroPlayer" controls class="hidden"></audio>
+                  <span id="copyrightIntroStatus" class="caption"></span>
+                </div>
+              </div>
+            </div>
+            <div class="copyright-audio-item">
+              <div class="copyright-audio-head copyright-audio-inline">
+                <strong>章回结尾</strong>
+                <div class="audio-upload-row copyright-audio-actions-row">
+                  <label class="switch-row"><input id="copyrightOutroEnabled" type="checkbox" /> <span>开启</span></label>
+                  <input id="copyrightOutroFile" type="file" accept="audio/*,.flac,.wav,.mp3,.m4a,.aac" class="hidden" />
+                  <button id="uploadCopyrightOutroBtn" class="ghost-btn" type="button">上传</button>
+                  <audio id="copyrightOutroPlayer" controls class="hidden"></audio>
+                  <span id="copyrightOutroStatus" class="caption"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <section class="settings-actions-bottom">
           <button class="primary-btn" id="saveSettingsBtn" type="button">保存配置</button>
         </section>

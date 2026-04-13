@@ -1065,6 +1065,51 @@ def merge_chapter_line_audio(
     if missing_count > 0:
         return False, f"还有 {missing_count} 条台词未生成音频", None
 
+    settings_conn = db_conn()
+    settings = fetch_settings(settings_conn)
+    settings_conn.close()
+    copyright_audio = settings.get("copyrightAudio") or {}
+
+    intro_path = None
+    intro_rel = str(copyright_audio.get("introPath") or "").strip()
+    if copyright_audio.get("introEnabled") and intro_rel:
+        candidate = (ROOT_DIR / intro_rel).resolve()
+        if candidate.exists() and candidate.is_file():
+            intro_path = candidate
+
+    outro_path = None
+    outro_rel = str(copyright_audio.get("outroPath") or "").strip()
+    if copyright_audio.get("outroEnabled") and outro_rel:
+        candidate = (ROOT_DIR / outro_rel).resolve()
+        if candidate.exists() and candidate.is_file():
+            outro_path = candidate
+
+    def prepare_merge_audio(
+        source_path: Path, target_path: Path
+    ) -> tuple[bool, str, Path | None]:
+        try:
+            subprocess.run(
+                [
+                    "ffmpeg",
+                    "-y",
+                    "-i",
+                    str(source_path),
+                    "-ar",
+                    "44100",
+                    "-ac",
+                    "1",
+                    "-c:a",
+                    "flac",
+                    str(target_path),
+                ],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            return True, "ok", target_path
+        except (subprocess.CalledProcessError, FileNotFoundError) as exc:
+            return False, str(exc), None
+
     # 创建间隔静音文件
     temp_dir.mkdir(parents=True, exist_ok=True)
     silence_path = temp_dir / "__gap_500ms.flac"
@@ -1089,13 +1134,40 @@ def merge_chapter_line_audio(
         except (subprocess.CalledProcessError, FileNotFoundError) as exc:
             return False, f"创建静音文件失败: {exc}", None
 
+    if intro_path is not None:
+        ok, msg, normalized_intro = prepare_merge_audio(
+            intro_path,
+            temp_dir / "__intro_normalized.flac",
+        )
+        if not ok or normalized_intro is None:
+            return False, f"处理章回开头音频失败: {msg}", None
+        intro_path = normalized_intro
+
+    if outro_path is not None:
+        ok, msg, normalized_outro = prepare_merge_audio(
+            outro_path,
+            temp_dir / "__outro_normalized.flac",
+        )
+        if not ok or normalized_outro is None:
+            return False, f"处理章回结尾音频失败: {msg}", None
+        outro_path = normalized_outro
+
+    def concat_file_line(path: Path) -> str:
+        safe = str(path).replace("'", "'\\''")
+        return f"file '{safe}'\n"
+
     # 创建合并列表文件
     concat_list_path = temp_dir / "__concat_list.txt"
     with concat_list_path.open("w", encoding="utf-8") as fp:
+        if intro_path is not None:
+            fp.write(concat_file_line(intro_path))
+            fp.write(concat_file_line(silence_path))
         for idx, path in enumerate(files):
-            fp.write(f"file '{str(path)}'\n")
-            if idx < len(files) - 1:
-                fp.write(f"file '{str(silence_path)}'\n")
+            fp.write(concat_file_line(path))
+            if idx < len(files) - 1 or outro_path is not None:
+                fp.write(concat_file_line(silence_path))
+        if outro_path is not None:
+            fp.write(concat_file_line(outro_path))
 
     # 执行合并
     output_dir = _novel_audio_output_dir(english_dir)
