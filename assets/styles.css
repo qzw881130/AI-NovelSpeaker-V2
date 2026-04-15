@@ -1775,6 +1775,21 @@ menu {
   gap: 6px;
 }
 
+.text-fix-controls {
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1.15fr) auto;
+  align-items: end;
+}
+
+.text-fix-actions {
+  flex-wrap: nowrap;
+  align-self: end;
+  padding-bottom: 2px;
+}
+
+.text-fix-controls label {
+  min-width: 0;
+}
+
 .service-row {
   display: grid;
   grid-template-columns: 1fr auto auto;
@@ -1863,6 +1878,15 @@ menu {
 
   .form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .text-fix-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .text-fix-actions {
+    flex-wrap: wrap;
+    padding-bottom: 0;
   }
 
   .workflow-io-grid {
