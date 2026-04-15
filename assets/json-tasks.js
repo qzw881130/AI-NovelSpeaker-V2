@@ -135,7 +135,7 @@ function renderBatchDetails(taskId) {
       const canRetry = ["completed", "failed"].includes(String(data.status || ""));
       return `<details data-batch-detail="1" data-task-id="${taskId}" data-batch-key="${escapeHtml(key)}" ${shouldOpen ? "open" : ""}><summary>批次 ${b.batchIndex} · ${b.status} · ${wordsLabel} ${fmtNumber(b.inputWordCount || 0)}${err}</summary><p class="meta">${updatedLabel} ${formatServerTime(
         b.updatedAt
-      )} · 重试 ${fmtNumber(b.retryCount || 0)}/10</p>${canRetry ? `<div class="card-actions"><button class="ghost-btn" data-batch-action="retry" data-task-id="${taskId}" data-batch-index="${b.batchIndex}">${t("common.retry")}</button></div>` : ""}<div class="batch-block"><strong>${inputLabel}</strong><pre>${escapeHtml(b.inputText || "")}</pre></div><div class="batch-block"><strong>${llmLabel}</strong><pre>${escapeHtml(
+      )} · 自动重试 ${fmtNumber(b.autoRetryCount || 0)}/3 · 手动重试 ${fmtNumber(b.retryCount || 0)}/10</p>${canRetry ? `<div class="card-actions"><button class="ghost-btn" data-batch-action="retry" data-task-id="${taskId}" data-batch-index="${b.batchIndex}">${t("common.retry")}</button></div>` : ""}<div class="batch-block"><strong>${inputLabel}</strong><pre>${escapeHtml(b.inputText || "")}</pre></div><div class="batch-block"><strong>${llmLabel}</strong><pre>${escapeHtml(
         b.llmResponseText || ""
       )}</pre></div><div class="batch-block"><strong>${parsedJsonLabel}</strong><pre>${escapeHtml(formatJsonPretty(b.parsedJsonText || ""))}</pre></div></details>`;
     })

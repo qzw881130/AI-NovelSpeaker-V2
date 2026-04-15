@@ -798,7 +798,7 @@ class Handler(BaseHTTPRequestHandler):
             batches = conn.execute(
                 """
                 SELECT batch_index,input_word_count,status,error_message,
-                       input_text,llm_response_text,parsed_json_text,retry_count,updated_at
+                       input_text,llm_response_text,parsed_json_text,retry_count,auto_retry_count,updated_at
                 FROM task_batches WHERE task_id=? ORDER BY batch_index ASC
                 """,
                 (task_id,),
@@ -827,6 +827,7 @@ class Handler(BaseHTTPRequestHandler):
                             "llmResponseText": str(x["llm_response_text"] or ""),
                             "parsedJsonText": str(x["parsed_json_text"] or ""),
                             "retryCount": int(x["retry_count"] or 0),
+                            "autoRetryCount": int(x["auto_retry_count"] or 0),
                             "updatedAt": str(x["updated_at"]),
                         }
                         for x in batches

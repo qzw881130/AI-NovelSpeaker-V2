@@ -1770,7 +1770,7 @@ def process_json_task(task_id: int) -> None:
             conn.execute(
                 """
                 UPDATE task_batches
-                SET status='processing',updated_at=CURRENT_TIMESTAMP
+                SET status='processing',updated_at=CURRENT_TIMESTAMP,auto_retry_count=0
                 WHERE task_id=? AND batch_index=?
                 """,
                 (task_id, idx),
@@ -1801,6 +1801,13 @@ def process_json_task(task_id: int) -> None:
                     break
                 except Exception as exc:
                     last_exc = exc
+                    conn = db_conn()
+                    conn.execute(
+                        "UPDATE task_batches SET auto_retry_count=?, updated_at=CURRENT_TIMESTAMP WHERE task_id=? AND batch_index=?",
+                        (attempt, task_id, idx),
+                    )
+                    conn.commit()
+                    conn.close()
                     if attempt < 3:
                         time.sleep(0.8 * attempt)
 
@@ -2045,14 +2052,14 @@ def retry_json_task_batch(task_id: int, batch_index: int) -> tuple[bool, str]:
     if retry_count >= 10:
         conn.close()
         return False, "batch retry limit reached"
-    conn.execute(
-        """
-        UPDATE task_batches
-        SET status='processing',parsed_json_text=NULL,error_message=NULL,updated_at=CURRENT_TIMESTAMP,retry_count=retry_count+1
-        WHERE task_id=? AND batch_index=?
-        """,
-        (task_id, batch_index),
-    )
+        conn.execute(
+            """
+            UPDATE task_batches
+            SET status='processing',parsed_json_text=NULL,error_message=NULL,updated_at=CURRENT_TIMESTAMP,retry_count=retry_count+1,auto_retry_count=0
+            WHERE task_id=? AND batch_index=?
+            """,
+            (task_id, batch_index),
+        )
     conn.execute(
         "UPDATE json_tasks SET started_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=?",
         (task_id,),

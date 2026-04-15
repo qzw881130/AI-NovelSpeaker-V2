@@ -201,6 +201,10 @@ def migrate_task_batches_table(conn: sqlite3.Connection) -> None:
         conn.execute(
             "ALTER TABLE task_batches ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0"
         )
+    if "auto_retry_count" not in column_names:
+        conn.execute(
+            "ALTER TABLE task_batches ADD COLUMN auto_retry_count INTEGER NOT NULL DEFAULT 0"
+        )
 
 
 def db_conn() -> sqlite3.Connection:
