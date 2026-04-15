@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI NovelSpeaker V2 - 修复文本</title>
+    <link rel="stylesheet" href="./assets/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="main-nav" id="mainNav"></aside>
+      <main class="page">
+        <header class="page-header">
+          <div>
+            <p class="eyebrow">文本修复</p>
+            <h1>修复文本</h1>
+            <p id="textFixMeta" class="meta">-</p>
+          </div>
+          <div class="header-actions">
+            <label class="header-novel-switch">切换小说
+              <select id="textFixNovelSelect"></select>
+            </label>
+            <button id="textFixRefreshBtn" class="ghost-btn" type="button">刷新</button>
+          </div>
+        </header>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>查找与替换</h2>
+            <span id="textFixSummary" class="meta">尚未搜索</span>
+          </div>
+          <div class="form-grid">
+            <label>
+              搜索文本
+              <input id="textFixSearchInput" placeholder="输入要搜索的文本" />
+            </label>
+            <label>
+              替换文本
+              <input id="textFixReplaceInput" placeholder="输入替换后的文本" />
+            </label>
+          </div>
+          <div class="card-actions top-actions">
+            <button id="textFixSearchBtn" class="ghost-btn" type="button">搜索</button>
+            <button id="textFixReplaceBtn" class="primary-btn" type="button">替换</button>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>搜索结果</h2>
+            <span id="textFixCount" class="meta">共 0 处</span>
+          </div>
+          <div id="textFixResultList" class="asset-list"></div>
+        </section>
+      </main>
+    </div>
+    <div id="toast" class="toast"></div>
+    <script type="module" src="./assets/text-fix.js"></script>
+  </body>
+</html>

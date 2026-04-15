@@ -31,6 +31,7 @@ const NAV_ICONS = {
   settings: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.5-2-3.4-2.4 1a8 8 0 0 0-1.7-1l-.3-2.5h-4l-.3 2.5a8 8 0 0 0-1.7 1l-2.4-1-2 3.4 2 1.5a7 7 0 0 0 0 2l-2 1.5 2 3.4 2.4-1a8 8 0 0 0 1.7 1l.3 2.5h4l.3-2.5a8 8 0 0 0 1.7-1l2.4 1 2-3.4-2-1.5c.1-.3.1-.7.1-1Z"/></svg>`,
   capture: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 6.5 8 4.5H5.5a2 2 0 0 0-2 2V17.5a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-11a2 2 0 0 0-2-2H16l-1.5 2Z"/><circle cx="12" cy="12.5" r="3.2"/><path d="M19 8.5h.01"/></svg>`,
   workflowLogs: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4.5h8l3 3v12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-13a2 2 0 0 1 2-2Z"/><path d="M15 4.5v3h3"/><path d="M8.5 11h7"/><path d="M8.5 14.5h7"/><path d="M8.5 18h4"/></svg>`,
+  textFix: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 5.5h12"/><path d="M6 9.5h9"/><path d="M6 13.5h6"/><path d="M14.5 14.5 18 18"/><path d="m16.5 12 4 4"/><path d="M14 18h6"/></svg>`,
 };
 
 const NAV_ITEMS = [
@@ -45,6 +46,7 @@ const NAV_ITEMS = [
   { href: "./settings.html", labelKey: "nav.settings", icon: NAV_ICONS.settings },
   { href: "./novel-capture.html", labelKey: "nav.capture", icon: NAV_ICONS.capture },
   { href: "./workflow-logs.html", labelKey: "nav.workflowLogs", icon: NAV_ICONS.workflowLogs },
+  { href: "./text-fix.html", labelKey: "nav.textFix", icon: NAV_ICONS.textFix },
 ];
 
 const NAV_BADGE_KEYS = {

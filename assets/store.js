@@ -318,6 +318,23 @@ async function fetchWorkflowLogs() {
   return data.logs || [];
 }
 
+async function searchNovelText(novelId, searchText) {
+  return api(`/api/novels/${Number(novelId)}/text-fix/search`, {
+    method: "POST",
+    body: JSON.stringify({ searchText: String(searchText || "") }),
+  });
+}
+
+async function replaceNovelText(novelId, searchText, replaceText) {
+  return api(`/api/novels/${Number(novelId)}/text-fix/replace`, {
+    method: "POST",
+    body: JSON.stringify({
+      searchText: String(searchText || ""),
+      replaceText: String(replaceText || ""),
+    }),
+  });
+}
+
 async function clearWorkflowLogs() {
   await api("/api/workflow-logs", { method: "DELETE" });
 }
@@ -602,6 +619,8 @@ export {
   downloadNovelBundle,
   duplicateWorkflow,
   fetchWorkflowLogs,
+  searchNovelText,
+  replaceNovelText,
   duplicatePrompt,
   fetchChapterDetail,
   fetchChapterCompareData,

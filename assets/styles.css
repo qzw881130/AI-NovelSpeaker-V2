@@ -1771,6 +1771,10 @@ menu {
   color: #2f2217;
 }
 
+.text-fix-result-card {
+  gap: 6px;
+}
+
 .service-row {
   display: grid;
   grid-template-columns: 1fr auto auto;

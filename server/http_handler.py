@@ -1332,6 +1332,38 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"status": "ok", "imported": int(result.get("imported", 0))})
             return
 
+        m_text_fix_search = re.match(r"^/api/novels/(\d+)/text-fix/search$", route)
+        if m_text_fix_search:
+            novel_id = int(m_text_fix_search.group(1))
+            body = self.read_json()
+            query = str(body.get("searchText") or "").strip()
+            conn = db_conn()
+            data = search_novel_text_occurrences(conn, novel_id, query)
+            conn.close()
+            self.send_json(data)
+            return
+
+        m_text_fix_replace = re.match(r"^/api/novels/(\d+)/text-fix/replace$", route)
+        if m_text_fix_replace:
+            novel_id = int(m_text_fix_replace.group(1))
+            body = self.read_json()
+            search_text = str(body.get("searchText") or "")
+            replace_text = str(body.get("replaceText") or "")
+            conn = db_conn()
+            result = replace_novel_text_occurrences(
+                conn, novel_id, search_text, replace_text
+            )
+            if not result.get("ok"):
+                conn.close()
+                self.send_json(
+                    {"error": str(result.get("error") or "replace failed")}, 400
+                )
+                return
+            conn.commit()
+            conn.close()
+            self.send_json(result)
+            return
+
         m_retry_json_task = re.match(r"^/api/json-tasks/(\d+)/retry$", route)
         if m_retry_json_task:
             task_id = int(m_retry_json_task.group(1))

@@ -1085,6 +1085,123 @@ def recalc_novel_stats(conn: sqlite3.Connection, novel_id: int) -> None:
     )
 
 
+def search_novel_text_occurrences(
+    conn: sqlite3.Connection, novel_id: int, needle: str
+) -> dict:
+    target = str(needle or "")
+    if not target:
+        return {"totalCount": 0, "chapterCount": 0, "matches": []}
+    rows = conn.execute(
+        "SELECT id, chapter_num, title, text_file_path FROM chapters WHERE novel_id=? ORDER BY chapter_num ASC",
+        (novel_id,),
+    ).fetchall()
+    json_rows = conn.execute(
+        "SELECT id, chapter_num, chapter_title, merged_result_json FROM json_tasks WHERE novel_id=? ORDER BY chapter_num ASC, id ASC",
+        (novel_id,),
+    ).fetchall()
+
+    match_map: dict[int, dict] = {}
+    total_count = 0
+
+    for row in rows:
+        chapter_num = int(row["chapter_num"] or 0)
+        title = str(row["title"] or f"第{chapter_num}章")
+        file_path = str(row["text_file_path"] or "").strip()
+        if not file_path:
+            continue
+        abs_path = (ROOT_DIR / file_path).resolve()
+        if not abs_path.exists() or not abs_path.is_file():
+            continue
+        raw = abs_path.read_text(encoding="utf-8", errors="ignore")
+        count = raw.count(target)
+        if count <= 0:
+            continue
+        total_count += count
+        item = match_map.setdefault(
+            chapter_num,
+            {"chapterNum": chapter_num, "title": title, "txtCount": 0, "jsonCount": 0},
+        )
+        item["txtCount"] += count
+
+    for row in json_rows:
+        chapter_num = int(row["chapter_num"] or 0)
+        title = str(row["chapter_title"] or f"第{chapter_num}章")
+        raw = str(row["merged_result_json"] or "")
+        count = raw.count(target)
+        if count <= 0:
+            continue
+        total_count += count
+        item = match_map.setdefault(
+            chapter_num,
+            {"chapterNum": chapter_num, "title": title, "txtCount": 0, "jsonCount": 0},
+        )
+        item["jsonCount"] += count
+
+    matches = sorted(match_map.values(), key=lambda x: x["chapterNum"])
+    return {
+        "totalCount": total_count,
+        "chapterCount": len(matches),
+        "matches": matches,
+    }
+
+
+def replace_novel_text_occurrences(
+    conn: sqlite3.Connection, novel_id: int, search_text: str, replace_text: str
+) -> dict:
+    needle = str(search_text or "")
+    replacement = str(replace_text or "")
+    if not needle:
+        return {"ok": False, "error": "search text is empty"}
+
+    rows = conn.execute(
+        "SELECT id, chapter_num, title, text_file_path FROM chapters WHERE novel_id=? ORDER BY chapter_num ASC",
+        (novel_id,),
+    ).fetchall()
+    txt_replaced = 0
+    for row in rows:
+        file_path = str(row["text_file_path"] or "").strip()
+        if not file_path:
+            continue
+        abs_path = (ROOT_DIR / file_path).resolve()
+        if not abs_path.exists() or not abs_path.is_file():
+            continue
+        raw = abs_path.read_text(encoding="utf-8", errors="ignore")
+        count = raw.count(needle)
+        if count <= 0:
+            continue
+        updated = raw.replace(needle, replacement)
+        abs_path.write_text(updated, encoding="utf-8")
+        title, content = split_title_and_content(updated, str(row["title"] or ""))
+        conn.execute(
+            "UPDATE chapters SET title=?, word_count=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            (title, count_words(content), int(row["id"])),
+        )
+        txt_replaced += count
+
+    json_rows = conn.execute(
+        "SELECT id, chapter_title, merged_result_json FROM json_tasks WHERE novel_id=?",
+        (novel_id,),
+    ).fetchall()
+    json_replaced = 0
+    for row in json_rows:
+        raw = str(row["merged_result_json"] or "")
+        count = raw.count(needle)
+        title = str(row["chapter_title"] or "")
+        title_count = title.count(needle)
+        if count <= 0 and title_count <= 0:
+            continue
+        updated = raw.replace(needle, replacement)
+        updated_title = title.replace(needle, replacement)
+        conn.execute(
+            "UPDATE json_tasks SET chapter_title=?, merged_result_json=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            (updated_title, updated, int(row["id"])),
+        )
+        json_replaced += count + title_count
+
+    recalc_novel_stats(conn, novel_id)
+    return {"ok": True, "txtReplaced": txt_replaced, "jsonReplaced": json_replaced}
+
+
 def safe_chapter_file_name(chapter_num: int, title: str) -> str:
     clean = (
         re.sub(r"[^\w\u4e00-\u9fff-]+", "_", title).strip("_")
