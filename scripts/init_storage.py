@@ -153,6 +153,7 @@ DDL_STATEMENTS = [
         chapter_title TEXT NOT NULL,
         prompt_id INTEGER,
         model_name TEXT NOT NULL DEFAULT '',
+        think_enabled INTEGER NOT NULL DEFAULT 1,
         status TEXT NOT NULL,
         progress INTEGER NOT NULL DEFAULT 0,
         merged_result_json TEXT,

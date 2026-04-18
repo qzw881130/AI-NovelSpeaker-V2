@@ -150,6 +150,8 @@ function render() {
   const updatedAtLabel = t("common.updatedAt");
   const elapsedLabel = translateText("本次执行耗时");
   const chapterLabel = t("章节");
+  const modelLabel = t("模型");
+  const thinkLabel = t("Think");
   const wordsLabel = t("字数");
   const promptLabel = t("提示词");
   const batchesLabel = t("分批");
@@ -178,6 +180,8 @@ function render() {
         <div class="meta json-meta-row">
           <span class="json-meta-pill"><i class="json-meta-dot"></i>${escapeHtml(task.novelName || "-")}</span>
           <span class="json-meta-pill"><i class="json-meta-dot"></i>${chapterLabel} ${fmtNumber(task.chapter || 0)}</span>
+          <span class="json-meta-pill"><i class="json-meta-dot"></i>${modelLabel} ${escapeHtml(task.modelName || "-")}</span>
+          <span class="json-meta-pill"><i class="json-meta-dot"></i>${thinkLabel} ${task.thinkEnabled !== false ? t("开启") : t("关闭")}</span>
           <span class="json-meta-pill"><i class="json-meta-dot"></i>${wordsLabel} ${fmtNumber(task.wordCount || 0)}</span>
           <span class="json-meta-pill"><i class="json-meta-dot"></i>${promptLabel} ${escapeHtml(promptName(promptMap, task.promptId))}</span>
           <span class="json-meta-pill"><i class="json-meta-dot"></i>${batchesLabel} ${displayBatchProgress(task)}</span>

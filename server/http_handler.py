@@ -1046,6 +1046,7 @@ class Handler(BaseHTTPRequestHandler):
                 model=str(llm.get("model") or "").strip(),
                 api_key=str(llm.get("apiKey") or "").strip(),
                 proxy_url=str(body.get("proxyUrl") or "").strip(),
+                think=bool(llm.get("think", True)),
                 num_ctx=int(llm.get("numCtx") or 65536),
                 keep_alive=str(llm.get("keepAlive") or "30m").strip() or "30m",
             )
@@ -1421,6 +1422,8 @@ class Handler(BaseHTTPRequestHandler):
         if route == "/api/json-tasks":
             body = self.read_json()
             conn = db_conn()
+            settings = fetch_settings(conn)
+            llm = settings.get("llm") or {}
             novel = conn.execute(
                 "SELECT id,prompt_id FROM novels WHERE id=?",
                 (int(body.get("novelId")),),
@@ -1439,8 +1442,8 @@ class Handler(BaseHTTPRequestHandler):
             ).fetchone()
             conn.execute(
                 """
-                INSERT INTO json_tasks (novel_id,chapter_id,chapter_num,chapter_title,prompt_id,model_name,status,progress)
-                VALUES (?,?,?,?,?,'', 'pending',0)
+                INSERT INTO json_tasks (novel_id,chapter_id,chapter_num,chapter_title,prompt_id,model_name,think_enabled,status,progress)
+                VALUES (?,?,?,?,?,?,?, 'pending',0)
                 """,
                 (
                     int(body.get("novelId")),
@@ -1453,6 +1456,8 @@ class Handler(BaseHTTPRequestHandler):
                         else f"第{int(body.get('chapter'))}回"
                     ),
                     int(novel["prompt_id"]),
+                    str(llm.get("model") or ""),
+                    1 if bool(llm.get("think", True)) else 0,
                 ),
             )
             conn.commit()
@@ -1606,6 +1611,8 @@ class Handler(BaseHTTPRequestHandler):
             novel_id = int(m_convert.group(1))
             chapter_num = int(m_convert.group(2))
             conn = db_conn()
+            settings = fetch_settings(conn)
+            llm = settings.get("llm") or {}
             novel = conn.execute(
                 "SELECT id,prompt_id FROM novels WHERE id=?", (novel_id,)
             ).fetchone()
@@ -1625,10 +1632,18 @@ class Handler(BaseHTTPRequestHandler):
             chapter_id = int(chapter["id"]) if chapter else None
             conn.execute(
                 """
-                INSERT INTO json_tasks (novel_id,chapter_id,chapter_num,chapter_title,prompt_id,status,progress)
-                VALUES (?, ?, ?, ?, ?, 'pending', 0)
+                INSERT INTO json_tasks (novel_id,chapter_id,chapter_num,chapter_title,prompt_id,model_name,think_enabled,status,progress)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', 0)
                 """,
-                (novel_id, chapter_id, chapter_num, title, int(novel["prompt_id"])),
+                (
+                    novel_id,
+                    chapter_id,
+                    chapter_num,
+                    title,
+                    int(novel["prompt_id"]),
+                    str(llm.get("model") or ""),
+                    1 if bool(llm.get("think", True)) else 0,
+                ),
             )
             conn.commit()
             conn.close()
@@ -2233,6 +2248,7 @@ class Handler(BaseHTTPRequestHandler):
                 "llm_max_tokens": str(llm_max_tokens),
                 "llm_num_ctx": str(llm.get("numCtx") or 65536),
                 "llm_keep_alive": str(llm.get("keepAlive") or "30m"),
+                "llm_think": "1" if bool(llm.get("think", True)) else "0",
                 "llm_batch_max_chars": str(batch_max_chars),
                 "ui_language": ui_language,
                 "ui_timezone": ui_timezone,

@@ -979,6 +979,9 @@ const STATIC_TEXT_MAP = {
 
 const TOKEN_MAP = {
   "章节": { "en-US": "Chapter", "zh-TW": "章節", "ja-JP": "章", "ko-KR": "챕터" },
+  "开启": { "en-US": "On", "zh-TW": "開啟", "ja-JP": "オン", "ko-KR": "켜짐" },
+  "模型": { "en-US": "Model", "zh-TW": "模型", "ja-JP": "モデル", "ko-KR": "모델" },
+  "Think": { "en-US": "Think", "zh-TW": "Think", "ja-JP": "Think", "ko-KR": "Think" },
   "字数": { "en-US": "Words", "zh-TW": "字數", "ja-JP": "文字数", "ko-KR": "글자수" },
   "工作流": { "en-US": "Workflow", "zh-TW": "工作流", "ja-JP": "ワークフロー", "ko-KR": "워크플로" },
   "提示词": { "en-US": "Prompt", "zh-TW": "提示詞", "ja-JP": "プロンプト", "ko-KR": "프롬프트" },

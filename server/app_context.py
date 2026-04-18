@@ -192,6 +192,10 @@ def migrate_json_tasks_table(conn: sqlite3.Connection) -> None:
     column_names = [col[1] for col in columns]
     if "started_at" not in column_names:
         conn.execute("ALTER TABLE json_tasks ADD COLUMN started_at DATETIME")
+    if "think_enabled" not in column_names:
+        conn.execute(
+            "ALTER TABLE json_tasks ADD COLUMN think_enabled INTEGER NOT NULL DEFAULT 1"
+        )
 
 
 def migrate_task_batches_table(conn: sqlite3.Connection) -> None:

@@ -181,6 +181,7 @@ function load(settings) {
   document.getElementById("llmKeepAlive").value = KEEP_ALIVE_OPTIONS.has(keepAlive)
     ? keepAlive
     : "30m";
+  document.getElementById("llmThink").checked = llm.think !== false;
   const batchChars = Number(llm.batchMaxChars ?? 3500);
   document.getElementById("llmBatchChars").value = BATCH_CHAR_OPTIONS.has(batchChars)
     ? String(batchChars)
@@ -265,11 +266,16 @@ function syncOllamaFieldVisibility() {
   const isOllama = provider === "ollama";
   document.getElementById("llmNumCtxWrap")?.classList.toggle("hidden", !isOllama);
   document.getElementById("llmKeepAliveWrap")?.classList.toggle("hidden", !isOllama);
+  document.getElementById("llmThinkWrap")?.classList.toggle("hidden", !isOllama);
   const keyInput = document.getElementById("llmKey");
   const keyHint = document.getElementById("llmKeyHint");
+  const thinkInput = document.getElementById("llmThink");
   if (keyInput) {
     keyInput.disabled = isOllama;
     keyInput.placeholder = isOllama ? "本地 Ollama 可留空" : "";
+  }
+  if (thinkInput) {
+    thinkInput.disabled = !isOllama;
   }
   keyHint?.classList.toggle("hidden", !isOllama);
 }
@@ -297,6 +303,7 @@ function readSettingsForm() {
       ),
       numCtx: Number(document.getElementById("llmNumCtx").value || 65536),
       keepAlive: String(document.getElementById("llmKeepAlive").value || "30m"),
+      think: document.getElementById("llmThink").checked,
       batchMaxChars: Number(document.getElementById("llmBatchChars").value ?? 3500),
     },
     ui: {
@@ -407,6 +414,7 @@ function bindEvents() {
   document.getElementById("llmTokens").addEventListener("input", markLlmDirty);
   document.getElementById("llmNumCtx").addEventListener("change", markLlmDirty);
   document.getElementById("llmKeepAlive").addEventListener("change", markLlmDirty);
+  document.getElementById("llmThink").addEventListener("change", markLlmDirty);
   document.getElementById("llmBatchChars").addEventListener("change", markLlmDirty);
   document.getElementById("uiLanguage").addEventListener("change", markLlmDirty);
   document.getElementById("uiTimezone").addEventListener("change", markLlmDirty);

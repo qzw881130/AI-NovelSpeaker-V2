@@ -778,7 +778,7 @@ def fetch_novels(conn: sqlite3.Connection) -> list[dict]:
 def fetch_json_tasks(conn: sqlite3.Connection) -> list[dict]:
     rows = conn.execute(
         """
-        SELECT t.id,t.novel_id,t.chapter_num,t.chapter_title,t.prompt_id,t.status,t.progress,t.updated_at,
+        SELECT t.id,t.novel_id,t.chapter_num,t.chapter_title,t.prompt_id,t.model_name,t.think_enabled,t.status,t.progress,t.updated_at,
                t.created_at,t.started_at,t.error_message,
                (SELECT COUNT(1) FROM task_batches b WHERE b.task_id=t.id) AS batch_total,
                (SELECT COUNT(1) FROM task_batches b WHERE b.task_id=t.id AND b.status='completed') AS batch_done,
@@ -809,6 +809,8 @@ def fetch_json_tasks(conn: sqlite3.Connection) -> list[dict]:
             "chapter": int(r["chapter_num"]),
             "title": str(r["chapter_title"]),
             "promptId": int(r["prompt_id"]) if r["prompt_id"] is not None else None,
+            "modelName": str(r["model_name"] or ""),
+            "thinkEnabled": int(r["think_enabled"] or 0) != 0,
             "wordCount": int(r["chapter_word_count"] or 0),
             "status": str(r["status"]),
             "progress": int(r["progress"] or 0),
@@ -844,6 +846,12 @@ def fetch_settings(conn: sqlite3.Connection) -> dict:
     keep_alive = str(kv.get("llm_keep_alive", "30m") or "30m").strip() or "30m"
     if keep_alive not in {"5m", "15m", "30m", "1h", "6h", "24h"}:
         keep_alive = "30m"
+    llm_think = str(kv.get("llm_think", "1") or "1").strip().lower() not in {
+        "0",
+        "false",
+        "off",
+        "no",
+    }
 
     llm = {
         "provider": kv.get("llm_provider", "grok"),
@@ -854,6 +862,7 @@ def fetch_settings(conn: sqlite3.Connection) -> dict:
         "maxTokens": int(kv.get("llm_max_tokens", "8192")),
         "numCtx": num_ctx,
         "keepAlive": keep_alive,
+        "think": llm_think,
         "batchMaxChars": batch_max_chars,
     }
     if str(llm.get("provider") or "").strip() == "deepseek":
@@ -1440,6 +1449,7 @@ def test_llm_endpoint(
     model: str,
     api_key: str,
     proxy_url: str,
+    think: bool = True,
     num_ctx: int = 65536,
     keep_alive: str = "30m",
 ) -> tuple[bool, str]:
@@ -1464,8 +1474,22 @@ def test_llm_endpoint(
         "temperature": 0,
     }
     if provider == "ollama":
-        payload["options"] = {"num_ctx": int(num_ctx or 65536)}
-        payload["keep_alive"] = str(keep_alive or "30m")
+        url = build_ollama_chat_url(base_url)
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": "You are a healthcheck bot."},
+                {"role": "user", "content": "reply with pong"},
+            ],
+            "stream": False,
+            "think": bool(think),
+            "keep_alive": str(keep_alive or "30m"),
+            "options": {
+                "num_ctx": int(num_ctx or 65536),
+                "temperature": 0,
+                "num_predict": 8,
+            },
+        }
     try:
         code, body = http_json_request(
             "POST",
@@ -1517,6 +1541,13 @@ def extract_json_text(raw: str) -> str:
     if start >= 0 and end > start:
         return text[start : end + 1]
     return text
+
+
+def build_ollama_chat_url(base_url: str) -> str:
+    base = str(base_url or "").rstrip("/")
+    if base.endswith("/v1"):
+        base = base[:-3]
+    return f"{base}/api/chat"
 
 
 def parse_model_json(raw: str) -> dict:
@@ -1631,6 +1662,10 @@ def merge_batch_outputs(outputs: list[dict]) -> dict:
 
 
 def extract_chat_content(data: dict) -> str:
+    message = data.get("message")
+    if isinstance(message, dict):
+        return str(message.get("content") or "").strip()
+
     choices = data.get("choices")
     if not isinstance(choices, list) or not choices:
         raise ValueError("chat response missing choices")
@@ -1682,6 +1717,7 @@ def call_llm_json_parse(
         max_tokens = min(max_tokens, 8192)
     num_ctx = int(llm.get("numCtx") or 65536)
     keep_alive = str(llm.get("keepAlive") or "30m").strip() or "30m"
+    think = bool(llm.get("think", True))
 
     if not base_url:
         raise RuntimeError("LLM baseUrl is empty")
@@ -1720,15 +1756,30 @@ def call_llm_json_parse(
         "max_tokens": max_tokens,
     }
     request_timeout = 180.0
+    url = f"{base_url.rstrip('/')}/chat/completions"
     if provider == "ollama":
-        payload["options"] = {"num_ctx": num_ctx}
-        payload["keep_alive"] = keep_alive
+        url = build_ollama_chat_url(base_url)
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            "stream": False,
+            "think": think,
+            "keep_alive": keep_alive,
+            "options": {
+                "num_ctx": num_ctx,
+                "temperature": temperature,
+                "num_predict": max_tokens,
+            },
+        }
         request_timeout = (
             1800.0 if num_ctx >= 65536 or len(chapter_text) > 12000 else 900.0
         )
     code, body = http_json_request(
         "POST",
-        f"{base_url.rstrip('/')}/chat/completions",
+        url,
         payload=payload,
         headers=headers,
         timeout=request_timeout,
@@ -1844,6 +1895,7 @@ def process_json_task(task_id: int) -> None:
         llm = settings.get("llm") or {}
         proxy_url = str(settings.get("proxyUrl") or "")
         model_name = str(llm.get("model") or "")
+        think_enabled = 1 if bool(llm.get("think", True)) else 0
 
         chapter_text = read_chapter_text(text_file_path)
         if not chapter_text:
@@ -1870,10 +1922,10 @@ def process_json_task(task_id: int) -> None:
         conn.execute(
             """
             UPDATE json_tasks
-            SET progress=10,model_name=?,updated_at=CURRENT_TIMESTAMP
+            SET progress=10,model_name=?,think_enabled=?,updated_at=CURRENT_TIMESTAMP
             WHERE id=?
             """,
-            (model_name, task_id),
+            (model_name, think_enabled, task_id),
         )
         conn.commit()
         conn.close()
@@ -2067,6 +2119,7 @@ def _load_json_task_context(task_id: int) -> dict:
     llm = settings.get("llm") or {}
     proxy_url = str(settings.get("proxyUrl") or "")
     model_name = str(llm.get("model") or "")
+    think_enabled = bool(llm.get("think", True))
     conn.close()
     return {
         "task": task,
@@ -2077,6 +2130,7 @@ def _load_json_task_context(task_id: int) -> dict:
         "llm": llm,
         "proxyUrl": proxy_url,
         "modelName": model_name,
+        "thinkEnabled": think_enabled,
     }
 
 
@@ -2169,17 +2223,17 @@ def retry_json_task_batch(task_id: int, batch_index: int) -> tuple[bool, str]:
     if retry_count >= 10:
         conn.close()
         return False, "batch retry limit reached"
-        conn.execute(
-            """
-            UPDATE task_batches
-            SET status='processing',parsed_json_text=NULL,error_message=NULL,updated_at=CURRENT_TIMESTAMP,retry_count=retry_count+1,auto_retry_count=0
-            WHERE task_id=? AND batch_index=?
-            """,
-            (task_id, batch_index),
-        )
     conn.execute(
-        "UPDATE json_tasks SET started_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=?",
-        (task_id,),
+        """
+        UPDATE task_batches
+        SET status='processing',parsed_json_text=NULL,error_message=NULL,updated_at=CURRENT_TIMESTAMP,retry_count=retry_count+1,auto_retry_count=0
+        WHERE task_id=? AND batch_index=?
+        """,
+        (task_id, batch_index),
+    )
+    conn.execute(
+        "UPDATE json_tasks SET model_name=?, think_enabled=?, started_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+        (context["modelName"], 1 if context["thinkEnabled"] else 0, task_id),
     )
     conn.commit()
     conn.close()

@@ -1193,6 +1193,19 @@ textarea {
   font-size: 14px;
 }
 
+.form-toggle-field {
+  align-items: flex-start;
+}
+
+.form-toggle-field .switch-row {
+  justify-content: flex-start;
+  white-space: nowrap;
+}
+
+.form-toggle-field .caption {
+  margin-top: 0;
+}
+
 .form-grid .full {
   grid-column: 1 / -1;
 }
@@ -1447,6 +1460,7 @@ menu {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  white-space: nowrap;
 }
 
 .code-block {
