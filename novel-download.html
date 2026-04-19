@@ -27,13 +27,26 @@
 
         <section class="panel">
           <div class="panel-head">
-            <h2>章回音频下载</h2>
-            <span id="novelDownloadSummary" class="meta">-</span>
+            <div class="panel-head-title-row">
+              <h2>章回音频下载</h2>
+              <span id="novelDownloadSelectionMeta" class="meta">已选择 0 回</span>
+            </div>
+            <div class="panel-head-actions">
+              <span id="batchMergeProgress" class="meta hidden">0/0</span>
+              <button id="batchMergeAudioBtn" class="ghost-btn" type="button">批量合并音频</button>
+              <span id="novelDownloadSummary" class="meta">-</span>
+            </div>
           </div>
-          <div class="roles-table-wrap">
+          <div class="roles-table-wrap novel-download-table-wrap">
             <table class="roles-table novel-download-table">
               <thead>
                 <tr>
+                  <th>
+                    <label class="inline-check novel-download-select-all">
+                      <input id="novelDownloadSelectAll" type="checkbox" />
+                      <span>选择全部</span>
+                    </label>
+                  </th>
                   <th>章回编号</th>
                   <th>章回标题</th>
                   <th>
@@ -59,7 +72,7 @@
               </thead>
               <tbody id="novelDownloadTableBody">
                 <tr>
-                  <td colspan="6" class="empty-text">正在加载...</td>
+                  <td colspan="7" class="empty-text">正在加载...</td>
                 </tr>
               </tbody>
             </table>

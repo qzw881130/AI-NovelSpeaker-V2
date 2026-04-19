@@ -2419,6 +2419,47 @@ menu {
   padding-right: 4px;
 }
 
+.panel-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.novel-download-select-all {
+  white-space: nowrap;
+}
+
+.novel-download-checkbox-cell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+
+.novel-download-checkbox-cell input,
+.novel-download-select-all input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary);
+}
+
+.novel-download-table {
+  min-width: 100%;
+}
+
+.novel-download-table-wrap {
+  max-height: calc(100vh - 280px);
+  overflow-y: auto;
+}
+
+@media (max-width: 960px) {
+  .novel-download-table-wrap {
+    max-height: calc(100vh - 240px);
+  }
+}
+
 .role-page-input,
 .role-page-textarea {
   width: 100%;

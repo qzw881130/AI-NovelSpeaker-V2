@@ -1,9 +1,10 @@
-import { bytesToText, fetchNovelDownloadChapters, getData, getActiveNovelId, setActiveNovelId } from "./store.js";
+import { bytesToText, fetchNovelDownloadChapters, getData, getActiveNovelId, mergeChapterLineAudio, setActiveNovelId } from "./store.js";
 import { renderNav, toast } from "./ui.js";
 
 let allNovels = [];
 let activeNovel = null;
 let chapterItems = [];
+const selectedChapterNums = new Set();
 const sortState = {
   field: "",
   direction: "none",
@@ -46,18 +47,21 @@ function setHeader() {
   const titleEl = document.getElementById("novelDownloadPageTitle");
   const metaEl = document.getElementById("novelDownloadPageMeta");
   const summaryEl = document.getElementById("novelDownloadSummary");
+  const selectionMetaEl = document.getElementById("novelDownloadSelectionMeta");
   const rolesLink = document.getElementById("novelDownloadRolesLink");
   const chaptersLink = document.getElementById("novelDownloadChaptersLink");
   if (!activeNovel) {
     titleEl.textContent = "小说下载";
     metaEl.textContent = "未找到小说";
     summaryEl.textContent = "-";
+    if (selectionMetaEl) selectionMetaEl.textContent = "已选择 0 回";
     return;
   }
   titleEl.textContent = `${activeNovel.name} - 小说下载`;
   const available = chapterItems.filter((item) => item.hasAudio).length;
   metaEl.textContent = `${activeNovel.author || "未知作者"} · 共 ${chapterItems.length} 回 · 可下载 ${available} 回`;
   summaryEl.textContent = `总计 ${chapterItems.length} 回`;
+  if (selectionMetaEl) selectionMetaEl.textContent = `已选择 ${selectedChapterNums.size} 回`;
   rolesLink.href = `./roles.html?novelId=${encodeURIComponent(activeNovel.id)}`;
   chaptersLink.href = `./chapters.html?novelId=${encodeURIComponent(activeNovel.id)}`;
 }
@@ -120,19 +124,79 @@ function updateSortIcons() {
   });
 }
 
+function updateSelectionControls() {
+  const selectAll = document.getElementById("novelDownloadSelectAll");
+  const selectionMetaEl = document.getElementById("novelDownloadSelectionMeta");
+  const selectedCount = selectedChapterNums.size;
+  const totalCount = chapterItems.length;
+  if (selectionMetaEl) {
+    selectionMetaEl.textContent = `已选择 ${selectedCount} 回`;
+  }
+  if (!selectAll) return;
+  selectAll.checked = totalCount > 0 && selectedCount === totalCount;
+  selectAll.indeterminate = selectedCount > 0 && selectedCount < totalCount;
+}
+
+function setBatchMergeProgress(current, total) {
+  const progressEl = document.getElementById("batchMergeProgress");
+  if (!progressEl) return;
+  if (!total || current < 0) {
+    progressEl.textContent = "0/0";
+    progressEl.classList.add("hidden");
+    return;
+  }
+  progressEl.textContent = `${current}/${total}`;
+  progressEl.classList.remove("hidden");
+}
+
+function toggleChapterSelection(chapterNum, checked) {
+  const safeChapterNum = Number(chapterNum || 0);
+  if (!safeChapterNum) return;
+  if (checked) {
+    selectedChapterNums.add(safeChapterNum);
+  } else {
+    selectedChapterNums.delete(safeChapterNum);
+  }
+  updateSelectionControls();
+}
+
+function clearSelection() {
+  selectedChapterNums.clear();
+  updateSelectionControls();
+}
+
+function getSelectedChapterItems() {
+  return chapterItems
+    .filter((item) => selectedChapterNums.has(Number(item.chapterNum || 0)))
+    .sort((a, b) => Number(a.chapterNum || 0) - Number(b.chapterNum || 0));
+}
+
 function renderTable() {
   const tbody = document.getElementById("novelDownloadTableBody");
   if (!activeNovel) {
-    tbody.innerHTML = '<tr><td colspan="6" class="empty-text">未找到小说</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" class="empty-text">未找到小说</td></tr>';
+    clearSelection();
     return;
   }
   if (!chapterItems.length) {
-    tbody.innerHTML = '<tr><td colspan="6" class="empty-text">暂无章回数据</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" class="empty-text">暂无章回数据</td></tr>';
+    clearSelection();
     return;
   }
   const rows = getSortedChapterItems();
+  const validChapterNums = new Set(rows.map((item) => Number(item.chapterNum || 0)).filter(Boolean));
+  Array.from(selectedChapterNums).forEach((chapterNum) => {
+    if (!validChapterNums.has(chapterNum)) {
+      selectedChapterNums.delete(chapterNum);
+    }
+  });
   tbody.innerHTML = rows.map((item) => `
     <tr>
+      <td>
+        <label class="novel-download-checkbox-cell" aria-label="选择第 ${String(item.chapterNum).padStart(3, "0")} 回">
+          <input class="novel-download-item-check" type="checkbox" data-chapter-num="${Number(item.chapterNum || 0)}" ${selectedChapterNums.has(Number(item.chapterNum || 0)) ? "checked" : ""} />
+        </label>
+      </td>
       <td>${String(item.chapterNum).padStart(3, "0")}</td>
       <td>${escapeHtml(item.title || "-")}</td>
       <td>${Number(item.wordCount || 0).toLocaleString("zh-CN")}</td>
@@ -142,6 +206,7 @@ function renderTable() {
     </tr>
   `).join("");
   updateSortIcons();
+  updateSelectionControls();
 }
 
 async function refreshPage() {
@@ -156,6 +221,7 @@ function bindEvents() {
     const id = String(event.target.value || "");
     setActiveNovelId(id);
     activeNovel = allNovels.find((novel) => String(novel.id) === id) || null;
+    clearSelection();
     await refreshPage();
   });
   document.getElementById("refreshNovelDownloadBtn").addEventListener("click", async () => {
@@ -176,6 +242,59 @@ function bindEvents() {
     sortState.direction = nextSortDirection(sortState.field, "audioSizeBytes");
     sortState.field = sortState.direction === "none" ? "" : "audioSizeBytes";
     renderTable();
+  });
+  document.getElementById("novelDownloadSelectAll").addEventListener("change", (event) => {
+    const checked = Boolean(event.target.checked);
+    selectedChapterNums.clear();
+    if (checked) {
+      chapterItems.forEach((item) => {
+        const chapterNum = Number(item.chapterNum || 0);
+        if (chapterNum) selectedChapterNums.add(chapterNum);
+      });
+    }
+    renderTable();
+  });
+  document.getElementById("novelDownloadTableBody").addEventListener("change", (event) => {
+    const checkbox = event.target.closest(".novel-download-item-check");
+    if (!checkbox) return;
+    toggleChapterSelection(checkbox.dataset.chapterNum, checkbox.checked);
+  });
+  document.getElementById("batchMergeAudioBtn").addEventListener("click", async () => {
+    if (!activeNovel) return;
+    const selectedItems = getSelectedChapterItems();
+    if (!selectedItems.length) {
+      toast("请先选择要合并的章回");
+      return;
+    }
+    const mergeBtn = document.getElementById("batchMergeAudioBtn");
+    mergeBtn.disabled = true;
+    mergeBtn.textContent = "合并中...";
+    setBatchMergeProgress(0, selectedItems.length);
+    let successCount = 0;
+    let failedCount = 0;
+    try {
+      for (const [index, item] of selectedItems.entries()) {
+        setBatchMergeProgress(index + 1, selectedItems.length);
+        try {
+          await mergeChapterLineAudio(activeNovel.id, item.chapterNum);
+          successCount += 1;
+        } catch {
+          failedCount += 1;
+        }
+      }
+      await refreshPage();
+      if (failedCount > 0) {
+        toast(`批量合并完成：成功 ${successCount} 回，失败 ${failedCount} 回`);
+      } else {
+        toast(`批量合并完成：共 ${successCount} 回`);
+      }
+    } catch (err) {
+      toast(err.message || "批量合并失败");
+    } finally {
+      mergeBtn.disabled = false;
+      mergeBtn.textContent = "批量合并音频";
+      setBatchMergeProgress(-1, 0);
+    }
   });
 }
 
