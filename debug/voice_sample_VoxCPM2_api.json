@@ -1,0 +1,74 @@
+{
+  "14": {
+    "inputs": {
+      "filename_prefix": "audio/ComfyUI",
+      "audioUI": "/api/view?filename=ComfyUI_00213_.flac&type=output&subfolder=audio&rand=0.8216542329414659",
+      "audio": [
+        "18",
+        0
+      ]
+    },
+    "class_type": "SaveAudio",
+    "_meta": {
+      "title": "#14 Save Audio (FLAC)"
+    }
+  },
+  "15": {
+    "inputs": {
+      "prompt": "一个28多岁的女性声音，音色明亮且极具穿透力，语气泼辣自信，语速快且富有节奏感。"
+    },
+    "class_type": "CR Prompt Text",
+    "_meta": {
+      "title": "#15 ⚙️ CR Prompt Text"
+    }
+  },
+  "16": {
+    "inputs": {
+      "prompt": "我来迟了，没得迎接远客"
+    },
+    "class_type": "CR Prompt Text",
+    "_meta": {
+      "title": "#16 ⚙️ CR Prompt Text"
+    }
+  },
+  "17": {
+    "inputs": {
+      "model_name": "VoxCPM2",
+      "optimize": false,
+      "lora_name": "None"
+    },
+    "class_type": "RunningHub_VoxCPM_LoadModel",
+    "_meta": {
+      "title": "#17 RunningHub VoxCPM Load Model"
+    }
+  },
+  "18": {
+    "inputs": {
+      "control_instruction": [
+        "15",
+        0
+      ],
+      "text": [
+        "16",
+        0
+      ],
+      "cfg_value": 2,
+      "inference_steps": 10,
+      "seed": 881465659794001,
+      "ultimate_clone": false,
+      "reference_audio_text": "",
+      "normalize_text": false,
+      "denoise_reference": false,
+      "max_len": 4096,
+      "retry_badcase": true,
+      "model": [
+        "17",
+        0
+      ]
+    },
+    "class_type": "RunningHub_VoxCPM_Generate",
+    "_meta": {
+      "title": "#18 RunningHub VoxCPM Generate Speech"
+    }
+  }
+}

@@ -1,0 +1,88 @@
+{
+  "15": {
+    "inputs": {
+      "filename_prefix": "audio/ComfyUI",
+      "audioUI": "/api/view?filename=ComfyUI_00217_.flac&type=output&subfolder=audio&rand=0.07553012713166873",
+      "audio": [
+        "22",
+        0
+      ]
+    },
+    "class_type": "SaveAudio",
+    "_meta": {
+      "title": "#15 Save Audio (FLAC)"
+    }
+  },
+  "17": {
+    "inputs": {
+      "audio": "39-旁白.flac",
+      "audioUI": "/api/view?filename=39-%E6%97%81%E7%99%BD.flac&type=input&subfolder=&rand=0.8863987735295181"
+    },
+    "class_type": "LoadAudio",
+    "_meta": {
+      "title": "#17 Load Audio"
+    }
+  },
+  "20": {
+    "inputs": {
+      "prompt": "话说当时住持真人对洪太尉说道"
+    },
+    "class_type": "CR Prompt Text",
+    "_meta": {
+      "title": "#20 ⚙️ CR Prompt Text"
+    }
+  },
+  "21": {
+    "inputs": {
+      "model_name": "VoxCPM2",
+      "optimize": false,
+      "lora_name": "None"
+    },
+    "class_type": "RunningHub_VoxCPM_LoadModel",
+    "_meta": {
+      "title": "#21 RunningHub VoxCPM Load Model"
+    }
+  },
+  "22": {
+    "inputs": {
+      "control_instruction": "普通话",
+      "text": [
+        "20",
+        0
+      ],
+      "cfg_value": 2,
+      "inference_steps": 10,
+      "seed": 295464216720762,
+      "ultimate_clone": true,
+      "reference_audio_text": [
+        "23",
+        0
+      ],
+      "normalize_text": false,
+      "denoise_reference": false,
+      "max_len": 4096,
+      "retry_badcase": true,
+      "model": [
+        "21",
+        0
+      ],
+      "reference_audio": [
+        "17",
+        0
+      ]
+    },
+    "class_type": "RunningHub_VoxCPM_Generate",
+    "_meta": {
+      "title": "#22 RunningHub VoxCPM Generate Speech"
+    }
+  },
+  "23": {
+    "inputs": {
+      "prompt": "话说当日武松来到现前客店内收拾行李铺盖"
+    },
+    "class_type": "CR Prompt Text",
+    "_meta": {
+      "title": "⚙️ CR Prompt Text"
+    }
+  }
+}

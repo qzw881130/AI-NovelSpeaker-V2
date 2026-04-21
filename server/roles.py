@@ -53,6 +53,17 @@ def _get_novel_english_dir(conn, novel_id: int) -> str:
     return str(row["english_dir"] or "").strip() if row else ""
 
 
+def _assign_text_input(node: dict, value: str, purpose: str) -> None:
+    inputs = node.get("inputs")
+    if not isinstance(inputs, dict):
+        raise RuntimeError(f"示例音频工作流缺少{purpose}节点输入")
+    for key in ("prompt", "text", "string", "value"):
+        if key in inputs:
+            inputs[key] = value
+            return
+    raise RuntimeError(f"示例音频工作流缺少{purpose}节点文本输入字段")
+
+
 def _is_sample_audio_referenced_elsewhere(
     conn, sample_audio_path: str, exclude_role_id: int | None = None
 ) -> bool:
@@ -550,45 +561,62 @@ def generate_role_sample_audio(
     if not workflow:
         return False, "Voice sample workflow not configured for this novel", None, None
 
-    # 查找并修改工作流中的节点
-    # 假设工作流中有用于instruct和text的节点
     workflow_copy = workflow_json_to_prompt_json(deepcopy(workflow))
     log_id = 0
 
-    # 尝试找到instruct节点（通常是描述音色的prompt）
-    # 尝试找到text节点（示例台词）
-    # 尝试找到保存音频的节点
-    instruct_node_found = False
-    text_node_found = False
-    save_node_found = False
+    voice_desc_node_id = (
+        str(
+            workflow_io_config.get("inputs", {})
+            .get("voiceDescription", {})
+            .get("nodeId")
+            or ("6" if "6" in workflow_copy else "")
+        ).strip()
+        or None
+    )
+    line_text_node_id = (
+        str(
+            workflow_io_config.get("inputs", {})
+            .get("lineText", {})
+            .get("nodeId")
+            or ("7" if "7" in workflow_copy else "")
+        ).strip()
+        or None
+    )
+    output_node_id = (
+        str(
+            workflow_io_config.get("outputs", {})
+            .get("audioFile", {})
+            .get("nodeId")
+            or ("9" if "9" in workflow_copy else "")
+        ).strip()
+        or None
+    )
 
     for node_id, node in workflow_copy.items():
         if not isinstance(node, dict) or "inputs" not in node:
             continue
         inputs = node.get("inputs", {})
+        if voice_desc_node_id is None and any(key in inputs for key in ("prompt", "string", "value")):
+            voice_desc_node_id = node_id
+            continue
+        if line_text_node_id is None and node_id != voice_desc_node_id and any(
+            key in inputs for key in ("text", "prompt", "string", "value")
+        ):
+            line_text_node_id = node_id
+            continue
+        if output_node_id is None and "filename_prefix" in inputs:
+            output_node_id = node_id
 
-        # 查找包含特定关键词的节点
-        class_type = node.get("class_type", "")
-        if "instruct" in class_type.lower() or "prompt" in class_type.lower():
-            if not instruct_node_found and "text" in inputs or "prompt" in inputs:
-                for key in inputs:
-                    if isinstance(inputs[key], str) and len(inputs[key]) < 100:
-                        inputs[key] = instruct
-                        instruct_node_found = True
-                        break
-
-        if "text" in inputs and not text_node_found:
-            inputs["text"] = sample_text
-            text_node_found = True
-
-        # 查找保存音频的节点（SaveAudio）
-        if "SaveAudio" in class_type:
-            if "filename_prefix" in inputs:
-                inputs["filename_prefix"] = f"voices/role-{role_id:03d}"
-                save_node_found = True
-
-    if not save_node_found:
+    if not voice_desc_node_id:
+        return False, "Voice sample workflow missing voice description node", None, workflow_copy
+    if not line_text_node_id:
+        return False, "Voice sample workflow missing line text node", None, workflow_copy
+    if not output_node_id:
         return False, "Workflow missing SaveAudio node", None, workflow_copy
+
+    _assign_text_input(workflow_copy[voice_desc_node_id], instruct, "音色描述")
+    _assign_text_input(workflow_copy[line_text_node_id], sample_text, "台词")
+    workflow_copy[output_node_id]["inputs"]["filename_prefix"] = f"voices/role-{role_id:03d}"
 
     for node in workflow_copy.values():
         if not isinstance(node, dict):
