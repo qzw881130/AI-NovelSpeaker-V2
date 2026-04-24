@@ -972,6 +972,9 @@ const STATIC_TEXT_MAP = {
   不限制: { "en-US": "Unlimited", "zh-TW": "不限制", "ja-JP": "制限なし", "ko-KR": "제한 없음" },
   "3500 [最保险]": { "en-US": "3500 [Safest]", "zh-TW": "3500 [最保險]", "ja-JP": "3500 [最も安全]", "ko-KR": "3500 [가장 안전]" },
   "7000 [grok模型支持]": { "en-US": "7000 [Grok Supported]", "zh-TW": "7000 [grok模型支援]", "ja-JP": "7000 [Grok 対応]", "ko-KR": "7000 [Grok 지원]" },
+  "8000": { "en-US": "8000", "zh-TW": "8000", "ja-JP": "8000", "ko-KR": "8000" },
+  "9000": { "en-US": "9000", "zh-TW": "9000", "ja-JP": "9000", "ko-KR": "9000" },
+  "10000": { "en-US": "10000", "zh-TW": "10000", "ja-JP": "10000", "ko-KR": "10000" },
   "支持 Grok / DeepSeek / 千问 / Gemini / OpenAI / 本地 Ollama / 自定义 API。": { "en-US": "Supports Grok / DeepSeek / Qwen / Gemini / OpenAI / Local Ollama / Custom API.", "zh-TW": "支援 Grok / DeepSeek / 千問 / Gemini / OpenAI / 本地 Ollama / 自訂 API。", "ja-JP": "Grok / DeepSeek / Qwen / Gemini / OpenAI / ローカル Ollama / Custom API に対応。", "ko-KR": "Grok / DeepSeek / Qwen / Gemini / OpenAI / 로컬 Ollama / Custom API 지원." },
   自定义API: { "en-US": "Custom API", "zh-TW": "自訂API", "ja-JP": "Custom API", "ko-KR": "Custom API" },
   系统连接: { "en-US": "System Connection", "zh-TW": "系統連接", "ja-JP": "システム接続", "ko-KR": "시스템 연결" }

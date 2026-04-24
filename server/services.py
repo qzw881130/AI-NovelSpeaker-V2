@@ -835,7 +835,7 @@ def fetch_settings(conn: sqlite3.Connection) -> dict:
         batch_max_chars = int(kv.get("llm_batch_max_chars", "3500"))
     except (TypeError, ValueError):
         batch_max_chars = 3500
-    if batch_max_chars not in {0, 3500, 4000, 5000, 6000, 7000}:
+    if batch_max_chars not in {0, 3500, 4000, 5000, 6000, 7000, 8000, 9000, 10000}:
         batch_max_chars = 3500
     try:
         num_ctx = int(kv.get("llm_num_ctx", "65536"))
@@ -865,8 +865,6 @@ def fetch_settings(conn: sqlite3.Connection) -> dict:
         "think": llm_think,
         "batchMaxChars": batch_max_chars,
     }
-    if str(llm.get("provider") or "").strip() == "deepseek":
-        llm["maxTokens"] = min(int(llm.get("maxTokens") or 8192), 8192)
     ui_language = str(kv.get("ui_language", "zh-CN") or "zh-CN").strip() or "zh-CN"
     ui_timezone = (
         str(kv.get("ui_timezone", "Asia/Shanghai") or "Asia/Shanghai").strip()
@@ -1534,12 +1532,35 @@ def test_llm_endpoint(
 
 def extract_json_text(raw: str) -> str:
     text = str(raw or "").strip()
-    if text.startswith("{") and text.endswith("}"):
-        return text
     start = text.find("{")
-    end = text.rfind("}")
-    if start >= 0 and end > start:
-        return text[start : end + 1]
+    if start < 0:
+        return text
+
+    depth = 0
+    in_string = False
+    escaped = False
+    for index in range(start, len(text)):
+        ch = text[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            continue
+
+        if ch == '"':
+            in_string = True
+            continue
+        if ch == "{":
+            depth += 1
+            continue
+        if ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : index + 1]
+            continue
     return text
 
 
@@ -1713,8 +1734,6 @@ def call_llm_json_parse(
     api_key = str(llm.get("apiKey") or "").strip()
     temperature = float(llm.get("temperature") or 0.3)
     max_tokens = int(llm.get("maxTokens") or 8192)
-    if provider == "deepseek":
-        max_tokens = min(max_tokens, 8192)
     num_ctx = int(llm.get("numCtx") or 65536)
     keep_alive = str(llm.get("keepAlive") or "30m").strip() or "30m"
     think = bool(llm.get("think", True))
@@ -1905,7 +1924,7 @@ def process_json_task(task_id: int) -> None:
         if raw_batch_max_chars in (None, ""):
             raw_batch_max_chars = 3500
         batch_max_chars = int(raw_batch_max_chars)
-        if batch_max_chars not in {0, 3500, 4000, 5000, 6000, 7000}:
+        if batch_max_chars not in {0, 3500, 4000, 5000, 6000, 7000, 8000, 9000, 10000}:
             batch_max_chars = 3500
         batches = split_text_batches(chapter_text, max_chars=batch_max_chars)
 
