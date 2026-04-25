@@ -783,6 +783,7 @@ def fetch_json_tasks(conn: sqlite3.Connection) -> list[dict]:
                (SELECT COUNT(1) FROM task_batches b WHERE b.task_id=t.id) AS batch_total,
                (SELECT COUNT(1) FROM task_batches b WHERE b.task_id=t.id AND b.status='completed') AS batch_done,
                (SELECT COUNT(1) FROM task_batches b WHERE b.task_id=t.id AND b.status='failed') AS batch_failed,
+               (SELECT COUNT(1) FROM task_batches b WHERE b.task_id=t.id AND b.status='cancelled') AS batch_cancelled,
                n.name AS novel_name,
                COALESCE(
                    c.word_count,
@@ -818,6 +819,7 @@ def fetch_json_tasks(conn: sqlite3.Connection) -> list[dict]:
             "batchTotal": int(r["batch_total"] or 0),
             "batchDone": int(r["batch_done"] or 0),
             "batchFailed": int(r["batch_failed"] or 0),
+            "batchCancelled": int(r["batch_cancelled"] or 0),
             "createdAt": str(r["created_at"]),
             "startedAt": str(r["started_at"] or ""),
             "updatedAt": str(r["updated_at"]),
@@ -1835,6 +1837,64 @@ def call_llm_json_parse(
     return content
 
 
+class JsonTaskCancelledError(RuntimeError):
+    pass
+
+
+def get_json_task_status(task_id: int) -> str:
+    conn = db_conn()
+    row = conn.execute("SELECT status FROM json_tasks WHERE id=?", (task_id,)).fetchone()
+    conn.close()
+    return str(row["status"] or "") if row else ""
+
+
+def is_json_task_cancelled(task_id: int) -> bool:
+    return get_json_task_status(task_id) == "cancelled"
+
+
+def ensure_json_task_not_cancelled(task_id: int) -> None:
+    if is_json_task_cancelled(task_id):
+        raise JsonTaskCancelledError("任务已被用户终止")
+
+
+def cancel_json_task(task_id: int) -> tuple[bool, str]:
+    conn = db_conn()
+    row = conn.execute(
+        "SELECT status FROM json_tasks WHERE id=?", (task_id,)
+    ).fetchone()
+    if not row:
+        conn.close()
+        return False, "json task not found"
+
+    status = str(row["status"] or "")
+    if status == "cancelled":
+        conn.close()
+        return True, "ok"
+    if status not in {"pending", "running"}:
+        conn.close()
+        return False, "only pending or running task can be cancelled"
+
+    conn.execute(
+        """
+        UPDATE json_tasks
+        SET status='cancelled',error_message='任务被用户终止',updated_at=CURRENT_TIMESTAMP
+        WHERE id=?
+        """,
+        (task_id,),
+    )
+    conn.execute(
+        """
+        UPDATE task_batches
+        SET status='cancelled',error_message='任务被用户终止',updated_at=CURRENT_TIMESTAMP
+        WHERE task_id=? AND status IN ('pending','processing')
+        """,
+        (task_id,),
+    )
+    conn.commit()
+    conn.close()
+    return True, "ok"
+
+
 def process_json_task(task_id: int) -> None:
     model_name = ""
     chapter_id: int | None = None
@@ -1928,6 +1988,7 @@ def process_json_task(task_id: int) -> None:
             batch_max_chars = 3500
         batches = split_text_batches(chapter_text, max_chars=batch_max_chars)
 
+        ensure_json_task_not_cancelled(task_id)
         conn.execute("DELETE FROM task_batches WHERE task_id=?", (task_id,))
         for idx, batch_text in enumerate(batches, start=1):
             conn.execute(
@@ -1951,6 +2012,7 @@ def process_json_task(task_id: int) -> None:
 
         parsed_outputs: list[dict] = []
         for idx, batch_text in enumerate(batches, start=1):
+            ensure_json_task_not_cancelled(task_id)
             raw = ""
             parsed = None
             last_exc: Exception | None = None
@@ -1974,6 +2036,7 @@ def process_json_task(task_id: int) -> None:
             conn.commit()
             conn.close()
             for attempt in range(1, 4):
+                ensure_json_task_not_cancelled(task_id)
                 try:
                     raw = call_llm_json_parse(
                         llm=llm,
@@ -1984,11 +2047,14 @@ def process_json_task(task_id: int) -> None:
                         batch_index=idx,
                         batch_total=len(batches),
                     )
+                    ensure_json_task_not_cancelled(task_id)
                     parsed = parse_model_json(raw)
                     last_exc = None
                     break
                 except Exception as exc:
                     last_exc = exc
+                    if isinstance(exc, JsonTaskCancelledError):
+                        break
                     conn = db_conn()
                     conn.execute(
                         "UPDATE task_batches SET auto_retry_count=?, updated_at=CURRENT_TIMESTAMP WHERE task_id=? AND batch_index=?",
@@ -1999,13 +2065,14 @@ def process_json_task(task_id: int) -> None:
                     if attempt < 3:
                         time.sleep(0.8 * attempt)
 
+            ensure_json_task_not_cancelled(task_id)
             if last_exc is not None or parsed is None:
                 conn = db_conn()
                 conn.execute(
                     """
                     UPDATE task_batches
                     SET status='failed',llm_response_text=?,error_message=?,updated_at=CURRENT_TIMESTAMP
-                    WHERE task_id=? AND batch_index=?
+                    WHERE task_id=? AND batch_index=? AND status<>'cancelled'
                     """,
                     (raw, str(last_exc or "批次处理失败"), task_id, idx),
                 )
@@ -2014,18 +2081,20 @@ def process_json_task(task_id: int) -> None:
                 raise last_exc or RuntimeError("批次处理失败")
 
             parsed_outputs.append(parsed)
+            ensure_json_task_not_cancelled(task_id)
             conn = db_conn()
             conn.execute(
                 """
                 UPDATE task_batches
                 SET status='completed',llm_response_text=?,parsed_json_text=?,error_message=NULL,updated_at=CURRENT_TIMESTAMP
-                WHERE task_id=? AND batch_index=?
+                WHERE task_id=? AND batch_index=? AND status<>'cancelled'
                 """,
                 (raw, json.dumps(parsed, ensure_ascii=False), task_id, idx),
             )
             conn.commit()
             conn.close()
 
+        ensure_json_task_not_cancelled(task_id)
         merged_obj = merge_batch_outputs(parsed_outputs)
         merged = json.dumps(merged_obj, ensure_ascii=False)
 
@@ -2035,7 +2104,7 @@ def process_json_task(task_id: int) -> None:
             UPDATE json_tasks
             SET status='completed',progress=100,merged_result_json=?,error_message=NULL,
                 model_name=?,updated_at=CURRENT_TIMESTAMP
-            WHERE id=?
+            WHERE id=? AND status<>'cancelled'
             """,
             (merged, model_name, task_id),
         )
@@ -2048,6 +2117,8 @@ def process_json_task(task_id: int) -> None:
         conn.commit()
         conn.close()
     except Exception as exc:
+        if isinstance(exc, JsonTaskCancelledError) or is_json_task_cancelled(task_id):
+            return
         conn = db_conn()
         conn.execute(
             """
@@ -2160,6 +2231,7 @@ def _process_json_batch_once(
     parsed = None
     last_exc: Exception | None = None
     for attempt in range(1, 4):
+        ensure_json_task_not_cancelled(int(context["task"]["id"]))
         try:
             raw = call_llm_json_parse(
                 llm=context["llm"],
@@ -2170,13 +2242,17 @@ def _process_json_batch_once(
                 batch_index=batch_index,
                 batch_total=max(1, int(context.get("batchTotal") or 1)),
             )
+            ensure_json_task_not_cancelled(int(context["task"]["id"]))
             parsed = parse_model_json(raw)
             last_exc = None
             break
         except Exception as exc:
             last_exc = exc
+            if isinstance(exc, JsonTaskCancelledError):
+                break
             if attempt < 3:
                 time.sleep(0.8 * attempt)
+    ensure_json_task_not_cancelled(int(context["task"]["id"]))
     if last_exc is not None or parsed is None:
         raise RuntimeError(str(last_exc or "批次处理失败")) from last_exc
     return raw, parsed
@@ -2185,10 +2261,13 @@ def _process_json_batch_once(
 def _finalize_json_task_if_ready(task_id: int) -> bool:
     conn = db_conn()
     task = conn.execute(
-        "SELECT id, chapter_id FROM json_tasks WHERE id=?",
+        "SELECT id, chapter_id, status FROM json_tasks WHERE id=?",
         (task_id,),
     ).fetchone()
     if not task:
+        conn.close()
+        return False
+    if str(task["status"] or "") == "cancelled":
         conn.close()
         return False
     rows = conn.execute(
@@ -2210,7 +2289,7 @@ def _finalize_json_task_if_ready(task_id: int) -> bool:
         """
         UPDATE json_tasks
         SET status='completed',progress=100,merged_result_json=?,error_message=NULL,updated_at=CURRENT_TIMESTAMP
-        WHERE id=?
+        WHERE id=? AND status<>'cancelled'
         """,
         (merged, task_id),
     )

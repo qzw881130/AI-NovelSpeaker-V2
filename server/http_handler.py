@@ -1393,6 +1393,17 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"status": "ok"})
             return
 
+        m_cancel_json_task = re.match(r"^/api/json-tasks/(\d+)/cancel$", route)
+        if m_cancel_json_task:
+            task_id = int(m_cancel_json_task.group(1))
+            ok, message = cancel_json_task(task_id)
+            if not ok:
+                code = 404 if message == "json task not found" else 409
+                self.send_json({"error": message}, code)
+                return
+            self.send_json({"status": "ok"})
+            return
+
         m_retry_json_batch = re.match(
             r"^/api/json-tasks/(\d+)/batches/(\d+)/retry$", route
         )
