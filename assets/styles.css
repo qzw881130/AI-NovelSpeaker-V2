@@ -1193,6 +1193,27 @@ textarea {
   font-size: 14px;
 }
 
+.keep-alive-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.keep-alive-row select {
+  flex: 0 0 180px;
+  width: 180px;
+}
+
+.keep-alive-inline-check {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  white-space: nowrap;
+  margin-top: 0;
+}
+
 .form-toggle-field {
   align-items: flex-start;
 }

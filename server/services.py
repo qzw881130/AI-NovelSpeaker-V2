@@ -846,6 +846,12 @@ def fetch_settings(conn: sqlite3.Connection) -> dict:
     if num_ctx not in {32768, 65536, 98304, 131072}:
         num_ctx = 65536
     keep_alive = str(kv.get("llm_keep_alive", "30m") or "30m").strip() or "30m"
+    unload_after_call = str(
+        kv.get("llm_unload_after_call", "0") or "0"
+    ).strip().lower() not in {"0", "false", "off", "no", ""}
+    if keep_alive == "unload":
+        unload_after_call = True
+        keep_alive = "30m"
     if keep_alive not in {"5m", "15m", "30m", "1h", "6h", "24h"}:
         keep_alive = "30m"
     llm_think = str(kv.get("llm_think", "1") or "1").strip().lower() not in {
@@ -864,6 +870,7 @@ def fetch_settings(conn: sqlite3.Connection) -> dict:
         "maxTokens": int(kv.get("llm_max_tokens", "8192")),
         "numCtx": num_ctx,
         "keepAlive": keep_alive,
+        "unloadAfterCall": unload_after_call,
         "think": llm_think,
         "batchMaxChars": batch_max_chars,
     }
@@ -1452,6 +1459,7 @@ def test_llm_endpoint(
     think: bool = True,
     num_ctx: int = 65536,
     keep_alive: str = "30m",
+    unload_after_call: bool = False,
 ) -> tuple[bool, str]:
     if not base_url:
         return False, "API Base URL 不能为空"
@@ -1475,6 +1483,7 @@ def test_llm_endpoint(
     }
     if provider == "ollama":
         url = build_ollama_chat_url(base_url)
+        request_keep_alive = normalize_ollama_keep_alive(keep_alive)
         payload = {
             "model": model,
             "messages": [
@@ -1483,7 +1492,7 @@ def test_llm_endpoint(
             ],
             "stream": False,
             "think": bool(think),
-            "keep_alive": str(keep_alive or "30m"),
+            "keep_alive": request_keep_alive,
             "options": {
                 "num_ctx": int(num_ctx or 65536),
                 "temperature": 0,
@@ -1501,6 +1510,17 @@ def test_llm_endpoint(
         )
     except RuntimeError as exc:
         return False, str(exc)
+    finally:
+        if provider == "ollama" and unload_after_call:
+            try:
+                unload_ollama_model(
+                    base_url=base_url,
+                    model=model,
+                    proxy_url=proxy_url,
+                    timeout=15.0,
+                )
+            except Exception:
+                pass
 
     if 200 <= code < 300:
         return True, "模型接口可调用"
@@ -1571,6 +1591,37 @@ def build_ollama_chat_url(base_url: str) -> str:
     if base.endswith("/v1"):
         base = base[:-3]
     return f"{base}/api/chat"
+
+
+def build_ollama_generate_url(base_url: str) -> str:
+    base = str(base_url or "").rstrip("/")
+    if base.endswith("/v1"):
+        base = base[:-3]
+    return f"{base}/api/generate"
+
+
+def normalize_ollama_keep_alive(keep_alive: str) -> str:
+    value = str(keep_alive or "30m").strip() or "30m"
+    return "30m" if value == "unload" else value
+
+
+def unload_ollama_model(
+    *, base_url: str, model: str, proxy_url: str = "", timeout: float = 30.0
+) -> None:
+    if not str(base_url or "").strip() or not str(model or "").strip():
+        return
+    http_json_request(
+        "POST",
+        build_ollama_generate_url(base_url),
+        payload={
+            "model": str(model).strip(),
+            "prompt": "",
+            "stream": False,
+            "keep_alive": 0,
+        },
+        timeout=timeout,
+        proxy_url=proxy_url,
+    )
 
 
 def parse_model_json(raw: str) -> dict:
@@ -1738,6 +1789,7 @@ def call_llm_json_parse(
     max_tokens = int(llm.get("maxTokens") or 8192)
     num_ctx = int(llm.get("numCtx") or 65536)
     keep_alive = str(llm.get("keepAlive") or "30m").strip() or "30m"
+    unload_after_call = bool(llm.get("unloadAfterCall", False))
     think = bool(llm.get("think", True))
 
     if not base_url:
@@ -1780,6 +1832,7 @@ def call_llm_json_parse(
     url = f"{base_url.rstrip('/')}/chat/completions"
     if provider == "ollama":
         url = build_ollama_chat_url(base_url)
+        request_keep_alive = normalize_ollama_keep_alive(keep_alive)
         payload = {
             "model": model,
             "messages": [
@@ -1788,7 +1841,7 @@ def call_llm_json_parse(
             ],
             "stream": False,
             "think": think,
-            "keep_alive": keep_alive,
+            "keep_alive": request_keep_alive,
             "options": {
                 "num_ctx": num_ctx,
                 "temperature": temperature,
@@ -1798,14 +1851,26 @@ def call_llm_json_parse(
         request_timeout = (
             1800.0 if num_ctx >= 65536 or len(chapter_text) > 12000 else 900.0
         )
-    code, body = http_json_request(
-        "POST",
-        url,
-        payload=payload,
-        headers=headers,
-        timeout=request_timeout,
-        proxy_url=proxy_url,
-    )
+    try:
+        code, body = http_json_request(
+            "POST",
+            url,
+            payload=payload,
+            headers=headers,
+            timeout=request_timeout,
+            proxy_url=proxy_url,
+        )
+    finally:
+        if provider == "ollama" and unload_after_call:
+            try:
+                unload_ollama_model(
+                    base_url=base_url,
+                    model=model,
+                    proxy_url=proxy_url,
+                    timeout=30.0,
+                )
+            except Exception:
+                pass
 
     if not (200 <= code < 300):
         detail = ""

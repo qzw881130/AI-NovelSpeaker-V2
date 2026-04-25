@@ -1049,6 +1049,7 @@ class Handler(BaseHTTPRequestHandler):
                 think=bool(llm.get("think", True)),
                 num_ctx=int(llm.get("numCtx") or 65536),
                 keep_alive=str(llm.get("keepAlive") or "30m").strip() or "30m",
+                unload_after_call=bool(llm.get("unloadAfterCall", False)),
             )
             if not ok:
                 self.send_json({"error": msg}, 409)
@@ -2256,6 +2257,9 @@ class Handler(BaseHTTPRequestHandler):
                 "llm_max_tokens": str(llm_max_tokens),
                 "llm_num_ctx": str(llm.get("numCtx") or 65536),
                 "llm_keep_alive": str(llm.get("keepAlive") or "30m"),
+                "llm_unload_after_call": "1"
+                if bool(llm.get("unloadAfterCall", False))
+                else "0",
                 "llm_think": "1" if bool(llm.get("think", True)) else "0",
                 "llm_batch_max_chars": str(batch_max_chars),
                 "ui_language": ui_language,

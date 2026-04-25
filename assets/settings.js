@@ -175,10 +175,13 @@ function load(settings) {
   document.getElementById("llmNumCtx").value = NUM_CTX_OPTIONS.has(numCtx)
     ? String(numCtx)
     : "65536";
-  const keepAlive = String(llm.keepAlive || "30m").trim();
+  const rawKeepAlive = String(llm.keepAlive || "30m").trim();
+  const unloadAfterCall = llm.unloadAfterCall === true || rawKeepAlive === "unload";
+  const keepAlive = KEEP_ALIVE_OPTIONS.has(rawKeepAlive) ? rawKeepAlive : "30m";
   document.getElementById("llmKeepAlive").value = KEEP_ALIVE_OPTIONS.has(keepAlive)
     ? keepAlive
     : "30m";
+  document.getElementById("llmUnloadAfterCall").checked = unloadAfterCall;
   document.getElementById("llmThink").checked = llm.think !== false;
   const batchChars = Number(llm.batchMaxChars ?? 3500);
   document.getElementById("llmBatchChars").value = BATCH_CHAR_OPTIONS.has(batchChars)
@@ -264,6 +267,7 @@ function syncOllamaFieldVisibility() {
   const isOllama = provider === "ollama";
   document.getElementById("llmNumCtxWrap")?.classList.toggle("hidden", !isOllama);
   document.getElementById("llmKeepAliveWrap")?.classList.toggle("hidden", !isOllama);
+  document.getElementById("llmUnloadAfterCallWrap")?.classList.toggle("hidden", !isOllama);
   document.getElementById("llmThinkWrap")?.classList.toggle("hidden", !isOllama);
   const keyInput = document.getElementById("llmKey");
   const keyHint = document.getElementById("llmKeyHint");
@@ -301,6 +305,7 @@ function readSettingsForm() {
       ),
       numCtx: Number(document.getElementById("llmNumCtx").value || 65536),
       keepAlive: String(document.getElementById("llmKeepAlive").value || "30m"),
+      unloadAfterCall: document.getElementById("llmUnloadAfterCall").checked,
       think: document.getElementById("llmThink").checked,
       batchMaxChars: Number(document.getElementById("llmBatchChars").value ?? 3500),
     },

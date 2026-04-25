@@ -14,6 +14,7 @@ const DEFAULT_SETTINGS = {
     maxTokens: 8192,
     numCtx: 65536,
     keepAlive: "30m",
+    unloadAfterCall: false,
     think: true,
     batchMaxChars: 3500,
   },

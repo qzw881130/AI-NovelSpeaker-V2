@@ -466,6 +466,7 @@ const STATIC_TEXT_MAP = {
   删除: { "en-US": "Delete", "zh-TW": "刪除", "ja-JP": "削除", "ko-KR": "삭제" },
   编辑: { "en-US": "Edit", "zh-TW": "編輯", "ja-JP": "編集", "ko-KR": "편집" },
   关闭: { "en-US": "Close", "zh-TW": "關閉", "ja-JP": "閉じる", "ko-KR": "닫기" },
+  "调用后卸载模型，清空上下文": { "en-US": "Unload model after each call and clear context", "zh-TW": "呼叫後卸載模型，清空上下文", "ja-JP": "呼び出し後にモデルをアンロードし、コンテキストをクリア", "ko-KR": "호출 후 모델을 언로드하고 컨텍스트를 비웁니다" },
   未测试: { "en-US": "Not Tested", "zh-TW": "未測試", "ja-JP": "未テスト", "ko-KR": "미테스트" },
   测试中: { "en-US": "Testing", "zh-TW": "測試中", "ja-JP": "テスト中", "ko-KR": "테스트 중" },
   可用: { "en-US": "Available", "zh-TW": "可用", "ja-JP": "利用可能", "ko-KR": "사용 가능" },
