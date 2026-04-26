@@ -160,6 +160,7 @@ function render() {
   const wordsLabel = t("字数");
   const promptLabel = t("提示词");
   const batchesLabel = t("分批");
+  const compareLabel = t("common.compare");
 
   const list = currentData.jsonTasks.filter((t) => {
     const hitNovel = activeNovel ? String(t.novelId) === String(activeNovel) : true;
@@ -206,9 +207,13 @@ function render() {
               ? `<div class="card-actions"><button class="ghost-btn" data-task-action="cancel" data-task-id="${task.id}">${t("common.terminate")}</button><button class="ghost-btn" data-task-action="batches" data-task-id="${task.id}">${taskDetails.has(
                   String(task.id)
                 ) ? "收起批次" : "批次详情"}</button></div>`
-              : `<div class="card-actions"><button class="ghost-btn" data-task-action="delete" data-task-id="${task.id}">${t("common.delete")}</button><button class="ghost-btn" data-task-action="batches" data-task-id="${task.id}">${taskDetails.has(
+            : task.status === "completed"
+              ? `<div class="card-actions"><button class="ghost-btn" data-task-action="delete" data-task-id="${task.id}">${t("common.delete")}</button><button class="ghost-btn" data-task-action="compare" data-task-id="${task.id}">${compareLabel}</button><button class="ghost-btn" data-task-action="batches" data-task-id="${task.id}">${taskDetails.has(
                     String(task.id)
                   ) ? "收起批次" : "批次详情"}</button></div>`
+              : `<div class="card-actions"><button class="ghost-btn" data-task-action="delete" data-task-id="${task.id}">${t("common.delete")}</button><button class="ghost-btn" data-task-action="batches" data-task-id="${task.id}">${taskDetails.has(
+                     String(task.id)
+                   ) ? "收起批次" : "批次详情"}</button></div>`
         }
         ${loadingDetails.has(String(task.id)) ? `<p class="meta">正在加载批次详情...</p>` : ""}
         ${taskDetails.has(String(task.id)) ? renderBatchDetails(task.id) : ""}
@@ -286,6 +291,14 @@ async function onTaskAction(action, id) {
       await cancelJsonTask(task.id);
       toast(t("toast.terminated"));
       await reload();
+      return;
+    }
+    if (action === "compare") {
+      const novelId = Number(task.novelId || 0);
+      const chapterNum = Number(task.chapter || 0);
+      if (!novelId || !chapterNum) return;
+      const url = `./chapters-compare.html?novelId=${novelId}&chapterNum=${chapterNum}`;
+      window.open(url, "_blank", "noopener,noreferrer");
       return;
     }
     if (action === "batches") {
