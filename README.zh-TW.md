@@ -117,12 +117,12 @@ start.bat --port=8081
 
 | 插件（第三方） | 倉庫 | 本專案工作流使用到的節點 |
 | --- | --- | --- |
-| Qwen3-TTS ComfyUI | [firadiskin/qwen3-tts-comfyui](https://github.com/firadiskin/qwen3-tts-comfyui) | `FB_Qwen3TTSVoiceDesign`、`FB_Qwen3TTSVoiceClone` |
+| Qwen3-TTS ComfyUI | [flybirdxx/ComfyUI-Qwen-TTS](https://github.com/flybirdxx/ComfyUI-Qwen-TTS) | `FB_Qwen3TTSVoiceDesign`、`FB_Qwen3TTSVoiceClone` |
 | ComfyUI-FishAudioS2 | [Saganaki22/ComfyUI-FishAudioS2](https://github.com/Saganaki22/ComfyUI-FishAudioS2) | `FishS2VoiceCloneTTS` |
 | ComfyUI_Comfyroll_CustomNodes | [Suzie1/ComfyUI_Comfyroll_CustomNodes](https://github.com/Suzie1/ComfyUI_Comfyroll_CustomNodes) | `CR Text` |
 | ComfyUI-MTB | [melMass/comfy_mtb](https://github.com/melMass/comfy_mtb) | `Load Whisper (mtb)`、`Audio To Text (mtb)` |
 | ComfyUI-Custom-Scripts | [pythongosssss/ComfyUI-Custom-Scripts](https://github.com/pythongosssss/ComfyUI-Custom-Scripts) | `ShowText\|pysssss` |
-| Comfyui_SynVow_Qwen3ASR | [SynVow/Comfyui_SynVow_Qwen3ASR](https://github.com/SynVow/Comfyui_SynVow_Qwen3ASR) | `Qwen3ASRLoader`、`Qwen3ASRTranscribe` |
+| Comfyui_SynVow_Qwen3ASR | [shumoLR/Comfyui_SynVow_Qwen3ASR](https://github.com/shumoLR/Comfyui_SynVow_Qwen3ASR) | `Qwen3ASRLoader`、`Qwen3ASRTranscribe` |
 
 說明：`LoadAudio`、`SaveAudio`、`Text Multiline` 等節點來自 ComfyUI Core，不屬於第三方節點。
 

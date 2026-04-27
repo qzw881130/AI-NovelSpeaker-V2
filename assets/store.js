@@ -15,6 +15,7 @@ const DEFAULT_SETTINGS = {
     numCtx: 65536,
     keepAlive: "30m",
     unloadAfterCall: false,
+    batchTimeoutMinutes: 15,
     think: true,
     batchMaxChars: 3500,
   },

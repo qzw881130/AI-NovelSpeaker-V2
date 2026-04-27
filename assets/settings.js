@@ -17,6 +17,7 @@ const PROVIDER_MAX_TOKENS = {};
 const BATCH_CHAR_OPTIONS = new Set([0, 3500, 4000, 5000, 6000, 7000, 8000, 9000, 10000]);
 const NUM_CTX_OPTIONS = new Set([32768, 65536, 98304, 131072]);
 const KEEP_ALIVE_OPTIONS = new Set(["5m", "15m", "30m", "1h", "6h", "24h"]);
+const BATCH_TIMEOUT_OPTIONS = new Set([5, 10, 15, 20, 30, 40]);
 const UI_LANGUAGE_OPTIONS = new Set(["zh-CN", "zh-TW", "en-US", "ja-JP", "ko-KR"]);
 const UI_TIMEZONE_OPTIONS = new Set([
   "Asia/Shanghai",
@@ -182,6 +183,10 @@ function load(settings) {
     ? keepAlive
     : "30m";
   document.getElementById("llmUnloadAfterCall").checked = unloadAfterCall;
+  const batchTimeoutMinutes = Number(llm.batchTimeoutMinutes ?? 15);
+  document.getElementById("llmBatchTimeoutMinutes").value = BATCH_TIMEOUT_OPTIONS.has(batchTimeoutMinutes)
+    ? String(batchTimeoutMinutes)
+    : "15";
   document.getElementById("llmThink").checked = llm.think !== false;
   const batchChars = Number(llm.batchMaxChars ?? 3500);
   document.getElementById("llmBatchChars").value = BATCH_CHAR_OPTIONS.has(batchChars)
@@ -306,6 +311,7 @@ function readSettingsForm() {
       numCtx: Number(document.getElementById("llmNumCtx").value || 65536),
       keepAlive: String(document.getElementById("llmKeepAlive").value || "30m"),
       unloadAfterCall: document.getElementById("llmUnloadAfterCall").checked,
+      batchTimeoutMinutes: Number(document.getElementById("llmBatchTimeoutMinutes").value || 15),
       think: document.getElementById("llmThink").checked,
       batchMaxChars: Number(document.getElementById("llmBatchChars").value ?? 3500),
     },

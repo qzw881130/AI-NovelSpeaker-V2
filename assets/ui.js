@@ -34,6 +34,24 @@ const NAV_ICONS = {
   textFix: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 5.5h12"/><path d="M6 9.5h9"/><path d="M6 13.5h6"/><path d="M14.5 14.5 18 18"/><path d="m16.5 12 4 4"/><path d="M14 18h6"/></svg>`,
 };
 
+const NAV_EXTERNALS = [
+  {
+    href: "https://github.com/qzw881130/AI-NovelSpeaker-V2",
+    title: "GitHub",
+    icon: `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5A12 12 0 0 0 8.2 23.9c.6.1.8-.2.8-.6v-2.1c-3.3.7-4-1.4-4-1.4-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.9 1.2 1.9 1.2 1.1 1.8 2.9 1.3 3.6 1 .1-.8.4-1.3.8-1.7-2.7-.3-5.5-1.4-5.5-6A4.7 4.7 0 0 1 6.6 8c-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.3 11.3 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.7 1.6.3 2.8.1 3.1a4.7 4.7 0 0 1 1.2 3.3c0 4.6-2.8 5.6-5.5 6 .4.4.8 1 .8 2.1v3.1c0 .3.2.7.8.6A12 12 0 0 0 12 .5Z"/></svg>`,
+  },
+  {
+    href: "https://www.bilibili.com/video/BV136AKzcE2c",
+    title: "Bilibili",
+    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="6.5" width="16" height="11" rx="3"/><path d="m9 3.5 2 3"/><path d="m15 3.5-2 3"/><path d="M9 11h.01"/><path d="M15 11h.01"/><path d="M8.5 14.5c1 .8 2.2 1.2 3.5 1.2s2.5-.4 3.5-1.2"/></svg>`,
+  },
+  {
+    href: "https://www.youtube.com/watch?v=pVB0qMpFdqg",
+    title: "YouTube",
+    icon: `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M23.5 7.2a3 3 0 0 0-2.1-2.1C19.6 4.5 12 4.5 12 4.5s-7.6 0-9.4.6A3 3 0 0 0 .5 7.2 31.8 31.8 0 0 0 0 12a31.8 31.8 0 0 0 .5 4.8 3 3 0 0 0 2.1 2.1c1.8.6 9.4.6 9.4.6s7.6 0 9.4-.6a3 3 0 0 0 2.1-2.1A31.8 31.8 0 0 0 24 12a31.8 31.8 0 0 0-.5-4.8ZM9.6 15.5V8.5l6 3.5-6 3.5Z"/></svg>`,
+  },
+];
+
 const NAV_ITEMS = [
   { href: "./index.html", labelKey: "nav.novels", icon: NAV_ICONS.novels },
   { href: "./chapters.html", labelKey: "nav.chapters", icon: NAV_ICONS.chapters },
@@ -124,6 +142,10 @@ function renderNav() {
     const badge = navBadgeForHref(item.href);
     return `<a class="nav-link ${active}" href="${item.href}" title="${t(item.labelKey)}"><i class="nav-icon" aria-hidden="true">${item.icon}</i><span class="nav-label">${t(item.labelKey)}</span>${badge > 0 ? `<i class="nav-badge">+${badge}</i>` : ""}</a>`;
   }).join("");
+  const externals = NAV_EXTERNALS.map(
+    (item) =>
+      `<a class="nav-external-link" href="${item.href}" target="_blank" rel="noopener noreferrer" title="${item.title}" aria-label="${item.title}"><i class="nav-external-icon" aria-hidden="true">${item.icon}</i></a>`
+  ).join("");
 
   nav.innerHTML = `
     <div class="brand">
@@ -131,6 +153,7 @@ function renderNav() {
     </div>
     <button class="nav-toggle" id="navToggle" title="${collapsed ? "展开菜单" : "收起菜单"}">◀</button>
     ${links}
+    <div class="nav-external-row">${externals}</div>
   `;
 
   // Bind toggle event

@@ -28,6 +28,7 @@ const MESSAGES = {
     "common.status.completed": "已完成",
     "common.status.failed": "失败",
     "common.status.cancelled": "已终止",
+    "common.status.timeout": "超时",
     "nav.novels": "小说管理",
     "nav.chapters": "章节管理",
     "nav.jsonTasks": "JSON任务",
@@ -79,6 +80,7 @@ const MESSAGES = {
     "api.promptNotConfigured": "小说未配置提示词",
     "api.runningTaskCannotDelete": "运行中任务不可删除",
     "api.onlyPendingOrRunningJsonTaskCanBeCancelled": "仅待执行或执行中的 JSON 任务可终止",
+    "api.onlyFailedOrTimeoutTaskCanBeRetried": "仅失败或超时任务可重试",
     "api.invalidScheduledAt": "定时参数无效",
   },
   "zh-TW": {
@@ -106,6 +108,7 @@ const MESSAGES = {
     "common.status.completed": "已完成",
     "common.status.failed": "失敗",
     "common.status.cancelled": "已終止",
+    "common.status.timeout": "超時",
     "nav.novels": "小說管理",
     "nav.chapters": "章節管理",
     "nav.jsonTasks": "JSON任務",
@@ -157,6 +160,7 @@ const MESSAGES = {
     "api.promptNotConfigured": "小說未設定提示詞",
     "api.runningTaskCannotDelete": "執行中任務不可刪除",
     "api.onlyPendingOrRunningJsonTaskCanBeCancelled": "僅待執行或執行中的 JSON 任務可終止",
+    "api.onlyFailedOrTimeoutTaskCanBeRetried": "僅失敗或超時任務可重試",
     "api.invalidScheduledAt": "定時參數無效",
   },
   "en-US": {
@@ -184,6 +188,7 @@ const MESSAGES = {
     "common.status.completed": "Completed",
     "common.status.failed": "Failed",
     "common.status.cancelled": "Cancelled",
+    "common.status.timeout": "Timed Out",
     "nav.novels": "Novels",
     "nav.chapters": "Chapters",
     "nav.jsonTasks": "JSON Tasks",
@@ -235,6 +240,7 @@ const MESSAGES = {
     "api.promptNotConfigured": "Novel prompt is not configured",
     "api.runningTaskCannotDelete": "Running task cannot be deleted",
     "api.onlyPendingOrRunningJsonTaskCanBeCancelled": "Only pending or running JSON tasks can be terminated",
+    "api.onlyFailedOrTimeoutTaskCanBeRetried": "Only failed or timed out tasks can be retried",
     "api.invalidScheduledAt": "Invalid scheduled time",
   },
   "ja-JP": {
@@ -262,6 +268,7 @@ const MESSAGES = {
     "common.status.completed": "完了",
     "common.status.failed": "失敗",
     "common.status.cancelled": "中止",
+    "common.status.timeout": "タイムアウト",
     "nav.novels": "小説管理",
     "nav.chapters": "章管理",
     "nav.jsonTasks": "JSONタスク",
@@ -313,6 +320,7 @@ const MESSAGES = {
     "api.promptNotConfigured": "小説のプロンプトが未設定です",
     "api.runningTaskCannotDelete": "実行中タスクは削除できません",
     "api.onlyPendingOrRunningJsonTaskCanBeCancelled": "待機中または実行中の JSON タスクのみ中止できます",
+    "api.onlyFailedOrTimeoutTaskCanBeRetried": "失敗またはタイムアウトしたタスクのみ再試行できます",
     "api.invalidScheduledAt": "予約時刻が不正です",
   },
   "ko-KR": {
@@ -340,6 +348,7 @@ const MESSAGES = {
     "common.status.completed": "완료",
     "common.status.failed": "실패",
     "common.status.cancelled": "중지됨",
+    "common.status.timeout": "시간 초과",
     "nav.novels": "소설 관리",
     "nav.chapters": "챕터 관리",
     "nav.jsonTasks": "JSON 작업",
@@ -391,6 +400,7 @@ const MESSAGES = {
     "api.promptNotConfigured": "소설 프롬프트가 설정되지 않았습니다",
     "api.runningTaskCannotDelete": "실행 중 작업은 삭제할 수 없습니다",
     "api.onlyPendingOrRunningJsonTaskCanBeCancelled": "대기 중이거나 실행 중인 JSON 작업만 중지할 수 있습니다",
+    "api.onlyFailedOrTimeoutTaskCanBeRetried": "실패했거나 시간 초과된 작업만 재시도할 수 있습니다",
     "api.invalidScheduledAt": "예약 시간이 유효하지 않습니다",
   },
 };
@@ -406,6 +416,7 @@ const BACKEND_ERROR_MAP = {
   "running task can not be deleted": "api.runningTaskCannotDelete",
   "running audio task can not be deleted": "api.runningTaskCannotDelete",
   "only pending or running task can be cancelled": "api.onlyPendingOrRunningJsonTaskCanBeCancelled",
+  "only failed or timeout task can be retried": "api.onlyFailedOrTimeoutTaskCanBeRetried",
   "invalid scheduledat": "api.invalidScheduledAt",
   "not found": "api.notFound",
 };

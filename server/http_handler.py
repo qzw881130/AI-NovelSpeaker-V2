@@ -1377,9 +1377,9 @@ class Handler(BaseHTTPRequestHandler):
                 conn.close()
                 self.send_json({"error": "json task not found"}, 404)
                 return
-            if str(row["status"]) != "failed":
+            if str(row["status"]) not in {"failed", "timeout"}:
                 conn.close()
-                self.send_json({"error": "only failed task can be retried"}, 409)
+                self.send_json({"error": "only failed or timeout task can be retried"}, 409)
                 return
             conn.execute(
                 """
@@ -2204,6 +2204,15 @@ class Handler(BaseHTTPRequestHandler):
                 llm_max_tokens = int(raw_max_tokens)
             except (TypeError, ValueError):
                 llm_max_tokens = 8192
+            raw_batch_timeout_minutes = llm.get("batchTimeoutMinutes", 15)
+            if raw_batch_timeout_minutes in (None, ""):
+                raw_batch_timeout_minutes = 15
+            try:
+                batch_timeout_minutes = int(raw_batch_timeout_minutes)
+            except (TypeError, ValueError):
+                batch_timeout_minutes = 15
+            if batch_timeout_minutes not in {5, 10, 15, 20, 30, 40}:
+                batch_timeout_minutes = 15
             ui_language = str(ui.get("language") or "zh-CN").strip() or "zh-CN"
             if ui_language not in {"zh-CN", "zh-TW", "en-US", "ja-JP", "ko-KR"}:
                 ui_language = "zh-CN"
@@ -2260,6 +2269,7 @@ class Handler(BaseHTTPRequestHandler):
                 "llm_unload_after_call": "1"
                 if bool(llm.get("unloadAfterCall", False))
                 else "0",
+                "llm_batch_timeout_minutes": str(batch_timeout_minutes),
                 "llm_think": "1" if bool(llm.get("think", True)) else "0",
                 "llm_batch_max_chars": str(batch_max_chars),
                 "ui_language": ui_language,

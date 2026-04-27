@@ -100,6 +100,7 @@ function displayBatchProgress(task) {
   const done = Math.max(0, Number(task.batchDone || 0));
   const failed = Math.max(0, Number(task.batchFailed || 0));
   const cancelled = Math.max(0, Number(task.batchCancelled || 0));
+  const timeout = Math.max(0, Number(task.batchTimeout || 0));
   let current = done;
   if (task.status === "running") {
     current = Math.min(total, done + 1);
@@ -107,6 +108,8 @@ function displayBatchProgress(task) {
     current = Math.min(total, done + failed);
   } else if (task.status === "cancelled") {
     current = Math.min(total, done + failed + cancelled);
+  } else if (task.status === "timeout") {
+    current = Math.min(total, done + failed + timeout);
   } else if (task.status === "completed") {
     current = total;
   }
@@ -135,9 +138,9 @@ function renderBatchDetails(taskId) {
   return `<div class="batch-panel">${batches
     .map((b) => {
       const key = batchKey(b);
-      const shouldOpen = openSet ? openSet.has(key) : b.status === "failed";
+      const shouldOpen = openSet ? openSet.has(key) : ["failed", "timeout"].includes(String(b.status || ""));
       const err = b.errorMessage ? ` · ${escapeHtml(b.errorMessage)}` : "";
-      const canRetry = ["completed", "failed"].includes(String(data.status || ""));
+      const canRetry = ["completed", "failed", "timeout"].includes(String(data.status || ""));
       return `<details data-batch-detail="1" data-task-id="${taskId}" data-batch-key="${escapeHtml(key)}" ${shouldOpen ? "open" : ""}><summary>批次 ${b.batchIndex} · ${statusLabel(b.status)} · ${wordsLabel} ${fmtNumber(b.inputWordCount || 0)}${err}</summary><p class="meta">${updatedLabel} ${formatServerTime(
         b.updatedAt
       )} · 自动重试 ${fmtNumber(b.autoRetryCount || 0)}/3 · 手动重试 ${fmtNumber(b.retryCount || 0)}/10</p>${canRetry ? `<div class="card-actions"><button class="ghost-btn" data-batch-action="retry" data-task-id="${taskId}" data-batch-index="${b.batchIndex}">${t("common.retry")}</button></div>` : ""}<div class="batch-block"><strong>${inputLabel}</strong><pre>${escapeHtml(b.inputText || "")}</pre></div><div class="batch-block"><strong>${llmLabel}</strong><pre>${escapeHtml(
@@ -197,9 +200,9 @@ function render() {
             ? ` · ${elapsedLabel} <span data-elapsed-from="${task.startedAt || task.createdAt || task.updatedAt}">${formatElapsedFrom(task.startedAt || task.createdAt || task.updatedAt)}</span>`
             : ` · ${elapsedLabel} ${formatElapsedBetween(task.startedAt || task.createdAt || task.updatedAt, task.updatedAt)}`
         }</p>
-        ${["failed", "cancelled"].includes(String(task.status || "")) && task.errorMessage ? `<p class="task-error">${escapeHtml(task.errorMessage)}</p>` : ""}
+        ${["failed", "cancelled", "timeout"].includes(String(task.status || "")) && task.errorMessage ? `<p class="task-error">${escapeHtml(task.errorMessage)}</p>` : ""}
         ${
-          task.status === "failed"
+          ["failed", "timeout"].includes(String(task.status || ""))
             ? `<div class="card-actions"><button class="ghost-btn" data-task-action="retry" data-task-id="${task.id}">${t("common.retry")}</button><button class="ghost-btn" data-task-action="delete" data-task-id="${task.id}">${t("common.delete")}</button><button class="ghost-btn" data-task-action="batches" data-task-id="${task.id}">${taskDetails.has(
                 String(task.id)
               ) ? "收起批次" : "批次详情"}</button></div>`
@@ -217,7 +220,7 @@ function render() {
         }
         ${loadingDetails.has(String(task.id)) ? `<p class="meta">正在加载批次详情...</p>` : ""}
         ${taskDetails.has(String(task.id)) ? renderBatchDetails(task.id) : ""}
-        <div class="progress ${task.status === "running" ? "is-running" : ""} ${task.status === "failed" ? "is-failed" : ""}"><i style="width:${progressWidth(task)}%"></i></div>
+        <div class="progress ${task.status === "running" ? "is-running" : ""} ${["failed", "timeout"].includes(String(task.status || "")) ? "is-failed" : ""}"><i style="width:${progressWidth(task)}%"></i></div>
       </article>
     `
     )

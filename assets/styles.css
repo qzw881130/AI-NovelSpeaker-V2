@@ -123,6 +123,51 @@ p {
   position: relative;
 }
 
+.nav-external-row {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 8px;
+}
+
+.nav-external-link {
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #6a4a31;
+  background: rgba(255, 255, 255, 0.55);
+  text-decoration: none;
+  transition: 0.2s ease;
+}
+
+.nav-external-link:hover {
+  color: var(--primary);
+  border-color: #d9b898;
+  background: #fff8ef;
+}
+
+.nav-external-icon {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+}
+
+.nav-external-icon svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
+.app-shell.nav-collapsed .nav-external-row {
+  flex-direction: column;
+  align-items: center;
+}
+
 .brand {
   border: 1px solid var(--line);
   border-radius: 14px;

@@ -5,6 +5,7 @@ import ipaddress
 import hashlib
 import mimetypes
 import re
+import socket
 import shutil
 import sqlite3
 import subprocess
@@ -784,6 +785,7 @@ def fetch_json_tasks(conn: sqlite3.Connection) -> list[dict]:
                (SELECT COUNT(1) FROM task_batches b WHERE b.task_id=t.id AND b.status='completed') AS batch_done,
                (SELECT COUNT(1) FROM task_batches b WHERE b.task_id=t.id AND b.status='failed') AS batch_failed,
                (SELECT COUNT(1) FROM task_batches b WHERE b.task_id=t.id AND b.status='cancelled') AS batch_cancelled,
+               (SELECT COUNT(1) FROM task_batches b WHERE b.task_id=t.id AND b.status='timeout') AS batch_timeout,
                n.name AS novel_name,
                COALESCE(
                    c.word_count,
@@ -820,6 +822,7 @@ def fetch_json_tasks(conn: sqlite3.Connection) -> list[dict]:
             "batchDone": int(r["batch_done"] or 0),
             "batchFailed": int(r["batch_failed"] or 0),
             "batchCancelled": int(r["batch_cancelled"] or 0),
+            "batchTimeout": int(r["batch_timeout"] or 0),
             "createdAt": str(r["created_at"]),
             "startedAt": str(r["started_at"] or ""),
             "updatedAt": str(r["updated_at"]),
@@ -854,6 +857,12 @@ def fetch_settings(conn: sqlite3.Connection) -> dict:
         keep_alive = "30m"
     if keep_alive not in {"5m", "15m", "30m", "1h", "6h", "24h"}:
         keep_alive = "30m"
+    try:
+        batch_timeout_minutes = int(kv.get("llm_batch_timeout_minutes", "15"))
+    except (TypeError, ValueError):
+        batch_timeout_minutes = 15
+    if batch_timeout_minutes not in {5, 10, 15, 20, 30, 40}:
+        batch_timeout_minutes = 15
     llm_think = str(kv.get("llm_think", "1") or "1").strip().lower() not in {
         "0",
         "false",
@@ -871,6 +880,7 @@ def fetch_settings(conn: sqlite3.Connection) -> dict:
         "numCtx": num_ctx,
         "keepAlive": keep_alive,
         "unloadAfterCall": unload_after_call,
+        "batchTimeoutMinutes": batch_timeout_minutes,
         "think": llm_think,
         "batchMaxChars": batch_max_chars,
     }
@@ -1426,14 +1436,33 @@ def http_json_request(
             return int(exc.code), body
         except transient_errors as exc:
             last_exc = exc
+            if is_timeout_error(exc):
+                raise LlmRequestTimeoutError("request timeout") from exc
             if attempt >= 2:
                 if isinstance(exc, URLError):
                     raise RuntimeError(str(exc.reason)) from exc
                 raise RuntimeError(str(exc)) from exc
             time.sleep(1.2 * (attempt + 1))
     if last_exc:
+        if is_timeout_error(last_exc):
+            raise LlmRequestTimeoutError("request timeout") from last_exc
         raise RuntimeError(str(last_exc))
     raise RuntimeError("request failed")
+
+
+class LlmRequestTimeoutError(RuntimeError):
+    pass
+
+
+def is_timeout_error(exc: Exception) -> bool:
+    if isinstance(exc, (TimeoutError, socket.timeout)):
+        return True
+    if isinstance(exc, URLError):
+        reason = exc.reason
+        if isinstance(reason, (TimeoutError, socket.timeout)):
+            return True
+        return "timed out" in str(reason).lower() or "timeout" in str(reason).lower()
+    return "timed out" in str(exc).lower() or "timeout" in str(exc).lower()
 
 
 def test_comfy_endpoint(comfy_url: str) -> tuple[bool, str]:
@@ -1790,6 +1819,7 @@ def call_llm_json_parse(
     num_ctx = int(llm.get("numCtx") or 65536)
     keep_alive = str(llm.get("keepAlive") or "30m").strip() or "30m"
     unload_after_call = bool(llm.get("unloadAfterCall", False))
+    batch_timeout_minutes = int(llm.get("batchTimeoutMinutes") or 15)
     think = bool(llm.get("think", True))
 
     if not base_url:
@@ -1828,7 +1858,7 @@ def call_llm_json_parse(
         "temperature": temperature,
         "max_tokens": max_tokens,
     }
-    request_timeout = 180.0
+    request_timeout = float(max(60, batch_timeout_minutes * 60))
     url = f"{base_url.rstrip('/')}/chat/completions"
     if provider == "ollama":
         url = build_ollama_chat_url(base_url)
@@ -1848,9 +1878,6 @@ def call_llm_json_parse(
                 "num_predict": max_tokens,
             },
         }
-        request_timeout = (
-            1800.0 if num_ctx >= 65536 or len(chapter_text) > 12000 else 900.0
-        )
     try:
         code, body = http_json_request(
             "POST",
@@ -1906,6 +1933,10 @@ class JsonTaskCancelledError(RuntimeError):
     pass
 
 
+class JsonTaskTimeoutError(RuntimeError):
+    pass
+
+
 def get_json_task_status(task_id: int) -> str:
     conn = db_conn()
     row = conn.execute("SELECT status FROM json_tasks WHERE id=?", (task_id,)).fetchone()
@@ -1925,7 +1956,7 @@ def ensure_json_task_not_cancelled(task_id: int) -> None:
 def cancel_json_task(task_id: int) -> tuple[bool, str]:
     conn = db_conn()
     row = conn.execute(
-        "SELECT status FROM json_tasks WHERE id=?", (task_id,)
+        "SELECT status, model_name FROM json_tasks WHERE id=?", (task_id,)
     ).fetchone()
     if not row:
         conn.close()
@@ -1957,6 +1988,22 @@ def cancel_json_task(task_id: int) -> tuple[bool, str]:
     )
     conn.commit()
     conn.close()
+
+    if status == "running":
+        settings_conn = db_conn()
+        settings = fetch_settings(settings_conn)
+        settings_conn.close()
+        llm = settings.get("llm") or {}
+        if str(llm.get("provider") or "") == "ollama":
+            try:
+                unload_ollama_model(
+                    base_url=str(llm.get("baseUrl") or "").strip(),
+                    model=str(row["model_name"] or llm.get("model") or "").strip(),
+                    proxy_url=str(settings.get("proxyUrl") or "").strip(),
+                    timeout=10.0,
+                )
+            except Exception:
+                pass
     return True, "ok"
 
 
@@ -2120,6 +2167,11 @@ def process_json_task(task_id: int) -> None:
                     last_exc = exc
                     if isinstance(exc, JsonTaskCancelledError):
                         break
+                    if isinstance(exc, LlmRequestTimeoutError):
+                        last_exc = JsonTaskTimeoutError(
+                            f"批次执行超时（>{int(llm.get('batchTimeoutMinutes') or 15)}分钟）"
+                        )
+                        break
                     conn = db_conn()
                     conn.execute(
                         "UPDATE task_batches SET auto_retry_count=?, updated_at=CURRENT_TIMESTAMP WHERE task_id=? AND batch_index=?",
@@ -2132,15 +2184,25 @@ def process_json_task(task_id: int) -> None:
 
             ensure_json_task_not_cancelled(task_id)
             if last_exc is not None or parsed is None:
+                failed_status = "timeout" if isinstance(last_exc, JsonTaskTimeoutError) else "failed"
                 conn = db_conn()
                 conn.execute(
                     """
                     UPDATE task_batches
-                    SET status='failed',llm_response_text=?,error_message=?,updated_at=CURRENT_TIMESTAMP
+                    SET status=?,llm_response_text=?,error_message=?,updated_at=CURRENT_TIMESTAMP
                     WHERE task_id=? AND batch_index=? AND status<>'cancelled'
                     """,
-                    (raw, str(last_exc or "批次处理失败"), task_id, idx),
+                    (failed_status, raw, str(last_exc or "批次处理失败"), task_id, idx),
                 )
+                if isinstance(last_exc, JsonTaskTimeoutError):
+                    conn.execute(
+                        """
+                        UPDATE json_tasks
+                        SET status='timeout',progress=0,error_message=?,model_name=?,updated_at=CURRENT_TIMESTAMP
+                        WHERE id=?
+                        """,
+                        (str(last_exc), model_name, task_id),
+                    )
                 conn.commit()
                 conn.close()
                 raise last_exc or RuntimeError("批次处理失败")
@@ -2183,6 +2245,8 @@ def process_json_task(task_id: int) -> None:
         conn.close()
     except Exception as exc:
         if isinstance(exc, JsonTaskCancelledError) or is_json_task_cancelled(task_id):
+            return
+        if isinstance(exc, JsonTaskTimeoutError):
             return
         conn = db_conn()
         conn.execute(
@@ -2315,6 +2379,11 @@ def _process_json_batch_once(
             last_exc = exc
             if isinstance(exc, JsonTaskCancelledError):
                 break
+            if isinstance(exc, LlmRequestTimeoutError):
+                last_exc = JsonTaskTimeoutError(
+                    f"批次执行超时（>{int((context['llm'] or {}).get('batchTimeoutMinutes') or 15)}分钟）"
+                )
+                break
             if attempt < 3:
                 time.sleep(0.8 * attempt)
     ensure_json_task_not_cancelled(int(context["task"]["id"]))
@@ -2332,7 +2401,7 @@ def _finalize_json_task_if_ready(task_id: int) -> bool:
     if not task:
         conn.close()
         return False
-    if str(task["status"] or "") == "cancelled":
+    if str(task["status"] or "") in {"cancelled", "timeout"}:
         conn.close()
         return False
     rows = conn.execute(
@@ -2371,8 +2440,8 @@ def _finalize_json_task_if_ready(task_id: int) -> bool:
 def retry_json_task_batch(task_id: int, batch_index: int) -> tuple[bool, str]:
     context = _load_json_task_context(task_id)
     task = context["task"]
-    if str(task["status"] or "") not in {"failed", "completed"}:
-        return False, "only completed or failed task batches can be retried"
+    if str(task["status"] or "") not in {"failed", "completed", "timeout"}:
+        return False, "only completed failed or timeout task batches can be retried"
 
     conn = db_conn()
     batch = conn.execute(
@@ -2434,18 +2503,19 @@ def retry_json_task_batch(task_id: int, batch_index: int) -> tuple[bool, str]:
             conn.close()
         return True, "ok"
     except Exception as exc:
+        failed_status = "timeout" if isinstance(exc, JsonTaskTimeoutError) else "failed"
         conn = db_conn()
         conn.execute(
             """
             UPDATE task_batches
-            SET status='failed',llm_response_text=COALESCE(llm_response_text,''),error_message=?,updated_at=CURRENT_TIMESTAMP
+            SET status=?,llm_response_text=COALESCE(llm_response_text,''),error_message=?,updated_at=CURRENT_TIMESTAMP
             WHERE task_id=? AND batch_index=?
             """,
-            (str(exc), task_id, batch_index),
+            (failed_status, str(exc), task_id, batch_index),
         )
         conn.execute(
-            "UPDATE json_tasks SET status='failed',error_message=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
-            (str(exc), task_id),
+            "UPDATE json_tasks SET status=?,error_message=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            (failed_status, str(exc), task_id),
         )
         conn.commit()
         conn.close()
