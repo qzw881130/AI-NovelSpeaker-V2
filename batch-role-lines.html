@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>批量生成台词 - AI NovelSpeaker V2</title>
+    <link rel="stylesheet" href="./assets/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="main-nav" id="mainNav"></aside>
+      <main class="page batch-role-lines-page">
+        <header class="page-header">
+          <div>
+            <h1 id="batchRoleLinesPageTitle">批量生成台词</h1>
+          </div>
+          <div class="header-actions">
+            <label class="header-novel-switch">切换小说
+              <select id="batchRoleNovelSelect"></select>
+            </label>
+            <a class="ghost-btn" href="./roles.html">返回角色库</a>
+            <a class="ghost-btn" href="./line-audio-tasks.html">台词队列</a>
+            <button id="refreshBatchRoleLinesBtn" class="primary-btn" type="button">刷新</button>
+          </div>
+        </header>
+
+        <section class="panel roles-filter-panel">
+          <div class="panel-head">
+            <h2>筛选</h2>
+          </div>
+          <div class="roles-filters">
+            <div class="filter-group">
+              <label>角色</label>
+              <div id="batchRoleFilter" class="role-name-filter batch-role-filter">
+                <div id="batchRoleFilterTags" class="role-name-filter-tags"></div>
+                <input id="batchRoleFilterInput" class="role-name-filter-input" type="text" placeholder="输入角色名筛选" />
+                <div id="batchRoleFilterDropdown" class="role-name-filter-dropdown hidden"></div>
+              </div>
+            </div>
+            <div class="filter-group filter-group-wide">
+              <label for="batchRoleSearchInput">台词搜索</label>
+              <input id="batchRoleSearchInput" type="search" placeholder="输入台词关键字" />
+            </div>
+            <button id="clearBatchRoleSearchBtn" class="ghost-btn" type="button">清空搜索</button>
+          </div>
+        </section>
+
+        <section class="panel roles-list-panel">
+          <div class="panel-head">
+            <div class="panel-head-title-row">
+              <h2>角色台词列表</h2>
+              <span id="batchRoleLinesSummary" class="roles-filtered-count">结果 0 条</span>
+            </div>
+            <div class="panel-head-actions">
+              <button id="selectPageBatchRoleLinesBtn" class="ghost-btn" type="button">本页全选</button>
+              <button id="clearSelectedBatchRoleLinesBtn" class="ghost-btn" type="button">清空已选</button>
+              <button id="generateAllBatchRoleLinesBtn" class="ghost-btn" type="button">批量生成全部</button>
+              <button id="generateSelectedBatchRoleLinesBtn" class="primary-btn" type="button">批量生成</button>
+            </div>
+          </div>
+          <div id="batchRoleLinesStatus" class="roles-page-status hidden"></div>
+          <div class="batch-role-lines-table-wrap">
+            <table class="data-table batch-role-lines-table">
+              <thead>
+                <tr>
+                  <th><input id="selectAllPageBatchRoleLinesCheckbox" type="checkbox" /></th>
+                  <th>编号</th>
+                  <th>所在章回</th>
+                  <th>台词</th>
+                  <th>台词声音播放</th>
+                  <th>生成</th>
+                </tr>
+              </thead>
+              <tbody id="batchRoleLinesTableBody">
+                <tr>
+                  <td colspan="6" class="empty-cell">请选择角色</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="batch-role-lines-pager">
+            <button id="batchRoleLinesFirstBtn" class="ghost-btn" type="button">第一页</button>
+            <button id="batchRoleLinesPrevBtn" class="ghost-btn" type="button">上一页</button>
+            <span id="batchRoleLinesPageInfo">第 0 / 0 页</span>
+            <button id="batchRoleLinesNextBtn" class="ghost-btn" type="button">下一页</button>
+            <button id="batchRoleLinesLastBtn" class="ghost-btn" type="button">最后一页</button>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div id="toast" class="toast"></div>
+    <script type="module" src="./assets/batch-role-lines.js"></script>
+  </body>
+</html>

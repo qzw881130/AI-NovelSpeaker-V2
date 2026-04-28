@@ -32,6 +32,7 @@ const NAV_ICONS = {
   capture: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 6.5 8 4.5H5.5a2 2 0 0 0-2 2V17.5a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-11a2 2 0 0 0-2-2H16l-1.5 2Z"/><circle cx="12" cy="12.5" r="3.2"/><path d="M19 8.5h.01"/></svg>`,
   workflowLogs: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4.5h8l3 3v12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-13a2 2 0 0 1 2-2Z"/><path d="M15 4.5v3h3"/><path d="M8.5 11h7"/><path d="M8.5 14.5h7"/><path d="M8.5 18h4"/></svg>`,
   textFix: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 5.5h12"/><path d="M6 9.5h9"/><path d="M6 13.5h6"/><path d="M14.5 14.5 18 18"/><path d="m16.5 12 4 4"/><path d="M14 18h6"/></svg>`,
+  batchRoleLines: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 7.5h15"/><path d="M4.5 12h15"/><path d="M4.5 16.5h9"/><path d="M18.5 16.5h.01"/><path d="M18.5 12h.01"/><path d="M18.5 7.5h.01"/></svg>`,
 };
 
 const NAV_EXTERNALS = [
@@ -65,6 +66,7 @@ const NAV_ITEMS = [
   { href: "./novel-capture.html", labelKey: "nav.capture", icon: NAV_ICONS.capture },
   { href: "./workflow-logs.html", labelKey: "nav.workflowLogs", icon: NAV_ICONS.workflowLogs },
   { href: "./text-fix.html", labelKey: "nav.textFix", icon: NAV_ICONS.textFix },
+  { href: "./batch-role-lines.html", labelKey: "nav.batchRoleLines", icon: NAV_ICONS.batchRoleLines },
 ];
 
 const NAV_BADGE_KEYS = {

@@ -2377,6 +2377,58 @@ menu {
   min-height: 0;
 }
 
+.batch-role-lines-page {
+  height: 100vh;
+  min-height: 100vh;
+  overflow: hidden;
+}
+
+.batch-role-lines-table-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.batch-role-lines-page .roles-list-panel {
+  flex: 1;
+  min-height: 0;
+}
+
+.batch-role-lines-table td,
+.batch-role-lines-table th {
+  vertical-align: top;
+}
+
+.batch-role-lines-table td:first-child,
+.batch-role-lines-table th:first-child {
+  width: 44px;
+  text-align: center;
+}
+
+.batch-role-line-text {
+  min-width: 360px;
+  line-height: 1.65;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.batch-role-lines-pager {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.batch-role-lines-table .juben-line-audio {
+  justify-content: flex-start;
+  min-width: 220px;
+}
+
+.batch-role-lines-table audio {
+  width: 180px;
+}
+
 .filter-group {
   display: flex;
   flex-direction: column;

@@ -22,6 +22,7 @@ from .line_audio import (
     list_line_audio_tasks,
     get_line_audio_task,
     get_chapter_line_audio_entries,
+    list_role_line_audio_entries,
     is_chapter_merged_audio_stale,
     invalidate_obsolete_chapter_line_audio_tasks,
     enqueue_line_audio_task,
@@ -949,6 +950,19 @@ class Handler(BaseHTTPRequestHandler):
             limit = int((query.get("limit") or ["100"])[0])
             offset = int((query.get("offset") or ["0"])[0])
             data = list_line_audio_tasks(novel_id, limit=limit, offset=offset)
+            self.send_json(data)
+            return
+
+        m_role_line_audios = re.match(r"^/api/novels/(\d+)/role-line-audios$", route)
+        if m_role_line_audios:
+            novel_id = int(m_role_line_audios.group(1))
+            query = parse_qs(parsed.query or "")
+            role_name = str((query.get("roleName") or [""])[0] or "").strip()
+            page = int((query.get("page") or ["1"])[0])
+            page_size = int((query.get("pageSize") or ["50"])[0])
+            data = list_role_line_audio_entries(
+                novel_id, role_name=role_name, page=page, page_size=page_size
+            )
             self.send_json(data)
             return
 

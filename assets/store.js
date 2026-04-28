@@ -549,6 +549,24 @@ async function fetchChapterLineAudios(novelId, chapterNum) {
   return data.lineAudios || [];
 }
 
+async function fetchRoleLineAudios(novelId, roleName, options = {}) {
+  const page = Math.max(1, Number(options.page || 1));
+  const pageSize = Math.max(1, Number(options.pageSize || 50));
+  const params = new URLSearchParams({
+    roleName: String(roleName || ""),
+    page: String(page),
+    pageSize: String(pageSize),
+  });
+  const data = await api(`/api/novels/${Number(novelId)}/role-line-audios?${params.toString()}`);
+  return {
+    items: data.items || [],
+    totalCount: Number(data.totalCount || 0),
+    page: Number(data.page || 1),
+    pageSize: Number(data.pageSize || pageSize),
+    pageCount: Number(data.pageCount || 0),
+  };
+}
+
 async function fetchChapterLineAudioOverview(novelId, chapterNum) {
   const data = await api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/line-audios`);
   return {
@@ -677,6 +695,7 @@ export {
   downloadRoleVoiceBundleFile,
   // 台词音频
   fetchChapterLineAudios,
+  fetchRoleLineAudios,
   fetchChapterLineAudioOverview,
   enqueueLineAudio,
   enqueueAllLineAudios,

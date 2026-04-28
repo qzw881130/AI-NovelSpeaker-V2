@@ -402,6 +402,108 @@ def get_chapter_line_audio_entries(novel_id: int, chapter_id: int) -> list[dict]
     return items
 
 
+def list_role_line_audio_entries(
+    novel_id: int, role_name: str, page: int = 1, page_size: int = 50
+) -> dict:
+    """按角色分页列出全书台词及其音频状态"""
+    target_role = _normalize_role_name(role_name)
+    if not target_role:
+        return {"items": [], "totalCount": 0, "page": 1, "pageSize": 50, "pageCount": 0}
+
+    page = max(1, int(page or 1))
+    page_size = max(1, min(int(page_size or 50), 100))
+
+    conn = db_conn()
+    chapter_rows = conn.execute(
+        """
+        SELECT c.id AS chapter_id, c.chapter_num, c.title AS chapter_title,
+               (
+                 SELECT jt.merged_result_json
+                 FROM json_tasks jt
+                 WHERE jt.novel_id = c.novel_id
+                   AND jt.chapter_num = c.chapter_num
+                   AND jt.status = 'completed'
+                   AND jt.merged_result_json IS NOT NULL
+                 ORDER BY jt.id DESC
+                 LIMIT 1
+               ) AS merged_result_json
+        FROM chapters c
+        WHERE c.novel_id = ?
+        ORDER BY c.chapter_num ASC, c.id ASC
+        """,
+        (novel_id,),
+    ).fetchall()
+    task_rows = conn.execute(
+        "SELECT * FROM line_audio_tasks WHERE novel_id = ? ORDER BY id DESC",
+        (novel_id,),
+    ).fetchall()
+    conn.close()
+
+    role_map = get_novel_role_library_map(novel_id)
+    role = role_map.get(target_role)
+    has_role_library = role is not None
+    has_role_sample = bool(role and str(role.get("sample_audio_path") or "").strip())
+
+    task_groups: dict[str, list[Any]] = {}
+    for row in task_rows:
+        group_key = f"{int(row['chapter_id'])}:{str(row['line_hash'] or '')}"
+        task_groups.setdefault(group_key, []).append(row)
+
+    items: list[dict] = []
+    for chapter in chapter_rows:
+        merged_json = str(chapter["merged_result_json"] or "").strip()
+        if not merged_json:
+            continue
+        for line in parse_juben_lines_from_json_text(merged_json):
+            role_name_value = _normalize_role_name(line["role_name"])
+            if role_name_value != target_role:
+                continue
+            line_hash = str(line["line_hash"] or "")
+            group_key = f"{int(chapter['chapter_id'])}:{line_hash}"
+            row = _pick_best_line_audio_task(task_groups.get(group_key, []))
+            item: dict[str, Any] = {
+                "key": group_key,
+                "novelId": int(novel_id),
+                "chapterId": int(chapter["chapter_id"]),
+                "chapterNum": int(chapter["chapter_num"] or 0),
+                "chapterTitle": str(chapter["chapter_title"] or ""),
+                "lineIndex": int(line["line_index"]),
+                "lineNo": int(line["line_index"]) + 1,
+                "rawLine": str(line["raw_line"]),
+                "roleName": role_name_value,
+                "lineText": str(line["line_text"]),
+                "lineHash": line_hash,
+                "canGenerate": bool(role_name_value) and has_role_library and has_role_sample,
+                "roleInLibrary": has_role_library,
+                "roleHasSampleAudio": has_role_sample,
+                "task": _line_audio_task_row_to_dict(row) if row else None,
+                "hasAudio": bool(
+                    row
+                    and str(row["status"] or "") == "completed"
+                    and str(row["downloaded_file_path"] or "").strip()
+                ),
+            }
+            item["streamUrl"] = (
+                f"/api/line-audio-tasks/{int(row['id'])}/file" if item["hasAudio"] and row else ""
+            )
+            items.append(item)
+
+    total_count = len(items)
+    page_count = (total_count + page_size - 1) // page_size if total_count else 0
+    if page_count and page > page_count:
+        page = page_count
+    start = (page - 1) * page_size
+    end = start + page_size
+    paged_items = items[start:end]
+    return {
+        "items": paged_items,
+        "totalCount": total_count,
+        "page": page,
+        "pageSize": page_size,
+        "pageCount": page_count,
+    }
+
+
 def invalidate_obsolete_chapter_line_audio_tasks(
     novel_id: int, chapter_id: int, json_text: str
 ) -> int:
