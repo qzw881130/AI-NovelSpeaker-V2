@@ -521,6 +521,14 @@ function bindEvents() {
     await generateSelected();
   });
   document.getElementById("generateAllBatchRoleLinesBtn")?.addEventListener("click", async () => {
+    const roleName = getSelectedRoleName();
+    if (!roleName) {
+      toast("请先选择角色");
+      return;
+    }
+    if (!window.confirm(`确认将角色「${roleName}」的全部台词加入生成队列吗？`)) {
+      return;
+    }
     await generateAll();
   });
   document.getElementById("selectAllPageBatchRoleLinesCheckbox")?.addEventListener("change", (event) => {
