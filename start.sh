@@ -5,16 +5,18 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
 
 PORT="8080"
+HOST="0.0.0.0"
 LOG_DIR="$ROOT_DIR/logs"
 LOG_FILE="$LOG_DIR/server.log"
 
 usage() {
   cat <<'EOF'
 Usage:
-  ./start.sh [--port=PORT] [-h|--help]
+  ./start.sh [--port=PORT] [--host=HOST] [-h|--help]
 
 Options:
   --port=PORT   Set HTTP port (default: 8080)
+  --host=HOST   Set bind host (default: 0.0.0.0)
   -h, --help    Show this help message and exit
 EOF
 }
@@ -28,12 +30,20 @@ for arg in "$@"; do
     --port=*)
       PORT="${arg#--port=}"
       ;;
+    --host=*)
+      HOST="${arg#--host=}"
+      ;;
   esac
 done
 
 if ! [[ "$PORT" =~ ^[0-9]+$ ]] || [[ "$PORT" -lt 1 || "$PORT" -gt 65535 ]]; then
   echo "[start] Invalid --port value, fallback to 8080"
   PORT="8080"
+fi
+
+if [[ -z "$HOST" ]]; then
+  echo "[start] Invalid --host value, fallback to 0.0.0.0"
+  HOST="0.0.0.0"
 fi
 
 echo "[start] Checking old service on port ${PORT}..."
@@ -89,6 +99,7 @@ if [[ "${LAN_PRINTED}" -eq 0 ]]; then
 fi
 
 echo "[start] Starting server..."
+echo "[start] Bind host: ${HOST}"
 echo "[start] Log file: ${LOG_FILE}"
-NOVELSPEAKER_PORT="$PORT" nohup python3 app_server.py >> "$LOG_FILE" 2>&1 &
+NOVELSPEAKER_HOST="$HOST" NOVELSPEAKER_PORT="$PORT" nohup python3 app_server.py >> "$LOG_FILE" 2>&1 &
 echo "[start] Server started in background (PID: $!)"
