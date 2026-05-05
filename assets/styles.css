@@ -2383,6 +2383,169 @@ menu {
   overflow: hidden;
 }
 
+.live-reader-page {
+  min-height: 100vh;
+}
+
+.live-reader-page:fullscreen {
+  padding: 20px;
+  background: linear-gradient(180deg, #fff7ea 0%, #f2e3cc 100%);
+}
+
+.live-reader-controls-grid {
+  display: grid;
+  grid-template-columns: 180px repeat(6, minmax(0, 1fr)) auto;
+  gap: 14px;
+  align-items: start;
+}
+
+.live-reader-toggles-col {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-self: center;
+}
+
+.live-reader-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+  gap: 18px;
+  min-height: 0;
+}
+
+.live-reader-playlist-panel,
+.live-reader-main-panel {
+  min-height: 0;
+}
+
+.live-reader-playlist {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: calc(100vh - 320px);
+  overflow: auto;
+  padding-right: 6px;
+}
+
+.live-reader-page:fullscreen .live-reader-playlist {
+  max-height: calc(100vh - 260px);
+}
+
+.live-reader-popout-body {
+  margin: 0;
+  background: linear-gradient(180deg, #fff7ea 0%, #f2e3cc 100%);
+}
+
+.live-reader-popout-page {
+  padding: 8px;
+}
+
+.live-reader-popout-shell {
+  display: flex;
+  justify-content: center;
+}
+
+.live-reader-popout-wrap {
+  width: fit-content;
+  max-width: 100%;
+  height: auto;
+  max-height: calc(100vh - 36px);
+}
+
+.live-reader-playlist-item {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  text-align: left;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fffdf8;
+}
+
+.live-reader-playlist-item strong {
+  color: var(--primary);
+}
+
+.live-reader-playlist-item.active {
+  border-color: #d9b898;
+  background: #fff9ef;
+  box-shadow: inset 0 0 0 1px rgba(164, 74, 28, 0.08);
+}
+
+.live-reader-main-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.live-reader-audio-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 28px;
+}
+
+.live-reader-audio-wrap audio {
+  flex: 1 1 520px;
+  min-width: 280px;
+}
+
+.live-reader-reader-wrap {
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: linear-gradient(180deg, #fffef7 0%, #f8eddc 100%);
+  padding: 18px;
+  margin: 0 auto;
+  box-sizing: border-box;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.live-reader-reader-wrap::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+.live-reader-content {
+  margin: 0 auto;
+  box-sizing: border-box;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  line-height: 1.95;
+  color: #4e3625;
+}
+
+.live-reader-segment {
+  padding: 0.08em 0.18em;
+  border-radius: 10px;
+  transition: background-color 0.2s ease, box-shadow 0.2s ease, color 0.2s ease;
+}
+
+.live-reader-paragraph {
+  margin: 0 0 1.1em;
+  text-indent: 2em;
+  border-radius: 16px;
+  transition: background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.live-reader-paragraph.active {
+  background: transparent;
+  box-shadow: none;
+}
+
+.live-reader-segment.active {
+  background: rgba(188, 91, 35, var(--live-highlight-alpha, 0.1));
+  box-shadow: 0 0 0 1px rgba(188, 91, 35, calc(var(--live-highlight-alpha, 0.1) + 0.02));
+  color: #2f1f13;
+}
+
 .batch-role-lines-table-wrap {
   flex: 1;
   min-height: 0;
@@ -2852,9 +3015,63 @@ menu {
   padding: 40px 20px;
 }
 
+.table-actions-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.dialog-code-block {
+  margin: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fffdf8;
+  max-height: 72vh;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  line-height: 1.6;
+}
+
 @media (max-width: 768px) {
   .chapter-actions {
     gap: 8px;
+  }
+
+  .live-reader-controls-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .live-reader-toggles-col {
+    align-self: stretch;
+  }
+
+  .live-reader-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .live-reader-playlist {
+    max-height: 28vh;
+  }
+
+  .live-reader-main-head {
+    flex-direction: column;
+  }
+
+  .live-reader-audio-wrap audio {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .live-reader-reader-wrap {
+    height: min(62vh, 780px) !important;
+  }
+
+  .live-reader-content {
+    max-width: 100% !important;
   }
 
   .reader-font-controls {

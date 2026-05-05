@@ -95,6 +95,23 @@ SYSTEM_WORKFLOWS = [
             "outputs": {"textOutput": {"nodeId": "13"}},
         },
     },
+    {
+        "file": WORKFLOWS_DIR / "audio_asr_workflow_qwen3-asr.json",
+        "name": "提取音频ASR",
+        "description": "系统内置，使用 Qwen3-ASR 提取章节音频ASR与时间轴",
+        "workflow_type": "audio_asr",
+        "workflow_io_config": {
+            "inputs": {"audioFile": {"nodeId": "12"}},
+            "outputs": {
+                "textOutput": {"nodeId": "13"},
+                "languageOutput": {"nodeId": "14"},
+                "timestampsOutput": {"nodeId": "17"},
+                "textListOutput": {"nodeId": "19"},
+                "startTimesOutput": {"nodeId": "20"},
+                "endTimesOutput": {"nodeId": "21"},
+            },
+        },
+    },
 ]
 
 
@@ -120,6 +137,11 @@ def migrate_novels_table(conn: sqlite3.Connection) -> None:
     if "voice_transcribe_workflow_id" not in column_names:
         conn.execute(
             "ALTER TABLE novels ADD COLUMN voice_transcribe_workflow_id INTEGER REFERENCES comfy_workflows(id)"
+        )
+
+    if "audio_asr_workflow_id" not in column_names:
+        conn.execute(
+            "ALTER TABLE novels ADD COLUMN audio_asr_workflow_id INTEGER REFERENCES comfy_workflows(id)"
         )
 
     # 添加总音频时长缓存字段（秒）
@@ -211,6 +233,36 @@ def migrate_task_batches_table(conn: sqlite3.Connection) -> None:
         )
 
 
+def migrate_chapter_asr_tasks_table(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS chapter_asr_tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            novel_id INTEGER NOT NULL,
+            chapter_id INTEGER NOT NULL,
+            chapter_num INTEGER NOT NULL,
+            chapter_title TEXT NOT NULL DEFAULT '',
+            workflow_id INTEGER,
+            status TEXT NOT NULL DEFAULT 'pending',
+            progress INTEGER NOT NULL DEFAULT 0,
+            audio_file_path TEXT NOT NULL DEFAULT '',
+            asr_file_path TEXT NOT NULL DEFAULT '',
+            language TEXT NOT NULL DEFAULT '',
+            extracted_text TEXT NOT NULL DEFAULT '',
+            timestamps_text TEXT NOT NULL DEFAULT '',
+            error_message TEXT NOT NULL DEFAULT '',
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            started_at DATETIME,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(novel_id, chapter_id),
+            FOREIGN KEY(novel_id) REFERENCES novels(id) ON DELETE CASCADE,
+            FOREIGN KEY(chapter_id) REFERENCES chapters(id) ON DELETE CASCADE,
+            FOREIGN KEY(workflow_id) REFERENCES comfy_workflows(id) ON DELETE SET NULL
+        )
+        """
+    )
+
+
 def db_conn() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH, timeout=12.0)
     conn.row_factory = sqlite3.Row
@@ -237,6 +289,7 @@ def db_conn() -> sqlite3.Connection:
     migrate_line_audio_tasks_table(conn)
     migrate_json_tasks_table(conn)
     migrate_task_batches_table(conn)
+    migrate_chapter_asr_tasks_table(conn)
     migrate_workflow_io_config_column(conn)
     migrate_workflow_logs_table(conn)
     return conn

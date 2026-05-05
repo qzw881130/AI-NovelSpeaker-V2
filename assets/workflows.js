@@ -27,6 +27,17 @@ const WORKFLOW_IO_FIELDS = {
     inputs: [{ key: "audioFile", label: "音频文件" }],
     outputs: [{ key: "textOutput", label: "提取的文本" }],
   },
+  audio_asr: {
+    inputs: [{ key: "audioFile", label: "音频文件" }],
+    outputs: [
+      { key: "textOutput", label: "提取的文本" },
+      { key: "languageOutput", label: "识别语言" },
+      { key: "timestampsOutput", label: "时间轴文本" },
+      { key: "textListOutput", label: "分句文本" },
+      { key: "startTimesOutput", label: "开始时间" },
+      { key: "endTimesOutput", label: "结束时间" },
+    ],
+  },
 };
 
 function orderedWorkflows() {
@@ -42,6 +53,7 @@ function orderedWorkflows() {
 
 const WORKFLOW_TYPE_LABELS = {
   voice_transcribe: "提取声音文本",
+  audio_asr: "提取音频ASR",
   line_audio: "生成台词音频",
   voice_sample: "生成示例音频",
 };

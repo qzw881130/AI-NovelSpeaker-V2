@@ -32,6 +32,11 @@ from .line_audio import (
     delete_line_audio_task,
     retry_line_audio_task,
 )
+from .audio_asr import (
+    enqueue_batch_audio_asr_tasks,
+    enqueue_chapter_audio_asr_task,
+    list_audio_asr_chapters,
+)
 
 
 def _resolve_storage_path(raw_path: str) -> Path | None:
@@ -583,6 +588,12 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"chapters": rows})
             return
 
+        m_audio_asr_chapters = re.match(r"^/api/novels/(\d+)/audio-asr-chapters$", route)
+        if m_audio_asr_chapters:
+            novel_id = int(m_audio_asr_chapters.group(1))
+            self.send_json({"chapters": list_audio_asr_chapters(novel_id)})
+            return
+
         m_audio_file = re.match(r"^/api/novels/(\d+)/chapters/(\d+)/audio-file$", route)
         if m_audio_file:
             novel_id = int(m_audio_file.group(1))
@@ -676,6 +687,35 @@ class Handler(BaseHTTPRequestHandler):
                 mimetypes.guess_type(abs_audio.name)[0] or "application/octet-stream"
             )
             self.send_file_response(abs_audio, ctype, cache_control="no-store")
+            return
+
+        m_asr_file = re.match(r"^/api/novels/(\d+)/chapters/(\d+)/asr-file$", route)
+        if m_asr_file:
+            novel_id = int(m_asr_file.group(1))
+            chapter_num = int(m_asr_file.group(2))
+            conn = db_conn()
+            row = conn.execute(
+                "SELECT title FROM chapters WHERE novel_id=? AND chapter_num=?",
+                (novel_id, chapter_num),
+            ).fetchone()
+            task = conn.execute(
+                "SELECT asr_file_path FROM chapter_asr_tasks WHERE novel_id=? AND chapter_num=?",
+                (novel_id, chapter_num),
+            ).fetchone()
+            conn.close()
+            rel = str(task["asr_file_path"] or "").strip() if task else ""
+            file_path = (ROOT_DIR / rel).resolve() if rel else None
+            if not file_path or not file_path.exists() or not file_path.is_file():
+                self.send_json({"error": "asr file not found"}, 404)
+                return
+            title = str(row["title"] or f"chapter_{chapter_num}") if row else f"chapter_{chapter_num}"
+            download_name = safe_chapter_file_name(chapter_num, title).replace(".txt", ".asr")
+            self.send_file_response(
+                file_path,
+                "text/plain; charset=utf-8",
+                cache_control="no-store",
+                download_name=download_name,
+            )
             return
 
         m_chapter = re.match(r"^/api/novels/(\d+)/chapters/(\d+)$", route)
@@ -1270,8 +1310,8 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 conn.execute(
                     """
-                    INSERT INTO novels (name,author,english_dir,intro,prompt_id,workflow_id,voice_sample_workflow_id,line_audio_workflow_id,voice_transcribe_workflow_id,chapter_count,total_words)
-                    VALUES (?,?,?,?,?,?,?,?,?,0,0)
+                    INSERT INTO novels (name,author,english_dir,intro,prompt_id,workflow_id,voice_sample_workflow_id,line_audio_workflow_id,voice_transcribe_workflow_id,audio_asr_workflow_id,chapter_count,total_words)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,0,0)
                     """,
                     (
                         str(body.get("name") or "").strip(),
@@ -1288,6 +1328,9 @@ class Handler(BaseHTTPRequestHandler):
                         else None,
                         int(body.get("voiceTranscribeWorkflowId"))
                         if body.get("voiceTranscribeWorkflowId")
+                        else None,
+                        int(body.get("audioAsrWorkflowId"))
+                        if body.get("audioAsrWorkflowId")
                         else None,
                     ),
                 )
@@ -1568,6 +1611,7 @@ class Handler(BaseHTTPRequestHandler):
                     "voice_sample",
                     "line_audio",
                     "voice_transcribe",
+                    "audio_asr",
                 }:
                     conn.close()
                     self.send_json({"error": "invalid workflowType"}, 400)
@@ -1870,6 +1914,51 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"status": "queued", **data})
             return
 
+        m_audio_asr_enqueue = re.match(
+            r"^/api/novels/(\d+)/chapters/(\d+)/audio-asr/enqueue$", route
+        )
+        if m_audio_asr_enqueue:
+            ensure_task_worker()
+            novel_id = int(m_audio_asr_enqueue.group(1))
+            chapter_num = int(m_audio_asr_enqueue.group(2))
+            conn = db_conn()
+            chapter_row = conn.execute(
+                "SELECT id FROM chapters WHERE novel_id=? AND chapter_num=?",
+                (novel_id, chapter_num),
+            ).fetchone()
+            conn.close()
+            if not chapter_row:
+                self.send_json({"error": "chapter not found"}, 404)
+                return
+            ok, msg = enqueue_chapter_audio_asr_task(novel_id, int(chapter_row["id"]))
+            if not ok:
+                self.send_json({"error": msg}, 409)
+                return
+            self.send_json({"status": "queued"})
+            return
+
+        m_audio_asr_enqueue_batch = re.match(r"^/api/novels/(\d+)/audio-asr/enqueue-batch$", route)
+        if m_audio_asr_enqueue_batch:
+            ensure_task_worker()
+            novel_id = int(m_audio_asr_enqueue_batch.group(1))
+            body = self.read_json()
+            raw_nums = body.get("chapterNums") or []
+            chapter_nums: list[int] = []
+            if isinstance(raw_nums, list):
+                for item in raw_nums:
+                    try:
+                        value = int(item)
+                    except (TypeError, ValueError):
+                        continue
+                    if value > 0:
+                        chapter_nums.append(value)
+            ok, msg, data = enqueue_batch_audio_asr_tasks(novel_id, chapter_nums or None)
+            if not ok:
+                self.send_json({"error": msg}, 409)
+                return
+            self.send_json({"status": "queued", **data})
+            return
+
         m_retry_line_task = re.match(r"^/api/line-audio-tasks/(\d+)/retry$", route)
         if m_retry_line_task:
             ensure_task_worker()
@@ -2077,7 +2166,7 @@ class Handler(BaseHTTPRequestHandler):
                 conn.execute(
                     """
                     UPDATE novels
-                    SET name=?,author=?,english_dir=?,intro=?,prompt_id=?,workflow_id=?,voice_sample_workflow_id=?,line_audio_workflow_id=?,voice_transcribe_workflow_id=?,updated_at=CURRENT_TIMESTAMP
+                    SET name=?,author=?,english_dir=?,intro=?,prompt_id=?,workflow_id=?,voice_sample_workflow_id=?,line_audio_workflow_id=?,voice_transcribe_workflow_id=?,audio_asr_workflow_id=?,updated_at=CURRENT_TIMESTAMP
                     WHERE id=?
                     """,
                     (
@@ -2095,6 +2184,9 @@ class Handler(BaseHTTPRequestHandler):
                         else None,
                         int(body.get("voiceTranscribeWorkflowId"))
                         if body.get("voiceTranscribeWorkflowId")
+                        else None,
+                        int(body.get("audioAsrWorkflowId"))
+                        if body.get("audioAsrWorkflowId")
                         else None,
                         novel_id,
                     ),
@@ -2170,6 +2262,7 @@ class Handler(BaseHTTPRequestHandler):
                 "voice_sample",
                 "line_audio",
                 "voice_transcribe",
+                "audio_asr",
             }:
                 conn.close()
                 self.send_json({"error": "invalid workflowType"}, 400)

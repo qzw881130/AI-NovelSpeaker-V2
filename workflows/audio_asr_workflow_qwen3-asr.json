@@ -1,0 +1,147 @@
+{
+  "10": {
+    "inputs": {
+      "model_name": "Qwen3-ASR-1.7B"
+    },
+    "class_type": "Qwen3ASRLoader",
+    "_meta": {
+      "title": "#10 Qwen3-ASR Loader"
+    }
+  },
+  "11": {
+    "inputs": {
+      "language": "Auto",
+      "model": [
+        "10",
+        0
+      ],
+      "audio": [
+        "12",
+        0
+      ]
+    },
+    "class_type": "Qwen3ASRTranscribe",
+    "_meta": {
+      "title": "#11 Qwen3-ASR Transcribe"
+    }
+  },
+  "12": {
+    "inputs": {
+      "audio": "sample.flac",
+      "audioUI": "/api/view?filename=sample.flac&type=input&subfolder=&rand=0.1"
+    },
+    "class_type": "LoadAudio",
+    "_meta": {
+      "title": "#12 Load Audio"
+    }
+  },
+  "13": {
+    "inputs": {
+      "text_0": "",
+      "text": [
+        "11",
+        0
+      ]
+    },
+    "class_type": "ShowText|pysssss",
+    "_meta": {
+      "title": "#13 Show Text 🐍"
+    }
+  },
+  "14": {
+    "inputs": {
+      "text_0": "",
+      "text": [
+        "11",
+        1
+      ]
+    },
+    "class_type": "ShowText|pysssss",
+    "_meta": {
+      "title": "#14 Show Text 🐍"
+    }
+  },
+  "16": {
+    "inputs": {
+      "model_name": "Qwen3-ForcedAligner-0.6B"
+    },
+    "class_type": "Qwen3ForcedAlignerLoader",
+    "_meta": {
+      "title": "#16 Qwen3 ForcedAligner Loader"
+    }
+  },
+  "17": {
+    "inputs": {
+      "text_0": "",
+      "text": [
+        "18",
+        0
+      ]
+    },
+    "class_type": "ShowText|pysssss",
+    "_meta": {
+      "title": "#17 Show Text 🐍"
+    }
+  },
+  "18": {
+    "inputs": {
+      "text": [
+        "11",
+        0
+      ],
+      "language": "Chinese",
+      "segment_by_sentence": true,
+      "aligner": [
+        "16",
+        0
+      ],
+      "audio": [
+        "12",
+        0
+      ]
+    },
+    "class_type": "Qwen3ForcedAlign",
+    "_meta": {
+      "title": "#18 Qwen3 Forced Align"
+    }
+  },
+  "19": {
+    "inputs": {
+      "text_0": "",
+      "text": [
+        "18",
+        1
+      ]
+    },
+    "class_type": "ShowText|pysssss",
+    "_meta": {
+      "title": "#19 Show Text 🐍"
+    }
+  },
+  "20": {
+    "inputs": {
+      "text_0": "",
+      "text": [
+        "18",
+        2
+      ]
+    },
+    "class_type": "ShowText|pysssss",
+    "_meta": {
+      "title": "#20 Show Text 🐍"
+    }
+  },
+  "21": {
+    "inputs": {
+      "text_0": "",
+      "text": [
+        "18",
+        3
+      ]
+    },
+    "class_type": "ShowText|pysssss",
+    "_meta": {
+      "title": "#21 Show Text 🐍"
+    }
+  }
+}

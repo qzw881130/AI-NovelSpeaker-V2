@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>直播阅读器 - AI NovelSpeaker V2</title>
+    <meta name="theme-color" content="#f2e3cc" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <link rel="manifest" href="./live-reader.webmanifest" />
+    <link rel="stylesheet" href="./assets/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="main-nav" id="mainNav"></aside>
+      <main class="page live-reader-page">
+        <header class="page-header">
+          <div>
+            <h1 id="liveReaderPageTitle">直播阅读器</h1>
+          </div>
+          <div class="header-actions">
+            <label class="header-novel-switch">切换小说
+              <select id="liveReaderNovelSelect"></select>
+            </label>
+            <a class="ghost-btn" href="./chapters.html">返回章节管理</a>
+            <button id="refreshLiveReaderBtn" class="primary-btn" type="button">刷新</button>
+          </div>
+        </header>
+
+        <section class="panel live-reader-controls-panel">
+          <div class="panel-head">
+            <h2>播放控制</h2>
+          </div>
+          <div class="live-reader-controls-grid">
+            <div class="live-reader-toggles-col">
+              <label class="inline-check">
+                <input id="liveReaderAutoNext" type="checkbox" checked />
+                <span>自动下一回</span>
+              </label>
+              <label class="inline-check">
+                <input id="liveReaderAutoScroll" type="checkbox" checked />
+                <span>自动滚动正文</span>
+              </label>
+              <label class="inline-check">
+                <input id="liveReaderHighlight" type="checkbox" checked />
+                <span>逐段高亮</span>
+              </label>
+            </div>
+            <label>
+              正文宽度
+              <input id="liveReaderWidthRange" type="range" min="140" max="900" step="10" value="520" />
+              <span id="liveReaderWidthValue" class="reader-status">520px</span>
+            </label>
+            <label>
+              正文高度
+              <input id="liveReaderHeightRange" type="range" min="320" max="1200" step="10" value="820" />
+              <span id="liveReaderHeightValue" class="reader-status">820px</span>
+            </label>
+            <label>
+              字号
+              <input id="liveReaderFontSizeRange" type="range" min="18" max="42" step="1" value="28" />
+              <span id="liveReaderFontSizeValue" class="reader-status">28px</span>
+            </label>
+            <label>
+              高亮强度
+              <input id="liveReaderHighlightIntensityRange" type="range" min="0" max="100" step="1" value="45" />
+              <span id="liveReaderHighlightIntensityValue" class="reader-status">45%</span>
+            </label>
+            <label>
+              滚动灵敏度
+              <input id="liveReaderFollowSensitivityRange" type="range" min="0" max="240" step="5" value="60" />
+              <span id="liveReaderFollowSensitivityValue" class="reader-status">60px</span>
+            </label>
+            <label>
+              滚动平滑度
+              <input id="liveReaderFollowSmoothnessRange" type="range" min="10" max="100" step="5" value="45" />
+              <span id="liveReaderFollowSmoothnessValue" class="reader-status">45%</span>
+            </label>
+            <button id="liveReaderInstallBtn" class="ghost-btn hidden" type="button">安装独立阅读器</button>
+          </div>
+        </section>
+
+        <section class="live-reader-layout">
+          <aside class="panel live-reader-playlist-panel">
+            <div class="panel-head">
+              <div class="panel-head-title-row">
+                <h2>章回播放列表</h2>
+                <span id="liveReaderPlaylistCount" class="roles-filtered-count">0 回</span>
+              </div>
+            </div>
+            <div id="liveReaderPlaylist" class="live-reader-playlist"></div>
+          </aside>
+
+          <section class="panel live-reader-main-panel">
+            <div class="live-reader-main-head">
+              <div>
+                <h2 id="liveReaderChapterTitle">请选择章回</h2>
+                <div id="liveReaderChapterMeta" class="meta"></div>
+              </div>
+              <div class="chapter-nav-controls">
+                <button id="liveReaderPrevBtn" class="ghost-btn" type="button">上一回</button>
+                <button id="liveReaderNextBtn" class="ghost-btn" type="button">下一回</button>
+              </div>
+            </div>
+            <div class="live-reader-audio-wrap">
+              <audio id="liveReaderAudioPlayer" controls preload="metadata"></audio>
+              <span id="liveReaderStatus" class="reader-status">就绪</span>
+            </div>
+            <div class="live-reader-reader-wrap">
+              <article id="liveReaderContent" class="live-reader-content">请先选择章回。</article>
+            </div>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <div id="toast" class="toast"></div>
+    <script type="module" src="./assets/live-reader.js"></script>
+  </body>
+</html>

@@ -27,6 +27,7 @@
             <button class="ghost-btn active" data-workflow-tab="voice_sample" type="button">生成示例音频</button>
             <button class="ghost-btn" data-workflow-tab="line_audio" type="button">生成台词音频</button>
             <button class="ghost-btn" data-workflow-tab="voice_transcribe" type="button">提取声音文本</button>
+            <button class="ghost-btn" data-workflow-tab="audio_asr" type="button">提取音频ASR</button>
           </div>
           <div id="workflowList" class="asset-list"></div>
         </section>
@@ -42,6 +43,7 @@
             <select name="workflowType" required>
               <option value="">请选择</option>
               <option value="voice_transcribe">提取声音文本</option>
+              <option value="audio_asr">提取音频ASR</option>
               <option value="line_audio">生成台词音频</option>
               <option value="voice_sample">生成示例音频</option>
             </select>

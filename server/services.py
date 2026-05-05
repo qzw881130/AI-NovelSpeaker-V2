@@ -205,6 +205,7 @@ def refresh_novel_audio_duration_cache_async(
 def ensure_novel_dirs(english_dir: str) -> None:
     (NOVEL_DIR / english_dir / "text").mkdir(parents=True, exist_ok=True)
     (NOVEL_DIR / english_dir / "audio").mkdir(parents=True, exist_ok=True)
+    (NOVEL_DIR / english_dir / "asr").mkdir(parents=True, exist_ok=True)
 
 
 def validate_english_dir(value: str) -> bool:
@@ -334,7 +335,7 @@ def fetch_workflows(conn: sqlite3.Connection) -> list[dict]:
         """
         SELECT id,name,workflow_type,description,json_text,workflow_io_config,workflow_log_enabled,created_at,updated_at
         FROM comfy_workflows
-        ORDER BY CASE WHEN workflow_type='system' OR workflow_type='voice_transcribe' OR workflow_type='line_audio' OR workflow_type='voice_sample' THEN 0 ELSE 1 END, id DESC
+        ORDER BY CASE WHEN workflow_type='system' OR workflow_type='voice_transcribe' OR workflow_type='line_audio' OR workflow_type='voice_sample' OR workflow_type='audio_asr' THEN 0 ELSE 1 END, id DESC
         """
     ).fetchall()
 
@@ -424,6 +425,8 @@ WORKFLOW_WIDGET_KEY_FALLBACKS: dict[str, list[str]] = {
     "CR Prompt Text": ["prompt"],
     "Qwen3ASRLoader": ["model_name"],
     "Qwen3ASRTranscribe": ["language"],
+    "Qwen3ForcedAlignerLoader": ["model_name"],
+    "Qwen3ForcedAlign": ["language", "segment_by_sentence"],
     "FB_Qwen3TTSVoiceClone": [
         "voice_clone_prompt",
         "model_choice",
@@ -2911,12 +2914,14 @@ def advance_status(conn: sqlite3.Connection, table: str) -> None:
 def task_worker_loop() -> None:
     global TASK_WORKER_HEARTBEAT_TS, TASK_WORKER_LAST_PROGRESS_TS
     from .line_audio import run_line_audio_queue_once
+    from .audio_asr import run_audio_asr_queue_once
 
     generation = TASK_WORKER_GENERATION
     while not TASK_WORKER_STOP.is_set() and generation == TASK_WORKER_GENERATION:
         TASK_WORKER_HEARTBEAT_TS = time.time()
         has_json_work = False
         has_line_audio_work = False
+        has_audio_asr_work = False
         with TASK_WORKER_LOCK:
             try:
                 has_json_work = run_json_queue_once()
@@ -2926,10 +2931,14 @@ def task_worker_loop() -> None:
                 has_line_audio_work = run_line_audio_queue_once()
             except Exception as exc:
                 print(f"[task-worker] line audio queue error: {exc}")
+            try:
+                has_audio_asr_work = run_audio_asr_queue_once()
+            except Exception as exc:
+                print(f"[task-worker] audio asr queue error: {exc}")
         TASK_WORKER_HEARTBEAT_TS = time.time()
-        if has_json_work or has_line_audio_work:
+        if has_json_work or has_line_audio_work or has_audio_asr_work:
             TASK_WORKER_LAST_PROGRESS_TS = TASK_WORKER_HEARTBEAT_TS
-        TASK_WORKER_STOP.wait(1.0 if (has_json_work or has_line_audio_work) else 3.0)
+        TASK_WORKER_STOP.wait(1.0 if (has_json_work or has_line_audio_work or has_audio_asr_work) else 3.0)
 
 
 def _has_active_line_audio_tasks() -> bool:

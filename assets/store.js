@@ -139,6 +139,7 @@ async function saveNovel(input, id) {
     voiceSampleWorkflowId: input.voiceSampleWorkflowId ? Number(input.voiceSampleWorkflowId) : null,
     lineAudioWorkflowId: input.lineAudioWorkflowId ? Number(input.lineAudioWorkflowId) : null,
     voiceTranscribeWorkflowId: input.voiceTranscribeWorkflowId ? Number(input.voiceTranscribeWorkflowId) : null,
+    audioAsrWorkflowId: input.audioAsrWorkflowId ? Number(input.audioAsrWorkflowId) : null,
   };
   if (id) {
     await api(`/api/novels/${Number(id)}`, { method: "PUT", body: JSON.stringify(payload) });
@@ -365,6 +366,11 @@ async function fetchNovelDownloadChapters(novelId) {
   return data.chapters || [];
 }
 
+async function fetchNovelAudioAsrChapters(novelId) {
+  const data = await api(`/api/novels/${Number(novelId)}/audio-asr-chapters`);
+  return data.chapters || [];
+}
+
 async function fetchChapterDetail(novelId, chapterNum) {
   return api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}`);
 }
@@ -463,6 +469,24 @@ async function downloadChapterAudio(novelId, chapterNum) {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(a.href);
+}
+
+async function enqueueChapterAudioAsr(novelId, chapterNum) {
+  return api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/audio-asr/enqueue`, {
+    method: "POST",
+    body: "{}",
+  });
+}
+
+async function enqueueBatchAudioAsr(novelId, chapterNums = []) {
+  return api(`/api/novels/${Number(novelId)}/audio-asr/enqueue-batch`, {
+    method: "POST",
+    body: JSON.stringify({ chapterNums }),
+  });
+}
+
+async function fetchChapterAsrFile(novelId, chapterNum) {
+  return api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/asr-file`);
 }
 
 // 角色库API
@@ -657,6 +681,7 @@ export {
   fetchJsonTaskDetail,
   fetchNovelChapters,
   fetchNovelDownloadChapters,
+  fetchNovelAudioAsrChapters,
   getActiveNovelId,
   getCachedData,
   getData,
@@ -668,6 +693,9 @@ export {
   deleteJsonTask,
   importNovelTextChapters,
   downloadChapterAudio,
+  enqueueChapterAudioAsr,
+  enqueueBatchAudioAsr,
+  fetchChapterAsrFile,
   createChapter,
   updateChapter,
   deleteChapter,

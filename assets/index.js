@@ -142,6 +142,9 @@ function openNovelModal(novel) {
   const voiceTranscribeWorkflows = currentData.workflows.filter(
     (w) => String(w.workflowType || "").trim() === "voice_transcribe"
   );
+  const audioAsrWorkflows = currentData.workflows.filter(
+    (w) => String(w.workflowType || "").trim() === "audio_asr"
+  );
   
   document.getElementById("voiceSampleWorkflowSelect").innerHTML = voiceSampleWorkflows
     .map((w) => `<option value="${w.id}">${w.name}</option>`)
@@ -150,6 +153,9 @@ function openNovelModal(novel) {
     .map((w) => `<option value="${w.id}">${w.name}</option>`)
     .join("");
   document.getElementById("voiceTranscribeWorkflowSelect").innerHTML = voiceTranscribeWorkflows
+    .map((w) => `<option value="${w.id}">${w.name}</option>`)
+    .join("");
+  document.getElementById("audioAsrWorkflowSelect").innerHTML = audioAsrWorkflows
     .map((w) => `<option value="${w.id}">${w.name}</option>`)
     .join("");
 
@@ -161,6 +167,7 @@ function openNovelModal(novel) {
   form.voiceSampleWorkflowId.value = novel?.voiceSampleWorkflowId || voiceSampleWorkflows[0]?.id || "";
   form.lineAudioWorkflowId.value = novel?.lineAudioWorkflowId || lineAudioWorkflows[0]?.id || "";
   form.voiceTranscribeWorkflowId.value = novel?.voiceTranscribeWorkflowId || voiceTranscribeWorkflows[0]?.id || "";
+  form.audioAsrWorkflowId.value = novel?.audioAsrWorkflowId || audioAsrWorkflows[0]?.id || "";
   localizeDocumentText(document);
   modal.showModal();
 }
@@ -366,6 +373,7 @@ function bindEvents() {
           voiceSampleWorkflowId: form.voiceSampleWorkflowId.value,
           lineAudioWorkflowId: form.lineAudioWorkflowId.value,
           voiceTranscribeWorkflowId: form.voiceTranscribeWorkflowId.value,
+          audioAsrWorkflowId: form.audioAsrWorkflowId.value,
         },
         editingId
       );
