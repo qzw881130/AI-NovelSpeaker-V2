@@ -194,6 +194,23 @@
           </div>
         </section>
 
+        <section class="panel form-panel">
+          <h2>直播结束语</h2>
+          <div class="copyright-audio-grid">
+            <div class="copyright-audio-item">
+              <div class="copyright-audio-head copyright-audio-inline">
+                <strong>直播结束语</strong>
+                <div class="audio-upload-row copyright-audio-actions-row">
+                  <input id="liveEndingAudioFile" type="file" accept="audio/*,.flac,.wav,.mp3,.m4a,.aac" class="hidden" />
+                  <button id="uploadLiveEndingAudioBtn" class="ghost-btn" type="button">上传</button>
+                  <audio id="liveEndingAudioPlayer" controls class="hidden"></audio>
+                  <span id="liveEndingAudioStatus" class="caption"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <section class="settings-actions-bottom">
           <button class="primary-btn" id="saveSettingsBtn" type="button">保存配置</button>
         </section>

@@ -953,6 +953,25 @@ class Handler(BaseHTTPRequestHandler):
             self.send_file_response(abs_path, ctype, cache_control="no-store")
             return
 
+        if route == "/api/settings/live-ending-audio/file":
+            conn = db_conn()
+            row = conn.execute(
+                "SELECT setting_value FROM app_settings WHERE setting_key=?",
+                ("live_ending_audio_path",),
+            ).fetchone()
+            conn.close()
+            file_path = str(row["setting_value"] or "").strip() if row else ""
+            if not file_path:
+                self.send_json({"error": "audio file not found"}, 404)
+                return
+            abs_path = (ROOT_DIR / file_path).resolve()
+            if not abs_path.exists() or not abs_path.is_file():
+                self.send_json({"error": "audio file not found"}, 404)
+                return
+            ctype = mimetypes.guess_type(abs_path.name)[0] or "audio/flac"
+            self.send_file_response(abs_path, ctype, cache_control="no-store")
+            return
+
         # 台词音频API
         m_chapter_line_audios = re.match(
             r"^/api/novels/(\d+)/chapters/(\d+)/line-audios$", route
@@ -1148,6 +1167,42 @@ class Handler(BaseHTTPRequestHandler):
                 ON CONFLICT(setting_key) DO UPDATE SET setting_value=excluded.setting_value, updated_at=CURRENT_TIMESTAMP
                 """,
                 (f"copyright_audio_{kind}_path", rel_path),
+            )
+            conn.commit()
+            conn.close()
+            self.send_json({"status": "ok", "path": rel_path})
+            return
+
+        if route == "/api/settings/live-ending-audio":
+            body = self.read_json()
+            audio_base64 = str(body.get("audioBase64") or "").strip()
+            file_name = (
+                str(body.get("fileName") or "live-ending.flac").strip()
+                or "live-ending.flac"
+            )
+            if not audio_base64:
+                self.send_json({"error": "audioBase64 is required"}, 400)
+                return
+            try:
+                audio_bytes = base64.b64decode(audio_base64)
+            except Exception:
+                self.send_json({"error": "invalid audioBase64"}, 400)
+                return
+            safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", file_name).strip("._") or "live-ending.flac"
+            target_dir = ROOT_DIR / "temp" / "settings"
+            target_dir.mkdir(parents=True, exist_ok=True)
+            suffix = Path(safe_name).suffix or ".flac"
+            target_path = target_dir / f"live-ending{suffix}"
+            target_path.write_bytes(audio_bytes)
+            rel_path = db_rel_path(target_path.relative_to(ROOT_DIR))
+            conn = db_conn()
+            conn.execute(
+                """
+                INSERT INTO app_settings (setting_key,setting_value,updated_at)
+                VALUES (?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(setting_key) DO UPDATE SET setting_value=excluded.setting_value, updated_at=CURRENT_TIMESTAMP
+                """,
+                ("live_ending_audio_path", rel_path),
             )
             conn.commit()
             conn.close()
@@ -2394,6 +2449,9 @@ class Handler(BaseHTTPRequestHandler):
                 else "0",
                 "copyright_audio_outro_path": str(
                     ((body.get("copyrightAudio") or {}).get("outroPath") or "")
+                ).strip(),
+                "live_ending_audio_path": str(
+                    ((body.get("liveEndingAudio") or {}).get("path") or "")
                 ).strip(),
             }
             conn = db_conn()

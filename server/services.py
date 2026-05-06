@@ -917,6 +917,9 @@ def fetch_settings(conn: sqlite3.Connection) -> dict:
             == "1",
             "outroPath": str(kv.get("copyright_audio_outro_path", "") or "").strip(),
         },
+        "liveEndingAudio": {
+            "path": str(kv.get("live_ending_audio_path", "") or "").strip(),
+        },
     }
 
 

@@ -161,6 +161,7 @@ function load(settings) {
   const ui = settings.ui || {};
   const lineAudioQueue = settings.lineAudioQueue || {};
   const copyrightAudio = settings.copyrightAudio || {};
+  const liveEndingAudio = settings.liveEndingAudio || {};
   document.getElementById("comfyUrl").value = settings.comfyUrl || "";
   document.getElementById("proxyUrl").value = settings.proxyUrl || "";
   document.getElementById("llmProvider").value = llm.provider || "grok";
@@ -206,6 +207,7 @@ function load(settings) {
   document.getElementById("copyrightOutroEnabled").checked = Boolean(copyrightAudio.outroEnabled);
   applyCopyrightAudioState("intro", String(copyrightAudio.introPath || ""));
   applyCopyrightAudioState("outro", String(copyrightAudio.outroPath || ""));
+  applyLiveEndingAudioState(String(liveEndingAudio.path || ""));
   syncLineAudioQueueModeVisibility();
   syncOllamaFieldVisibility();
 }
@@ -220,6 +222,16 @@ function applyCopyrightAudioState(kind, path) {
   status.textContent = normalized ? "已上传音频" : "未上传音频";
 }
 
+function applyLiveEndingAudioState(path) {
+  const normalized = String(path || "").trim();
+  const player = document.getElementById("liveEndingAudioPlayer");
+  const status = document.getElementById("liveEndingAudioStatus");
+  player.dataset.path = normalized;
+  player.classList.toggle("hidden", !normalized);
+  player.src = normalized ? `/api/settings/live-ending-audio/file?v=${Date.now()}` : "";
+  status.textContent = normalized ? "已上传音频" : "未上传音频";
+}
+
 async function uploadCopyrightAudio(kind, file) {
   const buffer = await file.arrayBuffer();
   const bytes = new Uint8Array(buffer);
@@ -229,6 +241,26 @@ async function uploadCopyrightAudio(kind, file) {
   });
   const audioBase64 = btoa(binary);
   const res = await fetch(`/api/settings/copyright-audio/${kind}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ audioBase64, fileName: file.name }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || `HTTP ${res.status}`);
+  }
+  return String(data.path || "");
+}
+
+async function uploadLiveEndingAudio(file) {
+  const buffer = await file.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  bytes.forEach((b) => {
+    binary += String.fromCharCode(b);
+  });
+  const audioBase64 = btoa(binary);
+  const res = await fetch(`/api/settings/live-ending-audio`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ audioBase64, fileName: file.name }),
@@ -330,6 +362,9 @@ function readSettingsForm() {
       introPath: document.getElementById("copyrightIntroPlayer").src ? document.getElementById("copyrightIntroPlayer").dataset.path || "" : "",
       outroEnabled: document.getElementById("copyrightOutroEnabled").checked,
       outroPath: document.getElementById("copyrightOutroPlayer").src ? document.getElementById("copyrightOutroPlayer").dataset.path || "" : "",
+    },
+    liveEndingAudio: {
+      path: document.getElementById("liveEndingAudioPlayer").src ? document.getElementById("liveEndingAudioPlayer").dataset.path || "" : "",
     },
   };
 }
@@ -441,6 +476,9 @@ function bindEvents() {
   document.getElementById("uploadCopyrightOutroBtn").addEventListener("click", () => {
     document.getElementById("copyrightOutroFile").click();
   });
+  document.getElementById("uploadLiveEndingAudioBtn").addEventListener("click", () => {
+    document.getElementById("liveEndingAudioFile").click();
+  });
   document.getElementById("copyrightIntroFile").addEventListener("change", async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -469,6 +507,21 @@ function bindEvents() {
       markLlmDirty();
     } catch (err) {
       toast(err.message);
+    } finally {
+      event.target.value = "";
+    }
+  });
+  document.getElementById("liveEndingAudioFile").addEventListener("change", async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const path = await uploadLiveEndingAudio(file);
+      const player = document.getElementById("liveEndingAudioPlayer");
+      player.dataset.path = path;
+      applyLiveEndingAudioState(path);
+      toast("直播结束语音频已上传");
+    } catch (err) {
+      toast(`上传直播结束语音频失败: ${err.message}`);
     } finally {
       event.target.value = "";
     }

@@ -33,6 +33,9 @@ const DEFAULT_SETTINGS = {
     outroEnabled: false,
     outroPath: "",
   },
+  liveEndingAudio: {
+    path: "",
+  },
 };
 
 let cache = {
@@ -63,6 +66,10 @@ function normalizeSettings(raw) {
     copyrightAudio: {
       ...DEFAULT_SETTINGS.copyrightAudio,
       ...(next.copyrightAudio || {}),
+    },
+    liveEndingAudio: {
+      ...DEFAULT_SETTINGS.liveEndingAudio,
+      ...(next.liveEndingAudio || {}),
     },
   };
 }
