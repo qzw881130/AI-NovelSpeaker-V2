@@ -23,6 +23,8 @@ let readingSegments = [];
 let activeSegmentIndex = -1;
 let currentAsrMode = false;
 let activeParagraphElement = null;
+let targetReaderScrollTop = null;
+let readerScrollAnimationId = 0;
 
 function splitParagraphs(text) {
   const content = String(text || "").replace(/\r/g, "").trim();
@@ -69,6 +71,42 @@ function saveBool(key, value) {
 function setStatus(text) {
   const el = document.getElementById("liveReaderStatus");
   if (el) el.textContent = translateText(text);
+}
+
+function setMatchStatus(text) {
+  const el = document.getElementById("liveReaderMatchStatus");
+  if (el) el.textContent = text;
+}
+
+function syncLiveEndingAudioState() {
+  const path = String((window.__liveReaderSettings?.liveEndingAudio || {}).path || "").trim();
+  const btn = document.getElementById("liveEndingAudioPlayBtn");
+  const player = document.getElementById("liveEndingAudioPlayer");
+  if (!btn || !player) return;
+  const hasAudio = Boolean(path);
+  btn.classList.toggle("hidden", !hasAudio);
+  player.src = hasAudio ? `/api/settings/live-ending-audio/file?v=${Date.now()}` : "";
+}
+
+function formatMatchStrategy(strategy) {
+  const value = String(strategy || "").trim();
+  if (!value) return "未命中";
+  if (value === "exact") return "精确匹配";
+  if (value === "anchor") return "首尾锚点匹配";
+  if (value === "prefix") return "前缀匹配";
+  if (value === "suffix") return "后缀匹配";
+  if (value === "middle") return "中段匹配";
+  if (value === "fuzzy") return "模糊匹配";
+  if (value.startsWith("combined:")) {
+    const mode = value.slice("combined:".length);
+    const mapping = {
+      "current+next": "当前句+后句拼接",
+      "prev+current": "前句+当前句拼接",
+      "prev+current+next": "前后句拼接",
+    };
+    return mapping[mode] || `拼接匹配(${mode})`;
+  }
+  return value;
 }
 
 function applyReaderSettings() {
@@ -241,6 +279,94 @@ function chooseNearestForwardPosition(positions, cursor) {
   }, -1);
 }
 
+function longestCommonSubsequenceLength(a, b) {
+  const aa = String(a || "");
+  const bb = String(b || "");
+  if (!aa || !bb) return 0;
+  const dp = new Array(bb.length + 1).fill(0);
+  for (let i = 1; i <= aa.length; i += 1) {
+    let prev = 0;
+    for (let j = 1; j <= bb.length; j += 1) {
+      const temp = dp[j];
+      if (aa[i - 1] === bb[j - 1]) {
+        dp[j] = prev + 1;
+      } else {
+        dp[j] = Math.max(dp[j], dp[j - 1]);
+      }
+      prev = temp;
+    }
+  }
+  return dp[bb.length];
+}
+
+function fuzzySimilarityScore(a, b) {
+  const aa = String(a || "");
+  const bb = String(b || "");
+  if (!aa || !bb) return 0;
+  const lcs = longestCommonSubsequenceLength(aa, bb);
+  return (2 * lcs) / (aa.length + bb.length);
+}
+
+function findAnchorMatch(globalNormalized, normalizedSegment, cursor) {
+  if (normalizedSegment.length < 8) return null;
+  const anchorLength = Math.max(3, Math.min(8, Math.floor(normalizedSegment.length * 0.28)));
+  const prefix = normalizedSegment.slice(0, anchorLength);
+  const suffix = normalizedSegment.slice(-anchorLength);
+  const prefixPositions = collectMatchPositions(globalNormalized, prefix, Math.max(0, cursor - 32));
+  let best = null;
+  for (const pos of prefixPositions) {
+    const windowEnd = Math.min(globalNormalized.length, pos + normalizedSegment.length + 24);
+    const windowText = globalNormalized.slice(pos, windowEnd);
+    const suffixIndex = windowText.indexOf(suffix, Math.max(anchorLength, normalizedSegment.length - anchorLength - 12));
+    if (suffixIndex < 0) continue;
+    const matchedLength = suffixIndex + anchorLength;
+    const candidateText = globalNormalized.slice(pos, pos + matchedLength);
+    const similarity = fuzzySimilarityScore(normalizedSegment, candidateText);
+    const distance = Math.abs(pos - cursor);
+    const score = similarity * 100 - distance * 0.03;
+    if (!best || score > best.score) {
+      best = {
+        start: pos,
+        length: matchedLength,
+        strategy: "anchor",
+        score,
+      };
+    }
+  }
+  return best ? { start: best.start, length: best.length, strategy: best.strategy } : null;
+}
+
+function findFuzzyWindowMatch(globalNormalized, normalizedSegment, cursor) {
+  if (normalizedSegment.length < 8) return null;
+  const searchStart = Math.max(0, cursor - 36);
+  const searchEnd = Math.min(globalNormalized.length, cursor + Math.max(normalizedSegment.length * 4, 180));
+  const window = globalNormalized.slice(searchStart, searchEnd);
+  if (!window) return null;
+  const minLen = Math.max(6, Math.floor(normalizedSegment.length * 0.7));
+  const maxLen = Math.min(normalizedSegment.length + 10, normalizedSegment.length * 2);
+  let best = null;
+  for (let start = 0; start < window.length; start += 1) {
+    const globalStart = searchStart + start;
+    for (let len = minLen; len <= maxLen && start + len <= window.length; len += 2) {
+      const candidate = window.slice(start, start + len);
+      const similarity = fuzzySimilarityScore(normalizedSegment, candidate);
+      if (similarity < 0.72) continue;
+      const distance = Math.abs(globalStart - cursor);
+      const forwardBias = globalStart >= cursor ? 0 : 8;
+      const score = similarity * 100 - distance * 0.025 - forwardBias;
+      if (!best || score > best.score) {
+        best = {
+          start: globalStart,
+          length: len,
+          strategy: "fuzzy",
+          score,
+        };
+      }
+    }
+  }
+  return best ? { start: best.start, length: best.length, strategy: best.strategy } : null;
+}
+
 function findBestSegmentMatch(globalNormalized, normalizedSegment, cursor) {
   if (!normalizedSegment) return null;
 
@@ -252,6 +378,11 @@ function findBestSegmentMatch(globalNormalized, normalizedSegment, cursor) {
   const direct = chooseNearestForwardPosition(directPositions, cursor);
   if (direct >= 0) {
     return { start: direct, length: normalizedSegment.length, strategy: "exact" };
+  }
+
+  const anchor = findAnchorMatch(globalNormalized, normalizedSegment, cursor);
+  if (anchor) {
+    return anchor;
   }
 
   const candidateSpecs = [];
@@ -300,7 +431,49 @@ function findBestSegmentMatch(globalNormalized, normalizedSegment, cursor) {
     }
   }
 
-  return best ? { start: best.start, length: best.length, strategy: best.strategy } : null;
+  if (best) {
+    return { start: best.start, length: best.length, strategy: best.strategy };
+  }
+
+  const fuzzy = findFuzzyWindowMatch(globalNormalized, normalizedSegment, cursor);
+  if (fuzzy) {
+    return fuzzy;
+  }
+
+  return null;
+}
+
+function findCombinedSegmentMatch(globalNormalized, normalizedSegment, cursor, previousNormalized, nextNormalized) {
+  const candidates = [];
+  if (nextNormalized) {
+    const text = `${normalizedSegment}${nextNormalized}`;
+    if (text.length >= normalizedSegment.length + 4) {
+      candidates.push({ mode: "current+next", text, offset: 0, length: normalizedSegment.length });
+    }
+  }
+  if (previousNormalized) {
+    const text = `${previousNormalized}${normalizedSegment}`;
+    if (text.length >= normalizedSegment.length + 4) {
+      candidates.push({ mode: "prev+current", text, offset: previousNormalized.length, length: normalizedSegment.length });
+    }
+  }
+  if (previousNormalized && nextNormalized) {
+    const text = `${previousNormalized}${normalizedSegment}${nextNormalized}`;
+    if (text.length >= normalizedSegment.length + 8) {
+      candidates.push({ mode: "prev+current+next", text, offset: previousNormalized.length, length: normalizedSegment.length });
+    }
+  }
+
+  for (const candidate of candidates) {
+    const found = findBestSegmentMatch(globalNormalized, candidate.text, Math.max(0, cursor - 24));
+    if (!found) continue;
+    return {
+      start: found.start + candidate.offset,
+      length: candidate.length,
+      strategy: `combined:${candidate.mode}`,
+    };
+  }
+  return null;
 }
 
 function mapAsrSegmentsToOriginalText(originalText, asrSegments) {
@@ -326,10 +499,16 @@ function mapAsrSegmentsToOriginalText(originalText, asrSegments) {
     }
   }
   let cursor = 0;
-  for (const segment of asrSegments) {
+  for (let index = 0; index < asrSegments.length; index += 1) {
+    const segment = asrSegments[index];
     const normalizedSegment = normalizeSearchText(segment.text).normalized;
     if (!normalizedSegment) continue;
-    const match = findBestSegmentMatch(globalNormalized, normalizedSegment, cursor);
+    let match = findBestSegmentMatch(globalNormalized, normalizedSegment, cursor);
+    if (!match) {
+      const previousNormalized = index > 0 ? normalizeSearchText(asrSegments[index - 1]?.text || "").normalized : "";
+      const nextNormalized = index < asrSegments.length - 1 ? normalizeSearchText(asrSegments[index + 1]?.text || "").normalized : "";
+      match = findCombinedSegmentMatch(globalNormalized, normalizedSegment, cursor, previousNormalized, nextNormalized);
+    }
     if (!match) continue;
     const foundAt = match.start;
     const matchedLength = match.length;
@@ -343,6 +522,7 @@ function mapAsrSegmentsToOriginalText(originalText, asrSegments) {
     segment.startChar = startMap.charIndex;
     segment.endChar = endMap.charIndex + 1;
     segment.matchStrategy = match.strategy;
+    segment.matched = true;
     cursor = foundAt + matchedLength;
   }
   return {
@@ -412,7 +592,79 @@ function parseAsrContent(text) {
       endTime: end,
     });
   }
-  return segments;
+  return mergeAsrSegments(segments);
+}
+
+function mergeAsrSegments(segments) {
+  const merged = [];
+  let current = null;
+  const flush = () => {
+    if (!current) return;
+    current.index = merged.length;
+    merged.push(current);
+    current = null;
+  };
+
+  for (const raw of segments) {
+    const text = String(raw.text || "").trim();
+    if (!text) continue;
+    const start = Number(raw.startTime || 0);
+    const end = Number(raw.endTime || start);
+    const duration = Math.max(0, end - start);
+    const gap = current ? Math.max(0, start - Number(current.endTime || start)) : 0;
+    const currentLen = current ? String(current.text || "").replace(/\s+/g, "").length : 0;
+    const currentDuration = current ? Math.max(0, Number(current.endTime || 0) - Number(current.startTime || 0)) : 0;
+    const shouldMerge = Boolean(
+      current &&
+      gap <= 0.9 &&
+      (duration <= 1.35 || text.length <= 8 || currentDuration <= 1.8 || currentLen <= 12)
+    );
+
+    if (!current || !shouldMerge) {
+      flush();
+      current = {
+        index: 0,
+        text,
+        startTime: start,
+        endTime: end,
+      };
+      continue;
+    }
+
+    current.text = `${String(current.text || "")}${text}`;
+    current.endTime = end;
+  }
+  flush();
+  return merged;
+}
+
+function cancelReaderScrollAnimation() {
+  if (readerScrollAnimationId) {
+    window.cancelAnimationFrame(readerScrollAnimationId);
+    readerScrollAnimationId = 0;
+  }
+}
+
+function runReaderScrollAnimation() {
+  cancelReaderScrollAnimation();
+  const step = () => {
+    const wrap = document.querySelector(".live-reader-reader-wrap");
+    if (!wrap || targetReaderScrollTop == null) {
+      readerScrollAnimationId = 0;
+      return;
+    }
+    const distance = targetReaderScrollTop - wrap.scrollTop;
+    if (Math.abs(distance) < 0.8) {
+      wrap.scrollTop = targetReaderScrollTop;
+      readerScrollAnimationId = 0;
+      return;
+    }
+    const smoothness = getFollowSmoothnessFactor();
+    const easing = 0.06 + smoothness * 0.18;
+    wrap.scrollTop += distance * easing;
+    readerScrollAnimationId = window.requestAnimationFrame(step);
+  };
+  readerScrollAnimationId = window.requestAnimationFrame(step);
 }
 
 function getActiveAsrSegmentIndex(currentTime) {
@@ -476,7 +728,23 @@ function updateSegmentHighlight(force = false) {
     nextIndex = readingSegments.findIndex((segment) => ratio >= segment.startRatio && ratio < segment.endRatio);
     if (nextIndex < 0) nextIndex = readingSegments.length - 1;
   }
-  if (!force && nextIndex === activeSegmentIndex) return;
+  if (!force && nextIndex === activeSegmentIndex) {
+    const currentSegment = readingSegments[activeSegmentIndex];
+    if (currentAsrMode && currentSegment) {
+      setMatchStatus(currentSegment.matched ? `匹配: ${formatMatchStrategy(currentSegment.matchStrategy || "exact")}` : "匹配: 未命中，沿用上一句");
+    }
+    return;
+  }
+
+  if (currentAsrMode && nextIndex >= 0) {
+    let resolvedIndex = nextIndex;
+    while (resolvedIndex >= 0 && !readingSegments[resolvedIndex]?.matched) {
+      resolvedIndex -= 1;
+    }
+    if (resolvedIndex >= 0) {
+      nextIndex = resolvedIndex;
+    }
+  }
 
   const prevEl = activeSegmentIndex >= 0 ? wrap.querySelector(`[data-segment-index="${activeSegmentIndex}"]`) : null;
   if (prevEl) prevEl.classList.remove("active");
@@ -485,7 +753,16 @@ function updateSegmentHighlight(force = false) {
   }
   activeSegmentIndex = nextIndex;
   const activeEl = wrap.querySelector(`[data-segment-index="${activeSegmentIndex}"]`);
-  if (!activeEl) return;
+  if (!activeEl) {
+    setMatchStatus(currentAsrMode ? "匹配: 未命中" : "匹配: 估算同步");
+    return;
+  }
+  const currentSegment = readingSegments[activeSegmentIndex];
+  if (currentAsrMode) {
+    setMatchStatus(currentSegment?.matched ? `匹配: ${formatMatchStrategy(currentSegment.matchStrategy || "exact")}` : "匹配: 未命中，沿用上一句");
+  } else {
+    setMatchStatus("匹配: 估算同步");
+  }
   const paragraphEl = activeEl.closest(".live-reader-paragraph");
   if (paragraphEl) {
     paragraphEl.classList.add("active");
@@ -497,18 +774,14 @@ function updateSegmentHighlight(force = false) {
   if (!enableHighlight) activeEl.classList.remove("active");
   if (autoScroll && paragraphEl) {
     const sensitivity = getFollowSensitivity();
-    const smoothness = getFollowSmoothnessFactor();
     const targetTop = Math.max(
       0,
       activeEl.offsetTop - (wrap.clientHeight - activeEl.offsetHeight) / 2
     );
     const diff = Math.abs(wrap.scrollTop - targetTop);
     if (diff > sensitivity) {
-      const nextTop = wrap.scrollTop + (targetTop - wrap.scrollTop) * smoothness;
-      wrap.scrollTo({
-        top: nextTop,
-        behavior: diff > sensitivity * 2.5 ? "smooth" : "auto",
-      });
+      targetReaderScrollTop = targetTop;
+      runReaderScrollAnimation();
     }
   }
 }
@@ -529,6 +802,8 @@ function scrollReaderByProgress() {
 function resetReaderScroll() {
   const wrap = document.querySelector(".live-reader-reader-wrap");
   if (wrap) wrap.scrollTop = 0;
+  targetReaderScrollTop = 0;
+  cancelReaderScrollAnimation();
   clearSegmentHighlight();
 }
 
@@ -566,6 +841,7 @@ async function loadChapter(chapterNum, options = {}) {
   resetReaderScroll();
   updateSegmentHighlight(true);
   setStatus(asrSegments.length ? "已加载精准时间轴" : "就绪");
+  setMatchStatus(asrSegments.length ? "匹配: 初始化中" : "匹配: 估算同步");
   renderPlaylist();
   updateNavButtons();
   localizeDocumentText(document);
@@ -584,6 +860,7 @@ async function loadNovelChapters() {
     document.getElementById("liveReaderChapterMeta").textContent = "";
     document.getElementById("liveReaderContent").textContent = "当前小说还没有可用音频章回。";
     readingSegments = [];
+    setMatchStatus("匹配: -");
     updateNavButtons();
   }
 }
@@ -619,6 +896,18 @@ function bindEvents() {
   document.getElementById("refreshLiveReaderBtn")?.addEventListener("click", async () => {
     await loadNovelChapters();
     toast("已刷新");
+  });
+  document.getElementById("liveEndingAudioPlayBtn")?.addEventListener("click", async () => {
+    const player = document.getElementById("liveEndingAudioPlayer");
+    if (!player?.src) {
+      toast("未配置直播结束语音频");
+      return;
+    }
+    try {
+      await player.play();
+    } catch {
+      toast("播放直播结束语失败，请重试");
+    }
   });
   document.getElementById("liveReaderPrevBtn")?.addEventListener("click", async () => {
     await playAdjacentChapter(-1);
@@ -692,11 +981,13 @@ async function init() {
   applyReaderSettings();
   updateInstallButtonVisibility();
   const data = await getData();
+  window.__liveReaderSettings = data.settings || {};
   allNovels = data.novels || [];
   activeNovel = getNovelByQueryOrActive();
   if (!activeNovel) {
     throw new Error("未找到小说");
   }
+  syncLiveEndingAudioState();
   renderNovelSelect();
   bindEvents();
   await switchNovel(activeNovel.id);
