@@ -1382,8 +1382,8 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 conn.execute(
                     """
-                    INSERT INTO novels (name,author,english_dir,intro,prompt_id,workflow_id,voice_sample_workflow_id,line_audio_workflow_id,voice_transcribe_workflow_id,audio_asr_workflow_id,chapter_count,total_words)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,0,0)
+                    INSERT INTO novels (name,author,english_dir,intro,prompt_id,nsfw_prompt_id,workflow_id,voice_sample_workflow_id,line_audio_workflow_id,voice_transcribe_workflow_id,audio_asr_workflow_id,chapter_count,total_words)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,0,0)
                     """,
                     (
                         str(body.get("name") or "").strip(),
@@ -1391,6 +1391,7 @@ class Handler(BaseHTTPRequestHandler):
                         english_dir,
                         str(body.get("intro") or "").strip(),
                         int(body.get("promptId")) if body.get("promptId") else None,
+                        int(body.get("nsfwPromptId")) if body.get("nsfwPromptId") else None,
                         int(body.get("workflowId")) if body.get("workflowId") else None,
                         int(body.get("voiceSampleWorkflowId"))
                         if body.get("voiceSampleWorkflowId")
@@ -1624,9 +1625,10 @@ class Handler(BaseHTTPRequestHandler):
             conn = db_conn()
             try:
                 conn.execute(
-                    "INSERT INTO json_prompts (name,prompt_type,description,content) VALUES (?, 'user', ?, ?)",
+                    "INSERT INTO json_prompts (name,prompt_type,prompt_category,description,content) VALUES (?, 'user', ?, ?, ?)",
                     (
                         str(body.get("name") or ""),
+                        str(body.get("category") or "json_parse"),
                         str(body.get("description") or ""),
                         str(body.get("content") or ""),
                     ),
@@ -1647,7 +1649,7 @@ class Handler(BaseHTTPRequestHandler):
             prompt_id = int(m_copy_prompt.group(1))
             conn = db_conn()
             src = conn.execute(
-                "SELECT name,content FROM json_prompts WHERE id=?", (prompt_id,)
+                "SELECT name,content,prompt_category FROM json_prompts WHERE id=?", (prompt_id,)
             ).fetchone()
             if not src:
                 conn.close()
@@ -1657,9 +1659,10 @@ class Handler(BaseHTTPRequestHandler):
                 src_name = str(src["name"])
                 new_name = next_prompt_copy_name(conn, src_name)
                 conn.execute(
-                    "INSERT INTO json_prompts (name,prompt_type,description,content) VALUES (?, 'user', ?, ?)",
+                    "INSERT INTO json_prompts (name,prompt_type,prompt_category,description,content) VALUES (?, 'user', ?, ?, ?)",
                     (
                         new_name,
+                        str(src["prompt_category"] or "json_parse"),
                         f"基于 {src_name} 复制",
                         str(src["content"]),
                     ),
@@ -2286,7 +2289,7 @@ class Handler(BaseHTTPRequestHandler):
                 conn.execute(
                     """
                     UPDATE novels
-                    SET name=?,author=?,english_dir=?,intro=?,prompt_id=?,workflow_id=?,voice_sample_workflow_id=?,line_audio_workflow_id=?,voice_transcribe_workflow_id=?,audio_asr_workflow_id=?,updated_at=CURRENT_TIMESTAMP
+                    SET name=?,author=?,english_dir=?,intro=?,prompt_id=?,nsfw_prompt_id=?,workflow_id=?,voice_sample_workflow_id=?,line_audio_workflow_id=?,voice_transcribe_workflow_id=?,audio_asr_workflow_id=?,updated_at=CURRENT_TIMESTAMP
                     WHERE id=?
                     """,
                     (
@@ -2295,6 +2298,7 @@ class Handler(BaseHTTPRequestHandler):
                         english_dir,
                         str(body.get("intro") or "").strip(),
                         int(body.get("promptId")) if body.get("promptId") else None,
+                        int(body.get("nsfwPromptId")) if body.get("nsfwPromptId") else None,
                         int(body.get("workflowId")) if body.get("workflowId") else None,
                         int(body.get("voiceSampleWorkflowId"))
                         if body.get("voiceSampleWorkflowId")
@@ -2329,6 +2333,7 @@ class Handler(BaseHTTPRequestHandler):
         m_prompt = re.match(r"^/api/prompts/(\d+)$", route)
         if m_prompt:
             prompt_id = int(m_prompt.group(1))
+            body = self.read_json()
             conn = db_conn()
             row = conn.execute(
                 "SELECT prompt_type FROM json_prompts WHERE id=?", (prompt_id,)
@@ -2342,9 +2347,10 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": "system prompt can not be edited"}, 409)
                 return
             conn.execute(
-                "UPDATE json_prompts SET name=?,description=?,content=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                "UPDATE json_prompts SET name=?,prompt_category=?,description=?,content=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
                 (
                     str(body.get("name") or ""),
+                    str(body.get("category") or "json_parse"),
                     str(body.get("description") or ""),
                     str(body.get("content") or ""),
                     prompt_id,

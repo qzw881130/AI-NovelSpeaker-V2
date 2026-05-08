@@ -5,13 +5,20 @@ import { localizeDocumentText, t, translateText } from "./i18n.js";
 let editingId = "";
 let modalMode = "create";
 let currentData = { prompts: [] };
+let activePromptCategory = "json_parse";
+
+function promptCategoryLabel(category) {
+  return String(category || "json_parse") === "nsfw_review" ? "NSFW 审查提示词" : "JSON 解析提示词";
+}
 
 function promptCharCount(content) {
   return Array.from(String(content || "")).length;
 }
 
 function orderedPrompts() {
-  return [...(currentData.prompts || [])].sort((a, b) => {
+  return [...(currentData.prompts || [])]
+    .filter((item) => String(item.category || "json_parse") === activePromptCategory)
+    .sort((a, b) => {
     const at = a.type === "system" ? 0 : 1;
     const bt = b.type === "system" ? 0 : 1;
     if (at !== bt) return at - bt;
@@ -19,14 +26,24 @@ function orderedPrompts() {
   });
 }
 
+function renderTabs() {
+  document.querySelectorAll("[data-prompt-tab]").forEach((el) => {
+    el.classList.toggle("active", el.dataset.promptTab === activePromptCategory);
+  });
+}
+
 function render() {
+  renderTabs();
   document.getElementById("promptList").innerHTML = orderedPrompts()
     .map(
       (p) => `
       <article class="asset-card">
         <div class="queue-head">
           <h3>${translateText(p.name)}</h3>
-          <span class="chip ${p.type === "system" ? "pending" : "completed"}">${p.type === "system" ? "系统" : "用户"}</span>
+          <div class="table-actions-inline">
+            <span class="chip ${p.type === "system" ? "pending" : "completed"}">${p.type === "system" ? "系统" : "用户"}</span>
+            <span class="chip">${promptCategoryLabel(p.category)}</span>
+          </div>
         </div>
         <p class="meta">${translateText(p.description || "-")}</p>
         <p class="meta">${translateText("提示词字数")}: ${promptCharCount(p.content)}</p>
@@ -49,6 +66,7 @@ function render() {
 function setFormReadonly(readonly) {
   const form = document.getElementById("promptForm");
   form.name.readOnly = readonly;
+  form.category.disabled = readonly;
   form.description.readOnly = readonly;
   form.content.readOnly = readonly;
   const saveBtn = document.getElementById("promptSaveBtn");
@@ -63,6 +81,7 @@ function openModal(promptItem, mode = "create") {
     mode === "view" ? "查看系统提示词" : editingId ? "编辑提示词" : "新建提示词";
   const form = document.getElementById("promptForm");
   form.name.value = mode === "view" ? translateText(promptItem?.name || "") : promptItem?.name || "";
+  form.category.value = promptItem?.category || activePromptCategory || "json_parse";
   form.description.value = mode === "view" ? translateText(promptItem?.description || "") : promptItem?.description || "";
   form.content.value = promptItem?.content || "";
   document.getElementById("promptCharCount").textContent = `${translateText("提示词字数")}: ${promptCharCount(promptItem?.content || "")}`;
@@ -103,6 +122,12 @@ function onAction(action, id) {
 
 function bindEvents() {
   document.getElementById("createPromptBtn").addEventListener("click", () => openModal(null, "create"));
+  document.querySelectorAll("[data-prompt-tab]").forEach((el) => {
+    el.addEventListener("click", () => {
+      activePromptCategory = String(el.dataset.promptTab || "json_parse");
+      render();
+    });
+  });
   document.getElementById("promptCancelBtn").addEventListener("click", () => {
     document.getElementById("promptModal").close();
   });
@@ -119,6 +144,7 @@ function bindEvents() {
     await savePrompt(
       {
         name: form.name.value.trim(),
+        category: form.category.value,
         description: form.description.value.trim(),
         content: form.content.value.trim(),
       },

@@ -20,6 +20,7 @@ SYSTEM_PROMPTS = [
         "file": SYSTEM_PROMPT_FILE,
         "name": SYSTEM_PROMPT_NAME,
         "description": SYSTEM_PROMPT_DESC,
+        "category": "json_parse",
         "default_content": DEFAULT_SYSTEM_PROMPT_CONTENT,
         "legacy_names": ["古本水浒传系统提示词", "古本水浒传系统Prompt"],
     },
@@ -27,6 +28,7 @@ SYSTEM_PROMPTS = [
         "file": PROMPTS_DIR / "fish_audio_s2_system_prompt.txt",
         "name": "FishAudioS2支持情绪提示词",
         "description": "系统内置，适用于 FishAudioS2 情绪标签脚本输出",
+        "category": "json_parse",
         "default_content": "请将章回文本拆分为 role_list、juben 与 fish_juben 的 JSON 结构。",
         "legacy_names": [],
     },
@@ -34,6 +36,7 @@ SYSTEM_PROMPTS = [
         "file": PROMPTS_DIR / "nsfw_review_system_prompt.txt",
         "name": "NSFW审查提示词",
         "description": "系统内置，适用于小说章回NSFW内容审查",
+        "category": "nsfw_review",
         "default_content": "请审查小说章回文本中的NSFW内容，并按JSON格式返回违规类型与原文句子。",
         "legacy_names": [],
     },
@@ -151,10 +154,27 @@ def migrate_novels_table(conn: sqlite3.Connection) -> None:
             "ALTER TABLE novels ADD COLUMN audio_asr_workflow_id INTEGER REFERENCES comfy_workflows(id)"
         )
 
+    if "nsfw_prompt_id" not in column_names:
+        conn.execute(
+            "ALTER TABLE novels ADD COLUMN nsfw_prompt_id INTEGER REFERENCES json_prompts(id)"
+        )
+
     # 添加总音频时长缓存字段（秒）
     if "total_audio_duration_seconds" not in column_names:
         conn.execute(
             "ALTER TABLE novels ADD COLUMN total_audio_duration_seconds REAL NOT NULL DEFAULT 0"
+        )
+
+
+def migrate_json_prompts_table(conn: sqlite3.Connection) -> None:
+    columns = conn.execute("PRAGMA table_info(json_prompts)").fetchall()
+    column_names = [col[1] for col in columns]
+    if "prompt_category" not in column_names:
+        conn.execute(
+            "ALTER TABLE json_prompts ADD COLUMN prompt_category TEXT NOT NULL DEFAULT 'json_parse'"
+        )
+        conn.execute(
+            "UPDATE json_prompts SET prompt_category='nsfw_review' WHERE name LIKE '%NSFW%审查提示词%' OR description LIKE '%NSFW%审查%'"
         )
 
 
@@ -320,6 +340,7 @@ def db_conn() -> sqlite3.Connection:
     )
     # 执行迁移
     migrate_novels_table(conn)
+    migrate_json_prompts_table(conn)
     migrate_chapters_table(conn)
     migrate_line_audio_tasks_table(conn)
     migrate_json_tasks_table(conn)

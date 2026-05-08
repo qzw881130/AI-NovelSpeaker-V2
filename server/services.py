@@ -215,7 +215,7 @@ def validate_english_dir(value: str) -> bool:
 def fetch_prompts(conn: sqlite3.Connection) -> list[dict]:
     rows = conn.execute(
         """
-        SELECT id,name,prompt_type,description,content,created_at,updated_at
+        SELECT id,name,prompt_type,prompt_category,description,content,created_at,updated_at
         FROM json_prompts
         ORDER BY CASE WHEN prompt_type='system' THEN 0 ELSE 1 END, id DESC
         """
@@ -224,6 +224,7 @@ def fetch_prompts(conn: sqlite3.Connection) -> list[dict]:
         {
             "id": int(r["id"]),
             "type": str(r["prompt_type"]),
+            "category": str(r["prompt_category"] or "json_parse"),
             "name": str(r["name"]),
             "description": str(r["description"] or ""),
             "content": str(r["content"]),
@@ -257,6 +258,7 @@ def sync_system_prompts_from_files(conn: sqlite3.Connection) -> None:
         file_path = Path(prompt["file"])
         prompt_name = str(prompt["name"])
         prompt_desc = str(prompt["description"])
+        prompt_category = str(prompt.get("category") or "json_parse")
         default_content = str(prompt["default_content"])
         legacy_names = [str(name) for name in prompt.get("legacy_names", [])]
         content = load_system_prompt_content_from_file(file_path, default_content)
@@ -281,6 +283,10 @@ def sync_system_prompts_from_files(conn: sqlite3.Connection) -> None:
                     "UPDATE novels SET prompt_id=? WHERE prompt_id=?",
                     (current_id, legacy_id),
                 )
+                conn.execute(
+                    "UPDATE novels SET nsfw_prompt_id=? WHERE nsfw_prompt_id=?",
+                    (current_id, legacy_id),
+                )
                 conn.execute("DELETE FROM json_prompts WHERE id=?", (legacy_id,))
             else:
                 conn.execute(
@@ -294,18 +300,20 @@ def sync_system_prompts_from_files(conn: sqlite3.Connection) -> None:
 
         conn.execute(
             """
-            INSERT INTO json_prompts (name,prompt_type,description,content)
-            VALUES (?, 'system', ?, ?)
+            INSERT INTO json_prompts (name,prompt_type,prompt_category,description,content)
+            VALUES (?, 'system', ?, ?, ?)
             ON CONFLICT(name) DO UPDATE SET
                 prompt_type='system',
+                prompt_category=excluded.prompt_category,
                 description=excluded.description,
                 content=excluded.content,
                 updated_at=CURRENT_TIMESTAMP
             WHERE json_prompts.prompt_type<>'system'
+               OR json_prompts.prompt_category<>excluded.prompt_category
                OR json_prompts.description<>excluded.description
                OR json_prompts.content<>excluded.content
             """,
-            (prompt_name, prompt_desc, content),
+            (prompt_name, prompt_category, prompt_desc, content),
         )
 
 
@@ -687,8 +695,8 @@ def fetch_novels(conn: sqlite3.Connection) -> list[dict]:
     rows = conn.execute(
         """
         SELECT n.id,n.name,n.author,n.english_dir,n.intro,n.chapter_count,n.total_words,
-               n.prompt_id,n.workflow_id,n.voice_sample_workflow_id,n.line_audio_workflow_id,n.voice_transcribe_workflow_id,
-               n.total_audio_duration_seconds,n.created_at,n.updated_at,
+               n.prompt_id,n.nsfw_prompt_id,n.workflow_id,n.voice_sample_workflow_id,n.line_audio_workflow_id,n.voice_transcribe_workflow_id,
+               n.audio_asr_workflow_id,n.total_audio_duration_seconds,n.created_at,n.updated_at,
                COALESCE(SUM(CASE WHEN c.has_audio=1 THEN 1 ELSE 0 END),0) AS audio_done,
                COALESCE(COUNT(c.id),0) AS chapter_total,
                COALESCE(SUM(c.word_count),0) AS chapter_words
@@ -749,6 +757,7 @@ def fetch_novels(conn: sqlite3.Connection) -> list[dict]:
                 "chapterCount": chapter_count,
                 "totalWords": total_words,
                 "promptId": int(r["prompt_id"]) if r["prompt_id"] is not None else None,
+                "nsfwPromptId": int(r["nsfw_prompt_id"]) if r["nsfw_prompt_id"] is not None else None,
                 "workflowId": int(r["workflow_id"])
                 if r["workflow_id"] is not None
                 else None,
@@ -760,6 +769,9 @@ def fetch_novels(conn: sqlite3.Connection) -> list[dict]:
                 else None,
                 "voiceTranscribeWorkflowId": int(r["voice_transcribe_workflow_id"])
                 if r["voice_transcribe_workflow_id"] is not None
+                else None,
+                "audioAsrWorkflowId": int(r["audio_asr_workflow_id"])
+                if r["audio_asr_workflow_id"] is not None
                 else None,
                 "jsonProgress": json_progress,
                 "audioProgress": audio_progress,

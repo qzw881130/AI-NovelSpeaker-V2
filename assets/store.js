@@ -143,6 +143,7 @@ async function saveNovel(input, id) {
     englishDir: String(input.englishDir || "").trim(),
     intro: String(input.intro || "").trim(),
     promptId: input.promptId ? Number(input.promptId) : null,
+    nsfwPromptId: input.nsfwPromptId ? Number(input.nsfwPromptId) : null,
     voiceSampleWorkflowId: input.voiceSampleWorkflowId ? Number(input.voiceSampleWorkflowId) : null,
     lineAudioWorkflowId: input.lineAudioWorkflowId ? Number(input.lineAudioWorkflowId) : null,
     voiceTranscribeWorkflowId: input.voiceTranscribeWorkflowId ? Number(input.voiceTranscribeWorkflowId) : null,
@@ -284,6 +285,7 @@ async function advanceJsonTasks() {
 async function savePrompt(input, id) {
   const payload = {
     name: String(input.name || "").trim(),
+    category: String(input.category || "json_parse").trim() || "json_parse",
     description: String(input.description || "").trim(),
     content: String(input.content || "").trim(),
   };

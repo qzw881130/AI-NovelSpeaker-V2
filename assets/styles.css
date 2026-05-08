@@ -356,6 +356,14 @@ h1 {
   white-space: nowrap;
 }
 
+.asset-tabs {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 0 0 14px;
+}
+
 .header-novel-switch {
   display: inline-flex;
   align-items: center;

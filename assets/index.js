@@ -128,7 +128,17 @@ function openNovelModal(novel) {
   editingId = novel?.id || "";
   document.getElementById("novelModalTitle").textContent = editingId ? "编辑小说" : "创建小说";
 
-  document.getElementById("novelPromptSelect").innerHTML = currentData.prompts
+  const jsonParsePrompts = currentData.prompts.filter(
+    (p) => String(p.category || "json_parse").trim() === "json_parse"
+  );
+  const nsfwPrompts = currentData.prompts.filter(
+    (p) => String(p.category || "json_parse").trim() === "nsfw_review"
+  );
+
+  document.getElementById("novelPromptSelect").innerHTML = jsonParsePrompts
+    .map((p) => `<option value="${p.id}">${p.name}</option>`)
+    .join("");
+  document.getElementById("novelNsfwPromptSelect").innerHTML = nsfwPrompts
     .map((p) => `<option value="${p.id}">${p.name}</option>`)
     .join("");
   
@@ -163,7 +173,8 @@ function openNovelModal(novel) {
   form.author.value = novel?.author || "";
   form.englishDir.value = novel?.englishDir || "";
   form.intro.value = novel?.intro || "";
-  form.promptId.value = novel?.promptId || currentData.prompts[0]?.id || "";
+  form.promptId.value = novel?.promptId || jsonParsePrompts[0]?.id || "";
+  form.nsfwPromptId.value = novel?.nsfwPromptId || nsfwPrompts.find((p) => p.name === "NSFW审查提示词")?.id || nsfwPrompts[0]?.id || "";
   form.voiceSampleWorkflowId.value = novel?.voiceSampleWorkflowId || voiceSampleWorkflows[0]?.id || "";
   form.lineAudioWorkflowId.value = novel?.lineAudioWorkflowId || lineAudioWorkflows[0]?.id || "";
   form.voiceTranscribeWorkflowId.value = novel?.voiceTranscribeWorkflowId || voiceTranscribeWorkflows[0]?.id || "";
@@ -370,6 +381,7 @@ function bindEvents() {
           englishDir,
           intro: form.intro.value,
           promptId: form.promptId.value,
+          nsfwPromptId: form.nsfwPromptId.value,
           voiceSampleWorkflowId: form.voiceSampleWorkflowId.value,
           lineAudioWorkflowId: form.lineAudioWorkflowId.value,
           voiceTranscribeWorkflowId: form.voiceTranscribeWorkflowId.value,

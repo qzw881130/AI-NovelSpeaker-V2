@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AI NovelSpeaker V2 - JSON提示词</title>
+    <title>AI NovelSpeaker V2 - 提示词管理</title>
     <link rel="stylesheet" href="./assets/styles.css" />
   </head>
   <body>
@@ -13,7 +13,7 @@
         <header class="page-header">
           <div>
             <p class="eyebrow">提示词资产</p>
-            <h1>JSON 提示词管理</h1>
+            <h1>提示词管理</h1>
           </div>
           <div class="header-actions">
             <button class="primary-btn" id="createPromptBtn" type="button">新建用户提示词</button>
@@ -22,6 +22,10 @@
         <section class="panel">
           <div class="panel-head">
             <h2>提示词列表</h2>
+          </div>
+          <div class="asset-tabs">
+            <button class="ghost-btn active" data-prompt-tab="json_parse" type="button">JSON 解析提示词</button>
+            <button class="ghost-btn" data-prompt-tab="nsfw_review" type="button">NSFW 审查提示词</button>
           </div>
           <div id="promptList" class="asset-list"></div>
         </section>
@@ -33,6 +37,12 @@
         <h3 id="promptModalTitle">新建提示词</h3>
         <div class="form-grid">
           <label>名称<input name="name" required /></label>
+          <label>分类
+            <select name="category">
+              <option value="json_parse">JSON 解析提示词</option>
+              <option value="nsfw_review">NSFW 审查提示词</option>
+            </select>
+          </label>
           <label class="full">描述<input name="description" /></label>
           <label class="full">内容<textarea name="content" rows="8" required></textarea></label>
         </div>

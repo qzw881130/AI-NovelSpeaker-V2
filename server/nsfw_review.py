@@ -264,7 +264,13 @@ def enqueue_chapter_nsfw_review_task(novel_id: int, chapter_id: int) -> tuple[bo
     if not chapter:
         conn.close()
         return False, "chapter not found"
-    prompt_id, _ = _lookup_nsfw_prompt(conn)
+    novel = conn.execute(
+        "SELECT nsfw_prompt_id FROM novels WHERE id=?",
+        (novel_id,),
+    ).fetchone()
+    prompt_id = int(novel["nsfw_prompt_id"] or 0) if novel and novel["nsfw_prompt_id"] is not None else None
+    if not prompt_id:
+        prompt_id, _ = _lookup_nsfw_prompt(conn)
     if not prompt_id:
         conn.close()
         return False, "nsfw review prompt not found"
