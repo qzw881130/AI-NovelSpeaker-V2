@@ -37,6 +37,11 @@ from .audio_asr import (
     enqueue_chapter_audio_asr_task,
     list_audio_asr_chapters,
 )
+from .nsfw_review import (
+    enqueue_batch_nsfw_review_tasks,
+    enqueue_chapter_nsfw_review_task,
+    list_nsfw_review_chapters,
+)
 
 
 def _resolve_storage_path(raw_path: str) -> Path | None:
@@ -592,6 +597,12 @@ class Handler(BaseHTTPRequestHandler):
         if m_audio_asr_chapters:
             novel_id = int(m_audio_asr_chapters.group(1))
             self.send_json({"chapters": list_audio_asr_chapters(novel_id)})
+            return
+
+        m_nsfw_review_chapters = re.match(r"^/api/novels/(\d+)/nsfw-review-chapters$", route)
+        if m_nsfw_review_chapters:
+            novel_id = int(m_nsfw_review_chapters.group(1))
+            self.send_json({"chapters": list_nsfw_review_chapters(novel_id)})
             return
 
         m_audio_file = re.match(r"^/api/novels/(\d+)/chapters/(\d+)/audio-file$", route)
@@ -2008,6 +2019,49 @@ class Handler(BaseHTTPRequestHandler):
                     if value > 0:
                         chapter_nums.append(value)
             ok, msg, data = enqueue_batch_audio_asr_tasks(novel_id, chapter_nums or None)
+            if not ok:
+                self.send_json({"error": msg}, 409)
+                return
+            self.send_json({"status": "queued", **data})
+            return
+
+        m_nsfw_enqueue = re.match(r"^/api/novels/(\d+)/chapters/(\d+)/nsfw-review/enqueue$", route)
+        if m_nsfw_enqueue:
+            ensure_task_worker()
+            novel_id = int(m_nsfw_enqueue.group(1))
+            chapter_num = int(m_nsfw_enqueue.group(2))
+            conn = db_conn()
+            chapter_row = conn.execute(
+                "SELECT id FROM chapters WHERE novel_id=? AND chapter_num=?",
+                (novel_id, chapter_num),
+            ).fetchone()
+            conn.close()
+            if not chapter_row:
+                self.send_json({"error": "chapter not found"}, 404)
+                return
+            ok, msg = enqueue_chapter_nsfw_review_task(novel_id, int(chapter_row["id"]))
+            if not ok:
+                self.send_json({"error": msg}, 409)
+                return
+            self.send_json({"status": "queued"})
+            return
+
+        m_nsfw_enqueue_batch = re.match(r"^/api/novels/(\d+)/nsfw-review/enqueue-batch$", route)
+        if m_nsfw_enqueue_batch:
+            ensure_task_worker()
+            novel_id = int(m_nsfw_enqueue_batch.group(1))
+            body = self.read_json()
+            raw_nums = body.get("chapterNums") or []
+            chapter_nums: list[int] = []
+            if isinstance(raw_nums, list):
+                for item in raw_nums:
+                    try:
+                        value = int(item)
+                    except (TypeError, ValueError):
+                        continue
+                    if value > 0:
+                        chapter_nums.append(value)
+            ok, msg, data = enqueue_batch_nsfw_review_tasks(novel_id, chapter_nums or None)
             if not ok:
                 self.send_json({"error": msg}, 409)
                 return

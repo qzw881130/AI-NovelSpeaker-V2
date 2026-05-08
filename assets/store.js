@@ -378,6 +378,11 @@ async function fetchNovelAudioAsrChapters(novelId) {
   return data.chapters || [];
 }
 
+async function fetchNovelNsfwReviewChapters(novelId) {
+  const data = await api(`/api/novels/${Number(novelId)}/nsfw-review-chapters`);
+  return data.chapters || [];
+}
+
 async function fetchChapterDetail(novelId, chapterNum) {
   return api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}`);
 }
@@ -487,6 +492,20 @@ async function enqueueChapterAudioAsr(novelId, chapterNum) {
 
 async function enqueueBatchAudioAsr(novelId, chapterNums = []) {
   return api(`/api/novels/${Number(novelId)}/audio-asr/enqueue-batch`, {
+    method: "POST",
+    body: JSON.stringify({ chapterNums }),
+  });
+}
+
+async function enqueueChapterNsfwReview(novelId, chapterNum) {
+  return api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/nsfw-review/enqueue`, {
+    method: "POST",
+    body: "{}",
+  });
+}
+
+async function enqueueBatchNsfwReview(novelId, chapterNums = []) {
+  return api(`/api/novels/${Number(novelId)}/nsfw-review/enqueue-batch`, {
     method: "POST",
     body: JSON.stringify({ chapterNums }),
   });
@@ -689,6 +708,7 @@ export {
   fetchNovelChapters,
   fetchNovelDownloadChapters,
   fetchNovelAudioAsrChapters,
+  fetchNovelNsfwReviewChapters,
   getActiveNovelId,
   getCachedData,
   getData,
@@ -702,6 +722,8 @@ export {
   downloadChapterAudio,
   enqueueChapterAudioAsr,
   enqueueBatchAudioAsr,
+  enqueueChapterNsfwReview,
+  enqueueBatchNsfwReview,
   fetchChapterAsrFile,
   createChapter,
   updateChapter,

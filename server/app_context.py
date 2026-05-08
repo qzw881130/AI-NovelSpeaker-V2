@@ -30,6 +30,13 @@ SYSTEM_PROMPTS = [
         "default_content": "请将章回文本拆分为 role_list、juben 与 fish_juben 的 JSON 结构。",
         "legacy_names": [],
     },
+    {
+        "file": PROMPTS_DIR / "nsfw_review_system_prompt.txt",
+        "name": "NSFW审查提示词",
+        "description": "系统内置，适用于小说章回NSFW内容审查",
+        "default_content": "请审查小说章回文本中的NSFW内容，并按JSON格式返回违规类型与原文句子。",
+        "legacy_names": [],
+    },
 ]
 
 # 系统工作流定义
@@ -263,6 +270,34 @@ def migrate_chapter_asr_tasks_table(conn: sqlite3.Connection) -> None:
     )
 
 
+def migrate_chapter_nsfw_tasks_table(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS chapter_nsfw_tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            novel_id INTEGER NOT NULL,
+            chapter_id INTEGER NOT NULL,
+            chapter_num INTEGER NOT NULL,
+            chapter_title TEXT NOT NULL DEFAULT '',
+            prompt_id INTEGER,
+            status TEXT NOT NULL DEFAULT 'pending',
+            progress INTEGER NOT NULL DEFAULT 0,
+            model_name TEXT NOT NULL DEFAULT '',
+            think_enabled INTEGER NOT NULL DEFAULT 1,
+            result_json_text TEXT NOT NULL DEFAULT '',
+            error_message TEXT NOT NULL DEFAULT '',
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            started_at DATETIME,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(novel_id, chapter_id),
+            FOREIGN KEY(novel_id) REFERENCES novels(id) ON DELETE CASCADE,
+            FOREIGN KEY(chapter_id) REFERENCES chapters(id) ON DELETE CASCADE,
+            FOREIGN KEY(prompt_id) REFERENCES json_prompts(id) ON DELETE SET NULL
+        )
+        """
+    )
+
+
 def db_conn() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH, timeout=12.0)
     conn.row_factory = sqlite3.Row
@@ -290,6 +325,7 @@ def db_conn() -> sqlite3.Connection:
     migrate_json_tasks_table(conn)
     migrate_task_batches_table(conn)
     migrate_chapter_asr_tasks_table(conn)
+    migrate_chapter_nsfw_tasks_table(conn)
     migrate_workflow_io_config_column(conn)
     migrate_workflow_logs_table(conn)
     return conn

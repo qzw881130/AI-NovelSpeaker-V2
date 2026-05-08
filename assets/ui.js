@@ -35,6 +35,7 @@ const NAV_ICONS = {
   batchRoleLines: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 7.5h15"/><path d="M4.5 12h15"/><path d="M4.5 16.5h9"/><path d="M18.5 16.5h.01"/><path d="M18.5 12h.01"/><path d="M18.5 7.5h.01"/></svg>`,
   liveReader: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4.5h8a3 3 0 0 1 3 3v11a1 1 0 0 1-1.5.86A5.4 5.4 0 0 0 13 18.5H7.5A2.5 2.5 0 0 0 5 21V6.5a2 2 0 0 1 2-2Z"/><path d="M9 9.5h4"/><path d="M9 13h6"/><path d="M18.5 9.5 21 11l-2.5 1.5Z"/></svg>`,
   audioAsr: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 7.5h15"/><path d="M4.5 12h11"/><path d="M4.5 16.5h8"/><path d="M18 8.5v7"/><path d="m15.5 13 2.5 2.5 2.5-2.5"/></svg>`,
+  nsfwReview: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 20 6.5v5.7c0 4.2-2.7 7.9-8 9.8-5.3-1.9-8-5.6-8-9.8V6.5l8-3Z"/><path d="M9 12h6"/><path d="M12 9v6"/></svg>`,
 };
 
 const NAV_EXTERNALS = [
@@ -71,6 +72,7 @@ const NAV_ITEMS = [
   { href: "./batch-role-lines.html", labelKey: "nav.batchRoleLines", icon: NAV_ICONS.batchRoleLines },
   { href: "./live-reader.html", labelKey: "nav.liveReader", icon: NAV_ICONS.liveReader },
   { href: "./audio-asr.html", labelKey: "nav.audioAsr", icon: NAV_ICONS.audioAsr },
+  { href: "./nsfw-review.html", labelKey: "nav.nsfwReview", icon: NAV_ICONS.nsfwReview },
 ];
 
 const NAV_BADGE_KEYS = {

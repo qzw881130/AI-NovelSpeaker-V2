@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NSFW审查 - AI NovelSpeaker V2</title>
+    <link rel="stylesheet" href="./assets/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="main-nav" id="mainNav"></aside>
+      <main class="page">
+        <header class="page-header">
+          <div>
+            <h1 id="nsfwReviewPageTitle">NSFW审查</h1>
+            <p id="nsfwReviewPageMeta" class="meta">加载中...</p>
+          </div>
+          <div class="header-actions">
+            <label class="header-novel-switch">切换小说
+              <select id="nsfwReviewNovelSelect"></select>
+            </label>
+            <a id="nsfwReviewChaptersLink" class="ghost-btn" href="./chapters.html">返回章节管理</a>
+            <button id="refreshNsfwReviewBtn" class="primary-btn" type="button">刷新</button>
+          </div>
+        </header>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div class="panel-head-title-row">
+              <h2>章回NSFW审查</h2>
+              <span id="nsfwReviewSelectionMeta" class="meta">已选择 0 回</span>
+            </div>
+            <div class="panel-head-actions">
+              <button id="nsfwReviewBatchBtn" class="ghost-btn" type="button">批量审查</button>
+              <button id="nsfwReviewBatchAllBtn" class="ghost-btn" type="button">审查全部</button>
+              <span id="nsfwReviewSummary" class="meta">-</span>
+            </div>
+          </div>
+          <div class="roles-table-wrap novel-download-table-wrap">
+            <table class="roles-table novel-download-table">
+              <thead>
+                <tr>
+                  <th>
+                    <label class="inline-check novel-download-select-all">
+                      <input id="nsfwReviewSelectAll" type="checkbox" />
+                      <span>选择全部</span>
+                    </label>
+                  </th>
+                  <th>章回编号</th>
+                  <th>章回标题</th>
+                  <th>字数</th>
+                  <th>审查状态</th>
+                  <th>NSFW</th>
+                  <th>审查结果</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="nsfwReviewTableBody">
+                <tr>
+                  <td colspan="8" class="empty-text">正在加载...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="nsfwReviewDialog" class="modal modal-large">
+      <form method="dialog">
+        <div class="dialog-header">
+          <h3 id="nsfwReviewDialogTitle">查看审查结果</h3>
+          <button class="dialog-close-btn" type="submit" aria-label="关闭">×</button>
+        </div>
+        <pre id="nsfwReviewDialogContent" class="dialog-code-block">加载中...</pre>
+      </form>
+    </dialog>
+
+    <div id="toast" class="toast"></div>
+    <script type="module" src="./assets/nsfw-review.js"></script>
+  </body>
+</html>

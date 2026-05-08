@@ -2204,7 +2204,7 @@ menu {
 }
 
 .line-audio-toolbar input[type="search"] {
-  flex: 1 1 260px;
+  flex: 1 1 220px;
   min-width: 180px;
 }
 
@@ -3034,6 +3034,22 @@ menu {
   word-break: break-word;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   line-height: 1.6;
+}
+
+.nsfw-flag-dot {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  vertical-align: middle;
+}
+
+.nsfw-flag-dot.is-danger {
+  background: #ef4444;
+}
+
+.nsfw-flag-dot.is-safe {
+  background: #22c55e;
 }
 
 @media (max-width: 768px) {

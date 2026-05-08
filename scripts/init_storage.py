@@ -30,6 +30,13 @@ SYSTEM_PROMPTS = [
         "default_content": "请将章回文本拆分为 role_list、juben 与 fish_juben 的 JSON 结构。",
         "legacy_names": [],
     },
+    {
+        "file": PROMPTS_DIR / "nsfw_review_system_prompt.txt",
+        "name": "NSFW审查提示词",
+        "description": "系统内置，适用于小说章回NSFW内容审查",
+        "default_content": "请审查小说章回文本中的NSFW内容，并按JSON格式返回违规类型与原文句子。",
+        "legacy_names": [],
+    },
 ]
 
 
