@@ -20,7 +20,11 @@
               <select id="nsfwReviewNovelSelect"></select>
             </label>
             <a id="nsfwReviewChaptersLink" class="ghost-btn" href="./chapters.html">返回章节管理</a>
-            <button id="refreshNsfwReviewBtn" class="primary-btn" type="button">刷新</button>
+            <div class="header-inline-tools">
+              <span id="nsfwReviewWorkerStatus" class="meta">Worker: -</span>
+              <button id="restartNsfwTaskWorkerBtn" class="ghost-btn" type="button">重启任务Worker</button>
+              <button id="refreshNsfwReviewBtn" class="primary-btn" type="button">刷新</button>
+            </div>
           </div>
         </header>
 

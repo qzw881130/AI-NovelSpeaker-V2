@@ -1,9 +1,11 @@
 import {
   enqueueBatchNsfwReview,
   enqueueChapterNsfwReview,
+  fetchTaskWorkerStatus,
   fetchNovelNsfwReviewChapters,
   getData,
   getActiveNovelId,
+  restartTaskWorker,
   setActiveNovelId,
 } from "./store.js";
 import { renderNav, toast } from "./ui.js";
@@ -13,6 +15,28 @@ let activeNovel = null;
 let chapterItems = [];
 const selectedChapterNums = new Set();
 let autoRefreshTimer = 0;
+
+function renderTaskWorkerStatus(status) {
+  const el = document.getElementById("nsfwReviewWorkerStatus");
+  if (!el) return;
+  const state = String(status?.state || "stopped");
+  const mapping = {
+    running: "运行中",
+    stale: "心跳超时",
+    stopped: "未运行",
+  };
+  const age = status?.heartbeatAgeSeconds != null ? ` · 心跳${status.heartbeatAgeSeconds}s` : "";
+  el.textContent = `Worker: ${mapping[state] || state}${age}`;
+}
+
+async function refreshTaskWorkerStatus() {
+  try {
+    const status = await fetchTaskWorkerStatus();
+    renderTaskWorkerStatus(status);
+  } catch {
+    renderTaskWorkerStatus({ state: "stopped" });
+  }
+}
 
 function formatJsonPretty(text) {
   const raw = String(text || "").trim();
@@ -180,6 +204,7 @@ async function refreshPage() {
   chapterItems = await fetchNovelNsfwReviewChapters(activeNovel.id);
   setHeader();
   renderTable();
+  await refreshTaskWorkerStatus();
 }
 
 async function enqueueSingle(chapterNum) {
@@ -209,6 +234,11 @@ function bindEvents() {
   document.getElementById("refreshNsfwReviewBtn").addEventListener("click", async () => {
     await refreshPage();
     toast("NSFW审查列表已刷新");
+  });
+  document.getElementById("restartNsfwTaskWorkerBtn").addEventListener("click", async () => {
+    await restartTaskWorker();
+    toast("任务Worker已重启");
+    await refreshPage();
   });
   document.getElementById("nsfwReviewSelectAll").addEventListener("change", (event) => {
     const checked = Boolean(event.target.checked);

@@ -2950,15 +2950,6 @@ def task_worker_loop() -> None:
         TASK_WORKER_STOP.wait(1.0 if (has_json_work or has_line_audio_work or has_audio_asr_work or has_nsfw_review_work) else 3.0)
 
 
-def _has_active_line_audio_tasks() -> bool:
-    conn = db_conn()
-    row = conn.execute(
-        "SELECT COUNT(1) AS c FROM line_audio_tasks WHERE status IN ('running','processing')"
-    ).fetchone()
-    conn.close()
-    return bool(row and int(row["c"] or 0) > 0)
-
-
 def kick_line_audio_queue_once() -> None:
     global \
         TASK_WORKER_KICK_THREAD, \
@@ -2991,13 +2982,10 @@ def ensure_task_worker() -> None:
     stale_seconds = 15.0
     now = time.time()
     if TASK_WORKER_THREAD and TASK_WORKER_THREAD.is_alive():
-        if (
-            TASK_WORKER_HEARTBEAT_TS > 0
-            and now - TASK_WORKER_HEARTBEAT_TS > stale_seconds
-            and not _has_active_line_audio_tasks()
-        ):
+        if TASK_WORKER_HEARTBEAT_TS > 0 and now - TASK_WORKER_HEARTBEAT_TS > stale_seconds:
             print("[task-worker] heartbeat stale, restarting worker")
             TASK_WORKER_GENERATION += 1
+            TASK_WORKER_STOP.clear()
             TASK_WORKER_THREAD = threading.Thread(target=task_worker_loop, daemon=True)
             TASK_WORKER_THREAD.start()
         return
@@ -3005,6 +2993,31 @@ def ensure_task_worker() -> None:
     TASK_WORKER_GENERATION += 1
     TASK_WORKER_THREAD = threading.Thread(target=task_worker_loop, daemon=True)
     TASK_WORKER_THREAD.start()
+
+
+def restart_task_worker() -> None:
+    global TASK_WORKER_THREAD, TASK_WORKER_GENERATION, TASK_WORKER_HEARTBEAT_TS, TASK_WORKER_LAST_PROGRESS_TS
+    TASK_WORKER_GENERATION += 1
+    TASK_WORKER_STOP.clear()
+    TASK_WORKER_HEARTBEAT_TS = 0.0
+    TASK_WORKER_LAST_PROGRESS_TS = 0.0
+    TASK_WORKER_THREAD = threading.Thread(target=task_worker_loop, daemon=True)
+    TASK_WORKER_THREAD.start()
+
+
+def get_task_worker_status() -> dict:
+    now = time.time()
+    heartbeat_age = max(0.0, now - TASK_WORKER_HEARTBEAT_TS) if TASK_WORKER_HEARTBEAT_TS > 0 else -1.0
+    progress_age = max(0.0, now - TASK_WORKER_LAST_PROGRESS_TS) if TASK_WORKER_LAST_PROGRESS_TS > 0 else -1.0
+    state = "stopped"
+    if TASK_WORKER_THREAD and TASK_WORKER_THREAD.is_alive():
+        state = "stale" if (TASK_WORKER_HEARTBEAT_TS > 0 and heartbeat_age > 15.0) else "running"
+    return {
+        "state": state,
+        "heartbeatAgeSeconds": round(heartbeat_age, 1) if heartbeat_age >= 0 else None,
+        "progressAgeSeconds": round(progress_age, 1) if progress_age >= 0 else None,
+        "generation": TASK_WORKER_GENERATION,
+    }
 
 
 def comfy_upload_input_file(filename: str, data: bytes) -> dict:

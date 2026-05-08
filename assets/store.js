@@ -337,6 +337,17 @@ async function fetchWorkflowLogs() {
   return data.logs || [];
 }
 
+async function fetchTaskWorkerStatus() {
+  return api("/api/task-worker/status");
+}
+
+async function restartTaskWorker() {
+  return api("/api/task-worker/restart", {
+    method: "POST",
+    body: "{}",
+  });
+}
+
 async function searchNovelText(novelId, searchText) {
   return api(`/api/novels/${Number(novelId)}/text-fix/search`, {
     method: "POST",
@@ -698,6 +709,7 @@ export {
   downloadNovelBundle,
   duplicateWorkflow,
   fetchWorkflowLogs,
+  fetchTaskWorkerStatus,
   searchNovelText,
   replaceNovelText,
   duplicatePrompt,
@@ -737,6 +749,7 @@ export {
   savePrompt,
   saveSettings,
   saveWorkflow,
+  restartTaskWorker,
   setActiveNovelId,
   clearWorkflowLogs,
   // 角色库

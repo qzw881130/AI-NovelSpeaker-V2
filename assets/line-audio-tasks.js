@@ -6,6 +6,8 @@ import {
   fetchLineAudioTaskDetail,
   deleteLineAudioTask,
   retryLineAudioTask,
+  fetchTaskWorkerStatus,
+  restartTaskWorker,
 } from "./store.js";
 import { clearNavBadge, renderNav, toast, fmtDateTime } from "./ui.js";
 import { localizeDocumentText, t, translateText } from "./i18n.js";
@@ -23,6 +25,28 @@ let lineAudioHasMore = false;
 let lineAudioTotalCount = 0;
 let lineAudioPendingCount = 0;
 let lineAudioLoadingMore = false;
+
+function renderTaskWorkerStatus(status) {
+  const el = document.getElementById("lineAudioWorkerStatus");
+  if (!el) return;
+  const state = String(status?.state || "stopped");
+  const mapping = {
+    running: "运行中",
+    stale: "心跳超时",
+    stopped: "未运行",
+  };
+  const age = status?.heartbeatAgeSeconds != null ? ` · 心跳${status.heartbeatAgeSeconds}s` : "";
+  el.textContent = `Worker: ${mapping[state] || state}${age}`;
+}
+
+async function refreshTaskWorkerStatus() {
+  try {
+    const status = await fetchTaskWorkerStatus();
+    renderTaskWorkerStatus(status);
+  } catch {
+    renderTaskWorkerStatus({ state: "stopped" });
+  }
+}
 
 function updateLineAudioDocumentTitle() {
   const baseTitle = activeNovel
@@ -347,6 +371,7 @@ async function refreshLineAudioTasks() {
     return;
   }
   await loadLineAudioTaskList();
+  await refreshTaskWorkerStatus();
 }
 
 function applyLineAudioRefreshInterval() {
@@ -373,6 +398,11 @@ function restoreLineAudioRefreshInterval() {
 function bindActions() {
   document.getElementById("refreshLineAudioTasksBtn").addEventListener("click", () => {
     refreshLineAudioTasks();
+  });
+  document.getElementById("restartTaskWorkerBtn").addEventListener("click", async () => {
+    await restartTaskWorker();
+    toast(translateText("任务Worker已重启"));
+    await refreshLineAudioTasks();
   });
 
   document.getElementById("loadMoreLineAudioTasksBtn").addEventListener("click", () => {
@@ -429,6 +459,7 @@ async function init() {
   restoreLineAudioRefreshInterval();
   bindActions();
   await refreshLineAudioTasks();
+  await refreshTaskWorkerStatus();
   applyLineAudioRefreshInterval();
   localizeDocumentText(document);
 }

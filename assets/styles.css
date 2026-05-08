@@ -348,6 +348,14 @@ h1 {
   justify-content: flex-end;
 }
 
+.header-inline-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
 .header-novel-switch {
   display: inline-flex;
   align-items: center;

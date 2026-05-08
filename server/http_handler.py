@@ -595,12 +595,14 @@ class Handler(BaseHTTPRequestHandler):
 
         m_audio_asr_chapters = re.match(r"^/api/novels/(\d+)/audio-asr-chapters$", route)
         if m_audio_asr_chapters:
+            ensure_task_worker()
             novel_id = int(m_audio_asr_chapters.group(1))
             self.send_json({"chapters": list_audio_asr_chapters(novel_id)})
             return
 
         m_nsfw_review_chapters = re.match(r"^/api/novels/(\d+)/nsfw-review-chapters$", route)
         if m_nsfw_review_chapters:
+            ensure_task_worker()
             novel_id = int(m_nsfw_review_chapters.group(1))
             self.send_json({"chapters": list_nsfw_review_chapters(novel_id)})
             return
@@ -815,6 +817,10 @@ class Handler(BaseHTTPRequestHandler):
             data = list_workflow_logs(conn)
             conn.close()
             self.send_json({"logs": data})
+            return
+
+        if route == "/api/task-worker/status":
+            self.send_json(get_task_worker_status())
             return
 
         if route == "/api/settings":
@@ -1605,6 +1611,11 @@ class Handler(BaseHTTPRequestHandler):
             advance_status(conn, "json_tasks")
             conn.commit()
             conn.close()
+            self.send_json({"status": "ok"})
+            return
+
+        if route == "/api/task-worker/restart":
+            restart_task_worker()
             self.send_json({"status": "ok"})
             return
 
