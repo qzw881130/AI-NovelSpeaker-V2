@@ -12,7 +12,6 @@ from .services import (
     extract_chat_content,
     fetch_settings,
     http_json_request,
-    json_text_ready,
     normalize_ollama_keep_alive,
     parse_model_json,
     read_chapter_text,
@@ -227,15 +226,15 @@ def list_nsfw_review_chapters(novel_id: int) -> list[dict]:
         raw_result = str(row["result_json_text"] or "").strip()
         summary = ""
         has_nsfw = False
-        if json_text_ready(raw_result):
-          try:
-              parsed = json.loads(raw_result)
-              if isinstance(parsed, dict):
-                  normalized = _normalize_review_result(parsed)
-                  summary = normalized["summary"]
-                  has_nsfw = bool(normalized["has_nsfw"])
-          except Exception:
-              summary = ""
+        if raw_result:
+            try:
+                parsed = json.loads(raw_result)
+                if isinstance(parsed, dict):
+                    normalized = _normalize_review_result(parsed)
+                    summary = normalized["summary"]
+                    has_nsfw = bool(normalized["has_nsfw"])
+            except Exception:
+                summary = ""
         status = str(row["status"] or "").strip() or "idle"
         items.append(
             {
