@@ -93,6 +93,20 @@ def _extract_comfy_history_error(history: dict, prompt_id: str) -> str | None:
     return None
 
 
+def _history_has_node_output(history: dict, prompt_id: str, node_id: str) -> bool:
+    if not isinstance(history, dict) or not history:
+        return False
+    job = history.get(prompt_id)
+    if job is None and history:
+        job = next(iter(history.values()))
+    if not isinstance(job, dict):
+        return False
+    outputs = job.get("outputs")
+    if not isinstance(outputs, dict):
+        return False
+    return str(node_id) in outputs
+
+
 def _get_audio_asr_workflow(
     novel_id: int,
 ) -> tuple[int | None, dict | None, dict, str, str, bool]:
@@ -179,8 +193,13 @@ def _split_audio_for_alignment(audio_path: Path, *, chunk_seconds: int = 60) -> 
     result: list[tuple[Path, float]] = []
     offset = 0.0
     for chunk_path in chunks:
+        duration = probe_audio_duration_seconds(chunk_path)
+        # ffmpeg segment may generate a trailing near-empty chunk (eg. 1ms).
+        # Feeding such chunk into Qwen3-ASR/Whisper feature extraction will crash.
+        if duration < 0.5 or chunk_path.stat().st_size < 1024:
+            continue
         result.append((chunk_path, offset))
-        offset += probe_audio_duration_seconds(chunk_path)
+        offset += duration
     return result
 
 
@@ -292,9 +311,17 @@ def _run_asr_workflow_on_audio(
         end_times_text = _extract_text_output_from_history(history, prompt_id, output_node_ids["end_times"])
         if timestamps_text or (text_list_text and start_times_text and end_times_text):
             break
+        # Some forced-align chunks may finish with empty outputs (eg. 0 segments).
+        # In that case ComfyUI history already contains the node outputs, and we
+        # should stop waiting instead of hanging until timeout.
+        if (
+            _history_has_node_output(history, prompt_id, output_node_ids["timestamps"])
+            or _history_has_node_output(history, prompt_id, output_node_ids["text_list"])
+            or _history_has_node_output(history, prompt_id, output_node_ids["start_times"])
+            or _history_has_node_output(history, prompt_id, output_node_ids["end_times"])
+        ):
+            break
         time.sleep(2)
-    if not timestamps_text and not (text_list_text and start_times_text and end_times_text):
-        raise TimeoutError("ComfyUI workflow timeout; ASR output not found")
     return (
         str(output_text or "").strip(),
         str(language_text or "").strip(),

@@ -20,7 +20,11 @@
               <select id="audioAsrNovelSelect"></select>
             </label>
             <a id="audioAsrChaptersLink" class="ghost-btn" href="./chapters.html">返回章节管理</a>
-            <button id="refreshAudioAsrBtn" class="primary-btn" type="button">刷新</button>
+            <div class="header-inline-tools">
+              <span id="audioAsrWorkerStatus" class="meta">Worker: -</span>
+              <button id="restartAudioAsrTaskWorkerBtn" class="ghost-btn" type="button">重启任务Worker</button>
+              <button id="refreshAudioAsrBtn" class="primary-btn" type="button">刷新</button>
+            </div>
           </div>
         </header>
 
