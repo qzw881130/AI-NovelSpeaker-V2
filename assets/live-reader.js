@@ -11,6 +11,7 @@ const HIGHLIGHT_KEY = "ai_novel_live_reader_highlight";
 const HIGHLIGHT_INTENSITY_KEY = "ai_novel_live_reader_highlight_intensity";
 const FOLLOW_SENSITIVITY_KEY = "ai_novel_live_reader_follow_sensitivity";
 const FOLLOW_SMOOTHNESS_KEY = "ai_novel_live_reader_follow_smoothness";
+const CONTROLS_COLLAPSED_KEY = "ai_novel_live_reader_controls_collapsed";
 let deferredInstallPrompt = null;
 
 let allNovels = [];
@@ -25,6 +26,40 @@ let currentAsrMode = false;
 let activeParagraphElement = null;
 let targetReaderScrollTop = null;
 let readerScrollAnimationId = 0;
+let segmentElementMap = new Map();
+let pendingTimeUpdate = false;
+let lastMatchStatusText = "";
+let lastTimeUpdateAt = 0;
+const TIMEUPDATE_MIN_INTERVAL_MS = 120;
+const CHAPTER_RENDER_CACHE_LIMIT = 8;
+const chapterRenderCache = new Map();
+
+function nextAnimationFrame() {
+  return new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
+}
+
+function makeChapterCacheKey(novelId, chapterNum, content, asrText) {
+  return `${Number(novelId || 0)}:${Number(chapterNum || 0)}:${String(content || "").length}:${String(asrText || "").length}`;
+}
+
+function getChapterRenderCache(key) {
+  if (!chapterRenderCache.has(key)) return null;
+  const value = chapterRenderCache.get(key);
+  chapterRenderCache.delete(key);
+  chapterRenderCache.set(key, value);
+  return value;
+}
+
+function setChapterRenderCache(key, value) {
+  if (chapterRenderCache.has(key)) {
+    chapterRenderCache.delete(key);
+  }
+  chapterRenderCache.set(key, value);
+  while (chapterRenderCache.size > CHAPTER_RENDER_CACHE_LIMIT) {
+    const oldestKey = chapterRenderCache.keys().next().value;
+    chapterRenderCache.delete(oldestKey);
+  }
+}
 
 function splitParagraphs(text) {
   const content = String(text || "").replace(/\r/g, "").trim();
@@ -68,6 +103,14 @@ function saveBool(key, value) {
   localStorage.setItem(key, value ? "1" : "0");
 }
 
+function isControlsCollapsed() {
+  return getSavedBool(CONTROLS_COLLAPSED_KEY, false);
+}
+
+function setControlsCollapsed(collapsed) {
+  saveBool(CONTROLS_COLLAPSED_KEY, collapsed);
+}
+
 function setStatus(text) {
   const el = document.getElementById("liveReaderStatus");
   if (el) el.textContent = translateText(text);
@@ -75,7 +118,10 @@ function setStatus(text) {
 
 function setMatchStatus(text) {
   const el = document.getElementById("liveReaderMatchStatus");
-  if (el) el.textContent = text;
+  const next = String(text || "");
+  if (next === lastMatchStatusText) return;
+  lastMatchStatusText = next;
+  if (el) el.textContent = next;
 }
 
 function syncLiveEndingAudioState() {
@@ -86,6 +132,19 @@ function syncLiveEndingAudioState() {
   const hasAudio = Boolean(path);
   btn.classList.toggle("hidden", !hasAudio);
   player.src = hasAudio ? `/api/settings/live-ending-audio/file?v=${Date.now()}` : "";
+}
+
+function applyControlsCollapsedState() {
+  const collapsed = isControlsCollapsed();
+  const panel = document.querySelector(".live-reader-controls-panel");
+  const btn = document.getElementById("toggleLiveReaderControlsBtn");
+  if (panel) {
+    panel.classList.toggle("is-collapsed", collapsed);
+  }
+  if (btn) {
+    btn.textContent = collapsed ? "展开" : "收起";
+    btn.setAttribute("aria-expanded", collapsed ? "false" : "true");
+  }
 }
 
 function formatMatchStrategy(strategy) {
@@ -199,16 +258,27 @@ function renderPlaylist() {
     root.innerHTML = '<p class="empty-text">暂无可播放音频章回</p>';
     return;
   }
+  if (!root.dataset.boundClick) {
+    root.dataset.boundClick = "1";
+    root.addEventListener("click", async (event) => {
+      const btn = event.target.closest("[data-chapter-num]");
+      if (!btn) return;
+      await loadChapter(Number(btn.dataset.chapterNum), { autoplay: false });
+    });
+  }
   root.innerHTML = audioChapterItems
     .map((item) => {
       const active = Number(item.chapterNum) === Number(activeChapterNum) ? " active" : "";
       return `<button class="live-reader-playlist-item${active}" data-chapter-num="${item.chapterNum}" type="button"><strong>${String(item.chapterNum).padStart(3, "0")}</strong><span>${item.title}</span></button>`;
     })
     .join("");
+}
+
+function updatePlaylistActiveState() {
+  const root = document.getElementById("liveReaderPlaylist");
+  if (!root) return;
   root.querySelectorAll("[data-chapter-num]").forEach((el) => {
-    el.addEventListener("click", async () => {
-      await loadChapter(Number(el.dataset.chapterNum), { autoplay: false });
-    });
+    el.classList.toggle("active", Number(el.dataset.chapterNum || 0) === Number(activeChapterNum));
   });
 }
 
@@ -476,7 +546,7 @@ function findCombinedSegmentMatch(globalNormalized, normalizedSegment, cursor, p
   return null;
 }
 
-function mapAsrSegmentsToOriginalText(originalText, asrSegments) {
+async function mapAsrSegmentsToOriginalText(originalText, asrSegments) {
   const paragraphs = splitParagraphs(originalText);
   const paragraphMeta = paragraphs.map((text, paragraphIndex) => {
     const normalized = normalizeSearchText(text);
@@ -524,15 +594,18 @@ function mapAsrSegmentsToOriginalText(originalText, asrSegments) {
     segment.matchStrategy = match.strategy;
     segment.matched = true;
     cursor = foundAt + matchedLength;
+    if (index > 0 && index % 20 === 0) {
+      await nextAnimationFrame();
+    }
   }
   return {
     paragraphs,
   };
 }
 
-function renderOriginalParagraphsWithHighlights(originalText, asrSegments) {
-  const { paragraphs } = mapAsrSegmentsToOriginalText(originalText, asrSegments);
-  return paragraphs
+async function renderOriginalParagraphsWithHighlights(originalText, asrSegments) {
+  const { paragraphs } = await mapAsrSegmentsToOriginalText(originalText, asrSegments);
+  const html = paragraphs
     .map((paragraphText, paragraphIndex) => {
       const ranges = asrSegments
         .filter((segment) => segment.paragraphIndex === paragraphIndex && Number.isInteger(segment.startChar) && Number.isInteger(segment.endChar))
@@ -557,6 +630,7 @@ function renderOriginalParagraphsWithHighlights(originalText, asrSegments) {
       return `<p class="live-reader-paragraph">${html}</p>`;
     })
     .join("");
+  return html;
 }
 
 function parseAsrTimestamp(raw) {
@@ -685,26 +759,61 @@ function getActiveAsrSegmentIndex(currentTime) {
   return -1;
 }
 
-function renderReadingContent(text, asrSegments = []) {
+function renderReadingContentFromPayload(payload) {
   const contentEl = document.getElementById("liveReaderContent");
   if (!contentEl) return;
-  currentAsrMode = Array.isArray(asrSegments) && asrSegments.length > 0;
-  readingSegments = currentAsrMode ? asrSegments : buildReadingSegments(text);
+  currentAsrMode = Boolean(payload?.currentAsrMode);
+  readingSegments = Array.isArray(payload?.readingSegments) ? payload.readingSegments : [];
   activeSegmentIndex = -1;
+  segmentElementMap = new Map();
   if (!readingSegments.length) {
     contentEl.textContent = "暂无正文";
     return;
   }
-  if (currentAsrMode) {
-    contentEl.innerHTML = renderOriginalParagraphsWithHighlights(text, asrSegments);
-    return;
+  contentEl.innerHTML = String(payload?.html || "");
+  contentEl.querySelectorAll("[data-segment-index]").forEach((el) => {
+    segmentElementMap.set(Number(el.dataset.segmentIndex || -1), el);
+  });
+}
+
+async function buildRenderedChapterPayload(text, asrText) {
+  const rawText = String(text || "").trim();
+  const rawAsrText = String(asrText || "");
+  const cacheKey = makeChapterCacheKey(activeNovel?.id, activeChapterNum, rawText, rawAsrText);
+  const cached = getChapterRenderCache(cacheKey);
+  if (cached) {
+    return {
+      currentAsrMode: cached.currentAsrMode,
+      readingSegments: cached.readingSegments.map((segment) => ({ ...segment })),
+      html: cached.html,
+      cacheHit: true,
+    };
   }
-  contentEl.innerHTML = readingSegments
-    .map(
-      (segment) =>
-        `<p class="live-reader-segment live-reader-paragraph" data-segment-index="${segment.index}">${escapeHtml(segment.text)}</p>`
-    )
-    .join("");
+
+  const asrSegments = rawAsrText ? parseAsrContent(rawAsrText) : [];
+  const currentAsrModeLocal = asrSegments.length > 0;
+  const readingSegmentsLocal = currentAsrModeLocal ? asrSegments : buildReadingSegments(rawText);
+  const html = currentAsrModeLocal
+    ? await renderOriginalParagraphsWithHighlights(rawText, asrSegments)
+    : readingSegmentsLocal
+        .map(
+          (segment) =>
+            `<p class="live-reader-segment live-reader-paragraph" data-segment-index="${segment.index}">${escapeHtml(segment.text)}</p>`
+        )
+        .join("");
+
+  setChapterRenderCache(cacheKey, {
+    currentAsrMode: currentAsrModeLocal,
+    readingSegments: readingSegmentsLocal.map((segment) => ({ ...segment })),
+    html,
+  });
+
+  return {
+    currentAsrMode: currentAsrModeLocal,
+    readingSegments: readingSegmentsLocal,
+    html,
+    cacheHit: false,
+  };
 }
 
 function escapeHtml(text) {
@@ -747,12 +856,13 @@ function updateSegmentHighlight(force = false) {
   }
 
   const prevEl = activeSegmentIndex >= 0 ? wrap.querySelector(`[data-segment-index="${activeSegmentIndex}"]`) : null;
-  if (prevEl) prevEl.classList.remove("active");
+  const cachedPrevEl = activeSegmentIndex >= 0 ? segmentElementMap.get(activeSegmentIndex) : null;
+  if (cachedPrevEl || prevEl) (cachedPrevEl || prevEl).classList.remove("active");
   if (activeParagraphElement) {
     activeParagraphElement.classList.remove("active");
   }
   activeSegmentIndex = nextIndex;
-  const activeEl = wrap.querySelector(`[data-segment-index="${activeSegmentIndex}"]`);
+  const activeEl = segmentElementMap.get(activeSegmentIndex) || wrap.querySelector(`[data-segment-index="${activeSegmentIndex}"]`);
   if (!activeEl) {
     setMatchStatus(currentAsrMode ? "匹配: 未命中" : "匹配: 估算同步");
     return;
@@ -793,10 +903,21 @@ function clearSegmentHighlight() {
   wrap.querySelectorAll(".live-reader-paragraph.active").forEach((el) => el.classList.remove("active"));
   activeSegmentIndex = -1;
   activeParagraphElement = null;
+  lastMatchStatusText = "";
 }
 
-function scrollReaderByProgress() {
+function flushTimeUpdate() {
+  pendingTimeUpdate = false;
   updateSegmentHighlight(false);
+}
+
+function scheduleTimeUpdate() {
+  if (pendingTimeUpdate) return;
+  const now = performance.now();
+  if (now - lastTimeUpdateAt < TIMEUPDATE_MIN_INTERVAL_MS) return;
+  lastTimeUpdateAt = now;
+  pendingTimeUpdate = true;
+  window.requestAnimationFrame(flushTimeUpdate);
 }
 
 function resetReaderScroll() {
@@ -815,15 +936,20 @@ async function loadChapter(chapterNum, options = {}) {
   document.getElementById("liveReaderChapterTitle").textContent = detail.title;
   document.getElementById("liveReaderChapterMeta").textContent = `${detail.novelName} · 章节 ${detail.chapterNum} · 字数 ${detail.wordCount || 0}`;
   let asrSegments = [];
+  let asrText = "";
   try {
-    const asrText = await fetchChapterAsrFile(activeNovel.id, chapterNum);
-    asrSegments = parseAsrContent(asrText);
+    asrText = await fetchChapterAsrFile(activeNovel.id, chapterNum);
   } catch {
-    asrSegments = [];
+    asrText = "";
   }
-  renderReadingContent(String(detail.content || "").trim(), asrSegments);
+  const renderPayload = await buildRenderedChapterPayload(String(detail.content || "").trim(), asrText);
+  asrSegments = renderPayload.currentAsrMode ? renderPayload.readingSegments : [];
+  renderReadingContentFromPayload(renderPayload);
   const player = document.getElementById("liveReaderAudioPlayer");
   if (detail.hasAudio) {
+    player.pause();
+    player.removeAttribute("src");
+    player.load();
     player.src = getAudioStreamUrl(chapterNum);
     player.load();
     if (options.autoplay) {
@@ -842,9 +968,8 @@ async function loadChapter(chapterNum, options = {}) {
   updateSegmentHighlight(true);
   setStatus(asrSegments.length ? "已加载精准时间轴" : "就绪");
   setMatchStatus(asrSegments.length ? "匹配: 初始化中" : "匹配: 估算同步");
-  renderPlaylist();
+  updatePlaylistActiveState();
   updateNavButtons();
-  localizeDocumentText(document);
 }
 
 async function loadNovelChapters() {
@@ -896,6 +1021,10 @@ function bindEvents() {
   document.getElementById("refreshLiveReaderBtn")?.addEventListener("click", async () => {
     await loadNovelChapters();
     toast("已刷新");
+  });
+  document.getElementById("toggleLiveReaderControlsBtn")?.addEventListener("click", () => {
+    setControlsCollapsed(!isControlsCollapsed());
+    applyControlsCollapsedState();
   });
   document.getElementById("liveEndingAudioPlayBtn")?.addEventListener("click", async () => {
     const player = document.getElementById("liveEndingAudioPlayer");
@@ -956,7 +1085,7 @@ function bindEvents() {
     await installStandaloneApp();
   });
   const player = document.getElementById("liveReaderAudioPlayer");
-  player?.addEventListener("timeupdate", scrollReaderByProgress);
+  player?.addEventListener("timeupdate", scheduleTimeUpdate);
   player?.addEventListener("play", () => {
     setStatus("播放中");
     updateSegmentHighlight(true);
@@ -979,6 +1108,7 @@ async function init() {
     });
   }
   applyReaderSettings();
+  applyControlsCollapsedState();
   updateInstallButtonVisibility();
   const data = await getData();
   window.__liveReaderSettings = data.settings || {};

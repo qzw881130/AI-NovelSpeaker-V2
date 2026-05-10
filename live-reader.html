@@ -29,9 +29,14 @@
 
         <section class="panel live-reader-controls-panel">
           <div class="panel-head">
-            <h2>播放控制</h2>
+            <div class="panel-head-title-row">
+              <h2>播放控制</h2>
+            </div>
+            <div class="panel-head-actions">
+              <button id="toggleLiveReaderControlsBtn" class="ghost-btn" type="button">收起</button>
+            </div>
           </div>
-          <div class="live-reader-controls-grid">
+          <div id="liveReaderControlsBody" class="live-reader-controls-grid">
             <div class="live-reader-toggles-col">
               <label class="inline-check">
                 <input id="liveReaderAutoNext" type="checkbox" checked />

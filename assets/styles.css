@@ -2415,6 +2415,10 @@ menu {
   align-items: start;
 }
 
+.live-reader-controls-panel.is-collapsed #liveReaderControlsBody {
+  display: none;
+}
+
 .live-reader-toggles-col {
   display: flex;
   flex-direction: column;
