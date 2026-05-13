@@ -652,13 +652,11 @@ def sync_system_workflow_from_file(conn: sqlite3.Connection) -> None:
                 description=excluded.description,
                 json_text=excluded.json_text,
                 workflow_io_config=excluded.workflow_io_config,
-                workflow_log_enabled=excluded.workflow_log_enabled,
                 updated_at=CURRENT_TIMESTAMP
             WHERE comfy_workflows.workflow_type<>excluded.workflow_type
                OR comfy_workflows.description<>excluded.description
                OR comfy_workflows.json_text<>excluded.json_text
                OR comfy_workflows.workflow_io_config<>excluded.workflow_io_config
-               OR comfy_workflows.workflow_log_enabled<>excluded.workflow_log_enabled
             """,
             (
                 wf_config["name"],
@@ -668,7 +666,7 @@ def sync_system_workflow_from_file(conn: sqlite3.Connection) -> None:
                 json.dumps(
                     wf_config.get("workflow_io_config") or {}, ensure_ascii=False
                 ),
-                1,
+                int(wf_config.get("workflow_log_enabled", 0) or 0),
             ),
         )
 
@@ -930,9 +928,38 @@ def fetch_settings(conn: sqlite3.Connection) -> dict:
             "outroPath": str(kv.get("copyright_audio_outro_path", "") or "").strip(),
         },
         "liveEndingAudio": {
-            "path": str(kv.get("live_ending_audio_path", "") or "").strip(),
+            "items": normalize_live_ending_audio_items(
+                str(kv.get("live_ending_audio_items", "") or "").strip(),
+                str(kv.get("live_ending_audio_path", "") or "").strip(),
+            ),
         },
     }
+
+
+def normalize_live_ending_audio_items(raw_json: str, legacy_path: str = "") -> list[dict]:
+    items = []
+    text = str(raw_json or "").strip()
+    if text:
+        try:
+            parsed = json.loads(text)
+            if isinstance(parsed, list):
+                for item in parsed:
+                    if not isinstance(item, dict):
+                        continue
+                    path = str(item.get("path") or "").strip()
+                    if not path:
+                        continue
+                    items.append({
+                        "label": str(item.get("label") or "直播结束语").strip() or "直播结束语",
+                        "path": path,
+                    })
+        except Exception:
+            pass
+    if not items:
+        legacy = str(legacy_path or "").strip()
+        if legacy:
+            items.append({"label": "直播结束语", "path": legacy})
+    return items
 
 
 def fetch_chapters(conn: sqlite3.Connection, novel_id: int) -> list[dict]:
@@ -2939,23 +2966,22 @@ def task_worker_loop() -> None:
         has_line_audio_work = False
         has_audio_asr_work = False
         has_nsfw_review_work = False
-        with TASK_WORKER_LOCK:
-            try:
-                has_json_work = run_json_queue_once()
-            except Exception as exc:
-                print(f"[task-worker] json queue error: {exc}")
-            try:
-                has_line_audio_work = run_line_audio_queue_once()
-            except Exception as exc:
-                print(f"[task-worker] line audio queue error: {exc}")
-            try:
-                has_audio_asr_work = run_audio_asr_queue_once()
-            except Exception as exc:
-                print(f"[task-worker] audio asr queue error: {exc}")
-            try:
-                has_nsfw_review_work = run_nsfw_review_queue_once()
-            except Exception as exc:
-                print(f"[task-worker] nsfw review queue error: {exc}")
+        try:
+            has_json_work = run_json_queue_once()
+        except Exception as exc:
+            print(f"[task-worker] json queue error: {exc}")
+        try:
+            has_line_audio_work = run_line_audio_queue_once()
+        except Exception as exc:
+            print(f"[task-worker] line audio queue error: {exc}")
+        try:
+            has_audio_asr_work = run_audio_asr_queue_once()
+        except Exception as exc:
+            print(f"[task-worker] audio asr queue error: {exc}")
+        try:
+            has_nsfw_review_work = run_nsfw_review_queue_once()
+        except Exception as exc:
+            print(f"[task-worker] nsfw review queue error: {exc}")
         TASK_WORKER_HEARTBEAT_TS = time.time()
         if has_json_work or has_line_audio_work or has_audio_asr_work or has_nsfw_review_work:
             TASK_WORKER_LAST_PROGRESS_TS = TASK_WORKER_HEARTBEAT_TS
@@ -2963,30 +2989,7 @@ def task_worker_loop() -> None:
 
 
 def kick_line_audio_queue_once() -> None:
-    global \
-        TASK_WORKER_KICK_THREAD, \
-        TASK_WORKER_HEARTBEAT_TS, \
-        TASK_WORKER_LAST_PROGRESS_TS
-    from .line_audio import run_line_audio_queue_once
-
-    if TASK_WORKER_KICK_THREAD and TASK_WORKER_KICK_THREAD.is_alive():
-        return
-
-    def _runner() -> None:
-        global TASK_WORKER_HEARTBEAT_TS, TASK_WORKER_LAST_PROGRESS_TS
-        with TASK_WORKER_LOCK:
-            TASK_WORKER_HEARTBEAT_TS = time.time()
-            try:
-                did_work = run_line_audio_queue_once()
-                TASK_WORKER_HEARTBEAT_TS = time.time()
-                if did_work:
-                    TASK_WORKER_LAST_PROGRESS_TS = TASK_WORKER_HEARTBEAT_TS
-            except Exception as exc:
-                TASK_WORKER_HEARTBEAT_TS = time.time()
-                print(f"[task-worker] line audio kick error: {exc}")
-
-    TASK_WORKER_KICK_THREAD = threading.Thread(target=_runner, daemon=True)
-    TASK_WORKER_KICK_THREAD.start()
+    ensure_task_worker()
 
 
 def ensure_task_worker() -> None:
@@ -3009,6 +3012,7 @@ def ensure_task_worker() -> None:
 
 def restart_task_worker() -> None:
     global TASK_WORKER_THREAD, TASK_WORKER_GENERATION, TASK_WORKER_HEARTBEAT_TS, TASK_WORKER_LAST_PROGRESS_TS
+    TASK_WORKER_STOP.set()
     TASK_WORKER_GENERATION += 1
     TASK_WORKER_STOP.clear()
     TASK_WORKER_HEARTBEAT_TS = 0.0

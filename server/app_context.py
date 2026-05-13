@@ -49,6 +49,7 @@ SYSTEM_WORKFLOWS = [
         "name": "提取声音文本",
         "description": "系统内置，使用 Whisper 提取音频中的文本",
         "workflow_type": "voice_transcribe",
+        "workflow_log_enabled": 0,
         "workflow_io_config": {
             "inputs": {"audioFile": {"nodeId": "2"}},
             "outputs": {"textOutput": {"nodeId": "4"}},
@@ -59,6 +60,7 @@ SYSTEM_WORKFLOWS = [
         "name": "生成台词音频",
         "description": "系统内置，使用 FishS2 Voice Clone 生成台词音频",
         "workflow_type": "line_audio",
+        "workflow_log_enabled": 0,
         "workflow_io_config": {
             "inputs": {
                 "referenceAudio": {"nodeId": "27"},
@@ -73,6 +75,7 @@ SYSTEM_WORKFLOWS = [
         "name": "Qwen3 TTS 生成台词音频【低显存】",
         "description": "系统内置，使用 Qwen3 TTS 生成台词音频（低显存）",
         "workflow_type": "line_audio",
+        "workflow_log_enabled": 0,
         "workflow_io_config": {
             "inputs": {
                 "referenceAudio": {"nodeId": "6"},
@@ -87,6 +90,7 @@ SYSTEM_WORKFLOWS = [
         "name": "生成示例音频",
         "description": "系统内置，使用 Qwen3-TTS VoiceDesign 生成示例音频",
         "workflow_type": "voice_sample",
+        "workflow_log_enabled": 0,
         "workflow_io_config": {
             "inputs": {
                 "lineText": {"nodeId": "7"},
@@ -100,6 +104,7 @@ SYSTEM_WORKFLOWS = [
         "name": "Qwen3-ASR提取声音文本【低显存】",
         "description": "系统内置，使用 Qwen3-ASR 提取声音文本（低显存）",
         "workflow_type": "voice_transcribe",
+        "workflow_log_enabled": 0,
         "workflow_io_config": {
             "inputs": {"audioFile": {"nodeId": "12"}},
             "outputs": {"textOutput": {"nodeId": "13"}},
@@ -110,6 +115,7 @@ SYSTEM_WORKFLOWS = [
         "name": "提取音频ASR",
         "description": "系统内置，使用 Qwen3-ASR 提取章节音频ASR与时间轴",
         "workflow_type": "audio_asr",
+        "workflow_log_enabled": 0,
         "workflow_io_config": {
             "inputs": {"audioFile": {"nodeId": "12"}},
             "outputs": {
