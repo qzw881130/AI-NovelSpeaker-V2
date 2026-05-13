@@ -294,6 +294,18 @@ def migrate_chapter_asr_tasks_table(conn: sqlite3.Connection) -> None:
         )
         """
     )
+    column_names = {
+        str(row[1])
+        for row in conn.execute("PRAGMA table_info(chapter_asr_tasks)").fetchall()
+    }
+    if "current_chunk_index" not in column_names:
+        conn.execute(
+            "ALTER TABLE chapter_asr_tasks ADD COLUMN current_chunk_index INTEGER NOT NULL DEFAULT 0"
+        )
+    if "total_chunk_count" not in column_names:
+        conn.execute(
+            "ALTER TABLE chapter_asr_tasks ADD COLUMN total_chunk_count INTEGER NOT NULL DEFAULT 0"
+        )
 
 
 def migrate_chapter_nsfw_tasks_table(conn: sqlite3.Connection) -> None:

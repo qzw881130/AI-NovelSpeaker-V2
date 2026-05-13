@@ -2586,6 +2586,10 @@ menu {
   background: transparent;
 }
 
+body.is-drag-selecting .audio-asr-row {
+  user-select: none;
+}
+
 .live-reader-reader-wrap::-webkit-scrollbar {
   width: 0;
   height: 0;

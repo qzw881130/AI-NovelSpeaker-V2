@@ -11,16 +11,22 @@ from typing import Any
 
 from .app_context import NOVEL_DIR, ROOT_DIR, db_conn
 from .services import (
+    comfy_interrupt_execution,
     comfy_request_json,
     comfy_upload_input_file,
     create_workflow_log,
     fetch_settings,
     probe_audio_duration_seconds,
     safe_chapter_file_name,
+    touch_task_worker_heartbeat,
     update_workflow_log_error,
     update_workflow_log_json,
     workflow_json_to_prompt_json,
 )
+
+
+class AudioAsrTaskCancelledError(RuntimeError):
+    pass
 
 
 def _novel_asr_output_dir(english_dir: str) -> Path:
@@ -254,6 +260,37 @@ def _build_asr_content(
     return "\n\n".join(chunks).strip()
 
 
+def _clamp_segments_to_duration(
+    segments: list[tuple[str, float, float]], max_duration_seconds: float
+) -> list[tuple[str, float, float]]:
+    if max_duration_seconds <= 0:
+        return list(segments or [])
+    clamped: list[tuple[str, float, float]] = []
+    max_end = float(max_duration_seconds)
+    for text, start, end in segments or []:
+        safe_start = max(0.0, min(float(start or 0.0), max_end))
+        safe_end = max(safe_start, min(float(end or 0.0), max_end))
+        if safe_start >= max_end:
+            continue
+        clamped.append((text, safe_start, safe_end))
+    return clamped
+
+
+def get_audio_asr_task_status(task_id: int) -> str:
+    conn = db_conn()
+    row = conn.execute(
+        "SELECT status FROM chapter_asr_tasks WHERE id=?",
+        (task_id,),
+    ).fetchone()
+    conn.close()
+    return str(row["status"] or "").strip() if row else ""
+
+
+def ensure_audio_asr_task_not_cancelled(task_id: int) -> None:
+    if get_audio_asr_task_status(task_id) == "cancelled":
+        raise AudioAsrTaskCancelledError("任务被用户终止")
+
+
 def _run_asr_workflow_on_audio(
     *,
     audio_path: Path,
@@ -264,6 +301,7 @@ def _run_asr_workflow_on_audio(
     workflow_category: str,
     workflow_name: str,
     workflow_log_id: int,
+    task_id: int,
 ) -> tuple[str, str, str, str, str, str]:
     upload_info = comfy_upload_input_file(audio_path.name, audio_path.read_bytes())
     filename = str(upload_info.get("name") or audio_path.name).strip() or audio_path.name
@@ -299,6 +337,8 @@ def _run_asr_workflow_on_audio(
     timeout_seconds = 30 * 60
     output_text = language_text = timestamps_text = text_list_text = start_times_text = end_times_text = None
     while time.time() - started < timeout_seconds:
+        touch_task_worker_heartbeat()
+        ensure_audio_asr_task_not_cancelled(task_id)
         history = comfy_request_json(comfy_url=comfy_url, path=f"/history/{prompt_id}", method="GET")
         history_error = _extract_comfy_history_error(history, prompt_id)
         if history_error:
@@ -337,7 +377,8 @@ def list_audio_asr_chapters(novel_id: int) -> list[dict]:
     rows = conn.execute(
         """
         SELECT c.id, c.chapter_num, c.title, c.word_count, c.has_audio, c.audio_duration_seconds,
-               t.status, t.asr_file_path, t.error_message, t.updated_at
+               t.status, t.asr_file_path, t.error_message, t.updated_at,
+               t.current_chunk_index, t.total_chunk_count
         FROM chapters c
         LEFT JOIN chapter_asr_tasks t ON t.chapter_id = c.id AND t.novel_id = c.novel_id
         WHERE c.novel_id=?
@@ -366,6 +407,8 @@ def list_audio_asr_chapters(novel_id: int) -> list[dict]:
                 "hasAsr": has_asr,
                 "asrFilePath": rel,
                 "errorMessage": str(row["error_message"] or ""),
+                "currentChunkIndex": int(row["current_chunk_index"] or 0),
+                "totalChunkCount": int(row["total_chunk_count"] or 0),
                 "updatedAt": str(row["updated_at"] or ""),
                 "downloadUrl": f"/api/novels/{novel_id}/chapters/{int(row['chapter_num'] or 0)}/asr-file" if has_asr else "",
             }
@@ -397,14 +440,16 @@ def enqueue_chapter_audio_asr_task(novel_id: int, chapter_id: int) -> tuple[bool
         INSERT INTO chapter_asr_tasks(
             novel_id, chapter_id, chapter_num, chapter_title, status, progress,
             audio_file_path, asr_file_path, language, extracted_text, timestamps_text,
-            error_message, started_at, updated_at
-        ) VALUES(?,?,?,?, 'pending', 0, ?, '', '', '', '', '', NULL, CURRENT_TIMESTAMP)
+            error_message, started_at, updated_at, current_chunk_index, total_chunk_count
+        ) VALUES(?,?,?,?, 'pending', 0, ?, '', '', '', '', '', NULL, CURRENT_TIMESTAMP, 0, 0)
         ON CONFLICT(novel_id, chapter_id) DO UPDATE SET
             chapter_num=excluded.chapter_num,
             chapter_title=excluded.chapter_title,
             status='pending',
             progress=0,
             audio_file_path=excluded.audio_file_path,
+            current_chunk_index=0,
+            total_chunk_count=0,
             error_message='',
             started_at=NULL,
             updated_at=CURRENT_TIMESTAMP
@@ -444,6 +489,45 @@ def enqueue_batch_audio_asr_tasks(novel_id: int, chapter_nums: list[int] | None 
     return True, "ok", {"queued": queued, "skipped": skipped, "total": len(rows)}
 
 
+def cancel_chapter_audio_asr_task(novel_id: int, chapter_id: int) -> tuple[bool, str]:
+    conn = db_conn()
+    row = conn.execute(
+        "SELECT id, status FROM chapter_asr_tasks WHERE novel_id=? AND chapter_id=?",
+        (novel_id, chapter_id),
+    ).fetchone()
+    if not row:
+        conn.close()
+        return False, "audio asr task not found"
+    status = str(row["status"] or "").strip()
+    if status == "cancelled":
+        conn.close()
+        return True, "cancelled"
+    if status not in {"pending", "running", "processing"}:
+        conn.close()
+        return False, "only pending or running task can be cancelled"
+    conn.execute(
+        """
+        UPDATE chapter_asr_tasks
+        SET status='cancelled', progress=0, error_message='任务被用户终止', current_chunk_index=0, total_chunk_count=0, updated_at=CURRENT_TIMESTAMP
+        WHERE id=?
+        """,
+        (int(row["id"]),),
+    )
+    conn.commit()
+    conn.close()
+
+    settings_conn = db_conn()
+    settings = fetch_settings(settings_conn)
+    settings_conn.close()
+    comfy_url = str(settings.get("comfyUrl") or "").strip()
+    if comfy_url:
+        try:
+            comfy_interrupt_execution(comfy_url)
+        except Exception:
+            pass
+    return True, "cancelled"
+
+
 def process_chapter_audio_asr_task(task_id: int) -> None:
     conn = db_conn()
     row = conn.execute(
@@ -462,10 +546,13 @@ def process_chapter_audio_asr_task(task_id: int) -> None:
 
     workflow_log_id = 0
     try:
+        touch_task_worker_heartbeat(made_progress=True)
+        ensure_audio_asr_task_not_cancelled(task_id)
         audio_rel_path = str(row["audio_file_path"] or "").strip()
         audio_path = (ROOT_DIR / audio_rel_path).resolve()
         if not audio_path.exists() or not audio_path.is_file():
             raise RuntimeError("chapter audio not found")
+        audio_duration_seconds = probe_audio_duration_seconds(audio_path)
 
         workflow_id, workflow, workflow_io_config, workflow_name, workflow_category, workflow_log_enabled = _get_audio_asr_workflow(int(row["novel_id"]))
         if not workflow:
@@ -483,7 +570,7 @@ def process_chapter_audio_asr_task(task_id: int) -> None:
 
         conn = db_conn()
         conn.execute(
-            "UPDATE chapter_asr_tasks SET status='processing', progress=20, workflow_id=?, started_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            "UPDATE chapter_asr_tasks SET status='processing', progress=20, workflow_id=?, started_at=CURRENT_TIMESTAMP, current_chunk_index=0, total_chunk_count=0, updated_at=CURRENT_TIMESTAMP WHERE id=?",
             (workflow_id, task_id),
         )
         conn.commit()
@@ -498,8 +585,17 @@ def process_chapter_audio_asr_task(task_id: int) -> None:
         merged_timestamp_lines: list[str] = []
         detected_language = ""
         total_chunks = len(chunks)
+        conn = db_conn()
+        conn.execute(
+            "UPDATE chapter_asr_tasks SET total_chunk_count=?, current_chunk_index=0, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            (total_chunks, task_id),
+        )
+        conn.commit()
+        conn.close()
 
         for chunk_index, (chunk_path, offset_seconds) in enumerate(chunks, start=1):
+            touch_task_worker_heartbeat()
+            ensure_audio_asr_task_not_cancelled(task_id)
             output_text, language_text, timestamps_text, text_list_text, start_times_text, end_times_text = _run_asr_workflow_on_audio(
                 audio_path=chunk_path,
                 workflow=workflow,
@@ -509,6 +605,7 @@ def process_chapter_audio_asr_task(task_id: int) -> None:
                 workflow_category=workflow_category,
                 workflow_name=workflow_name,
                 workflow_log_id=workflow_log_id,
+                task_id=task_id,
             )
             if output_text:
                 merged_text_parts.append(output_text)
@@ -528,12 +625,22 @@ def process_chapter_audio_asr_task(task_id: int) -> None:
             conn = db_conn()
             progress = min(95, 20 + int(round((chunk_index / total_chunks) * 70)))
             conn.execute(
-                "UPDATE chapter_asr_tasks SET progress=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
-                (progress, task_id),
+                "UPDATE chapter_asr_tasks SET progress=?, current_chunk_index=?, total_chunk_count=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                (progress, chunk_index, total_chunks, task_id),
             )
             conn.commit()
             conn.close()
+            touch_task_worker_heartbeat(made_progress=True)
 
+        ensure_audio_asr_task_not_cancelled(task_id)
+        merged_segments = _clamp_segments_to_duration(
+            merged_segments,
+            audio_duration_seconds,
+        )
+        merged_timestamp_lines = [
+            f"{text}\t{start:.3f}\t{end:.3f}"
+            for text, start, end in merged_segments
+        ]
         asr_content = _build_asr_content(segments=merged_segments)
         if not asr_content:
             raise RuntimeError("ASR output is empty")
@@ -548,7 +655,7 @@ def process_chapter_audio_asr_task(task_id: int) -> None:
         conn.execute(
             """
             UPDATE chapter_asr_tasks
-            SET status='completed', progress=100, asr_file_path=?, language=?, extracted_text=?, timestamps_text=?, error_message='', updated_at=CURRENT_TIMESTAMP
+            SET status='completed', progress=100, asr_file_path=?, language=?, extracted_text=?, timestamps_text=?, error_message='', current_chunk_index=?, total_chunk_count=?, updated_at=CURRENT_TIMESTAMP
             WHERE id=?
             """,
             (
@@ -556,20 +663,26 @@ def process_chapter_audio_asr_task(task_id: int) -> None:
                 str(detected_language or "").strip(),
                 "\n".join(part for part in merged_text_parts if part).strip(),
                 "\n".join(merged_timestamp_lines).strip(),
+                total_chunks,
+                total_chunks,
                 task_id,
             ),
         )
         conn.commit()
         conn.close()
+        touch_task_worker_heartbeat(made_progress=True)
+    except AudioAsrTaskCancelledError:
+        touch_task_worker_heartbeat(made_progress=True)
     except Exception as exc:
         update_workflow_log_error(workflow_log_id, str(exc))
         conn = db_conn()
         conn.execute(
-            "UPDATE chapter_asr_tasks SET status='failed', error_message=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            "UPDATE chapter_asr_tasks SET status='failed', error_message=?, current_chunk_index=0, total_chunk_count=0, updated_at=CURRENT_TIMESTAMP WHERE id=?",
             (str(exc), task_id),
         )
         conn.commit()
         conn.close()
+        touch_task_worker_heartbeat(made_progress=True)
 
 
 def run_audio_asr_queue_once() -> bool:
@@ -591,7 +704,7 @@ def run_audio_asr_queue_once() -> bool:
         return False
     task_id = int(pending["id"])
     conn.execute(
-        "UPDATE chapter_asr_tasks SET status='running', progress=5, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+        "UPDATE chapter_asr_tasks SET status='running', progress=5, current_chunk_index=0, total_chunk_count=0, updated_at=CURRENT_TIMESTAMP WHERE id=?",
         (task_id,),
     )
     conn.commit()

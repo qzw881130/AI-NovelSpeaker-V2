@@ -503,6 +503,13 @@ async function enqueueChapterAudioAsr(novelId, chapterNum) {
   });
 }
 
+async function cancelChapterAudioAsr(novelId, chapterNum) {
+  return api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/audio-asr/cancel`, {
+    method: "POST",
+    body: "{}",
+  });
+}
+
 async function enqueueBatchAudioAsr(novelId, chapterNums = []) {
   return api(`/api/novels/${Number(novelId)}/audio-asr/enqueue-batch`, {
     method: "POST",
@@ -735,6 +742,7 @@ export {
   importNovelTextChapters,
   downloadChapterAudio,
   enqueueChapterAudioAsr,
+  cancelChapterAudioAsr,
   enqueueBatchAudioAsr,
   enqueueChapterNsfwReview,
   enqueueBatchNsfwReview,

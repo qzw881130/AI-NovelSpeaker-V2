@@ -49,6 +49,7 @@ TASK_WORKER_HEARTBEAT_TS = 0.0
 TASK_WORKER_LAST_PROGRESS_TS = 0.0
 TASK_WORKER_GENERATION = 0
 TASK_WORKER_KICK_THREAD: threading.Thread | None = None
+TASK_WORKER_STALE_SECONDS = 90.0
 DURATION_CACHE_LOCK = threading.Lock()
 DURATION_CACHE_PENDING: set[int] = set()
 LEGACY_SYSTEM_WORKFLOW_NAME = "古典小说默认工作流"
@@ -70,6 +71,14 @@ def dir_size_bytes(path: Path) -> int:
         if item.is_file():
             total += item.stat().st_size
     return total
+
+
+def touch_task_worker_heartbeat(*, made_progress: bool = False) -> None:
+    global TASK_WORKER_HEARTBEAT_TS, TASK_WORKER_LAST_PROGRESS_TS
+    now = time.time()
+    TASK_WORKER_HEARTBEAT_TS = now
+    if made_progress:
+        TASK_WORKER_LAST_PROGRESS_TS = now
 
 
 def probe_audio_duration_seconds(file_path: Path) -> float:
@@ -2954,37 +2963,37 @@ def advance_status(conn: sqlite3.Connection, table: str) -> None:
 
 
 def task_worker_loop() -> None:
-    global TASK_WORKER_HEARTBEAT_TS, TASK_WORKER_LAST_PROGRESS_TS
     from .line_audio import run_line_audio_queue_once
     from .audio_asr import run_audio_asr_queue_once
     from .nsfw_review import run_nsfw_review_queue_once
 
     generation = TASK_WORKER_GENERATION
     while not TASK_WORKER_STOP.is_set() and generation == TASK_WORKER_GENERATION:
-        TASK_WORKER_HEARTBEAT_TS = time.time()
+        touch_task_worker_heartbeat()
         has_json_work = False
         has_line_audio_work = False
         has_audio_asr_work = False
         has_nsfw_review_work = False
-        try:
-            has_json_work = run_json_queue_once()
-        except Exception as exc:
-            print(f"[task-worker] json queue error: {exc}")
-        try:
-            has_line_audio_work = run_line_audio_queue_once()
-        except Exception as exc:
-            print(f"[task-worker] line audio queue error: {exc}")
-        try:
-            has_audio_asr_work = run_audio_asr_queue_once()
-        except Exception as exc:
-            print(f"[task-worker] audio asr queue error: {exc}")
-        try:
-            has_nsfw_review_work = run_nsfw_review_queue_once()
-        except Exception as exc:
-            print(f"[task-worker] nsfw review queue error: {exc}")
-        TASK_WORKER_HEARTBEAT_TS = time.time()
-        if has_json_work or has_line_audio_work or has_audio_asr_work or has_nsfw_review_work:
-            TASK_WORKER_LAST_PROGRESS_TS = TASK_WORKER_HEARTBEAT_TS
+        with TASK_WORKER_LOCK:
+            try:
+                has_json_work = run_json_queue_once()
+            except Exception as exc:
+                print(f"[task-worker] json queue error: {exc}")
+            try:
+                has_line_audio_work = run_line_audio_queue_once()
+            except Exception as exc:
+                print(f"[task-worker] line audio queue error: {exc}")
+            try:
+                has_audio_asr_work = run_audio_asr_queue_once()
+            except Exception as exc:
+                print(f"[task-worker] audio asr queue error: {exc}")
+            try:
+                has_nsfw_review_work = run_nsfw_review_queue_once()
+            except Exception as exc:
+                print(f"[task-worker] nsfw review queue error: {exc}")
+        touch_task_worker_heartbeat(
+            made_progress=has_json_work or has_line_audio_work or has_audio_asr_work or has_nsfw_review_work
+        )
         TASK_WORKER_STOP.wait(1.0 if (has_json_work or has_line_audio_work or has_audio_asr_work or has_nsfw_review_work) else 3.0)
 
 
@@ -2994,10 +3003,9 @@ def kick_line_audio_queue_once() -> None:
 
 def ensure_task_worker() -> None:
     global TASK_WORKER_THREAD, TASK_WORKER_GENERATION, TASK_WORKER_HEARTBEAT_TS
-    stale_seconds = 15.0
     now = time.time()
     if TASK_WORKER_THREAD and TASK_WORKER_THREAD.is_alive():
-        if TASK_WORKER_HEARTBEAT_TS > 0 and now - TASK_WORKER_HEARTBEAT_TS > stale_seconds:
+        if TASK_WORKER_HEARTBEAT_TS > 0 and now - TASK_WORKER_HEARTBEAT_TS > TASK_WORKER_STALE_SECONDS:
             print("[task-worker] heartbeat stale, restarting worker")
             TASK_WORKER_GENERATION += 1
             TASK_WORKER_STOP.clear()
@@ -3027,7 +3035,7 @@ def get_task_worker_status() -> dict:
     progress_age = max(0.0, now - TASK_WORKER_LAST_PROGRESS_TS) if TASK_WORKER_LAST_PROGRESS_TS > 0 else -1.0
     state = "stopped"
     if TASK_WORKER_THREAD and TASK_WORKER_THREAD.is_alive():
-        state = "stale" if (TASK_WORKER_HEARTBEAT_TS > 0 and heartbeat_age > 15.0) else "running"
+        state = "stale" if (TASK_WORKER_HEARTBEAT_TS > 0 and heartbeat_age > TASK_WORKER_STALE_SECONDS) else "running"
     return {
         "state": state,
         "heartbeatAgeSeconds": round(heartbeat_age, 1) if heartbeat_age >= 0 else None,

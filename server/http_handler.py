@@ -34,6 +34,7 @@ from .line_audio import (
     retry_line_audio_task,
 )
 from .audio_asr import (
+    cancel_chapter_audio_asr_task,
     enqueue_batch_audio_asr_tasks,
     enqueue_chapter_audio_asr_task,
     list_audio_asr_chapters,
@@ -2040,6 +2041,29 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": msg}, 409)
                 return
             self.send_json({"status": "queued"})
+            return
+
+        m_audio_asr_cancel = re.match(
+            r"^/api/novels/(\d+)/chapters/(\d+)/audio-asr/cancel$", route
+        )
+        if m_audio_asr_cancel:
+            ensure_task_worker()
+            novel_id = int(m_audio_asr_cancel.group(1))
+            chapter_num = int(m_audio_asr_cancel.group(2))
+            conn = db_conn()
+            chapter_row = conn.execute(
+                "SELECT id FROM chapters WHERE novel_id=? AND chapter_num=?",
+                (novel_id, chapter_num),
+            ).fetchone()
+            conn.close()
+            if not chapter_row:
+                self.send_json({"error": "chapter not found"}, 404)
+                return
+            ok, msg = cancel_chapter_audio_asr_task(novel_id, int(chapter_row["id"]))
+            if not ok:
+                self.send_json({"error": msg}, 409)
+                return
+            self.send_json({"status": "cancelled"})
             return
 
         m_audio_asr_enqueue_batch = re.match(r"^/api/novels/(\d+)/audio-asr/enqueue-batch$", route)

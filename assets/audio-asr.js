@@ -1,5 +1,6 @@
 import {
   bytesToText,
+  cancelChapterAudioAsr,
   enqueueBatchAudioAsr,
   enqueueChapterAudioAsr,
   fetchTaskWorkerStatus,
@@ -16,6 +17,7 @@ let activeNovel = null;
 let chapterItems = [];
 const selectedChapterNums = new Set();
 let autoRefreshTimer = 0;
+let isDragSelecting = false;
 
 function renderTaskWorkerStatus(status) {
   const el = document.getElementById("audioAsrWorkerStatus");
@@ -70,6 +72,7 @@ function statusLabel(status) {
     pending: "待处理",
     running: "处理中",
     processing: "处理中",
+    cancelled: "已终止",
     failed: "失败",
     completed: "完成",
   };
@@ -82,6 +85,20 @@ function statusClass(status) {
   if (normalized === "failed") return "status-badge status-failed";
   if (["running", "processing", "pending"].includes(normalized)) return "status-badge status-pending";
   return "status-badge";
+}
+
+function getActionLabel(item) {
+  const status = String(item.status || "idle");
+  if (["pending", "running", "processing"].includes(status)) return "终止";
+  return status === "completed" ? "重新提取" : "提取ASR";
+}
+
+function getChunkProgressLabel(item) {
+  const current = Number(item.currentChunkIndex || 0);
+  const total = Number(item.totalChunkCount || 0);
+  if (total <= 0) return "";
+  const safeCurrent = Math.max(0, Math.min(current || 0, total));
+  return `${safeCurrent}/${total}`;
 }
 
 function setHeader() {
@@ -128,6 +145,18 @@ function toggleChapterSelection(chapterNum, checked) {
   if (!safeChapterNum) return;
   if (checked) selectedChapterNums.add(safeChapterNum);
   else selectedChapterNums.delete(safeChapterNum);
+  updateSelectionControls();
+}
+
+function applyDragSelection(chapterNum) {
+  const safeChapterNum = Number(chapterNum || 0);
+  if (!safeChapterNum) return;
+  const item = chapterItems.find((entry) => Number(entry.chapterNum || 0) === safeChapterNum);
+  if (!item?.hasAudio) return;
+  if (selectedChapterNums.has(safeChapterNum)) return;
+  selectedChapterNums.add(safeChapterNum);
+  const checkbox = document.querySelector(`.audio-asr-item-check[data-chapter-num="${safeChapterNum}"]`);
+  if (checkbox) checkbox.checked = true;
   updateSelectionControls();
 }
 
@@ -178,7 +207,7 @@ function renderTable() {
     return;
   }
   tbody.innerHTML = chapterItems.map((item) => `
-    <tr>
+    <tr class="audio-asr-row" data-chapter-num="${Number(item.chapterNum || 0)}">
       <td>
         <label class="novel-download-checkbox-cell" aria-label="选择第 ${String(item.chapterNum).padStart(3, "0")} 回">
           <input class="audio-asr-item-check" type="checkbox" data-chapter-num="${Number(item.chapterNum || 0)}" ${item.hasAudio ? "" : "disabled"} ${selectedChapterNums.has(Number(item.chapterNum || 0)) ? "checked" : ""} />
@@ -187,9 +216,9 @@ function renderTable() {
       <td>${String(item.chapterNum).padStart(3, "0")}</td>
       <td>${escapeHtml(item.title || "-")}</td>
       <td>${item.hasAudio ? formatDuration(item.audioDurationSeconds || 0) : "-"}</td>
-      <td><span class="${statusClass(item.status)}">${statusLabel(item.status)}</span>${item.errorMessage ? `<div class="meta">${escapeHtml(item.errorMessage)}</div>` : ""}</td>
+      <td><span class="${statusClass(item.status)}">${statusLabel(item.status)}</span>${getChunkProgressLabel(item) ? `<div class="meta">${escapeHtml(getChunkProgressLabel(item))}</div>` : ""}${item.errorMessage ? `<div class="meta">${escapeHtml(item.errorMessage)}</div>` : ""}</td>
       <td>${item.hasAsr ? `<div class="table-actions-inline"><a class="ghost-btn btn-sm" href="${item.downloadUrl}">下载ASR</a><button class="ghost-btn btn-sm audio-asr-view-btn" type="button" data-chapter-num="${Number(item.chapterNum || 0)}">查看</button></div>` : '<span class="text-muted">暂无</span>'}</td>
-      <td><button class="ghost-btn btn-sm audio-asr-single-btn" type="button" data-chapter-num="${Number(item.chapterNum || 0)}" ${item.hasAudio ? "" : "disabled"}>${item.status === "completed" ? "重新提取" : "提取ASR"}</button></td>
+      <td><button class="ghost-btn btn-sm audio-asr-single-btn" type="button" data-chapter-num="${Number(item.chapterNum || 0)}" data-status="${escapeHtml(item.status || "idle")}" ${item.hasAudio ? "" : "disabled"}>${getActionLabel(item)}</button></td>
     </tr>
   `).join("");
   updateSelectionControls();
@@ -222,6 +251,12 @@ async function refreshPage() {
 async function enqueueSingle(chapterNum) {
   await enqueueChapterAudioAsr(activeNovel.id, chapterNum);
   toast(`第 ${chapterNum} 回已加入 ASR 队列`);
+  await refreshPage();
+}
+
+async function cancelSingle(chapterNum) {
+  await cancelChapterAudioAsr(activeNovel.id, chapterNum);
+  toast(`第 ${chapterNum} 回已终止`);
   await refreshPage();
 }
 
@@ -267,6 +302,22 @@ function bindEvents() {
     if (!checkbox) return;
     toggleChapterSelection(checkbox.dataset.chapterNum, checkbox.checked);
   });
+  document.getElementById("audioAsrTableBody").addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    if (event.target.closest("button, a, input, label")) return;
+    const row = event.target.closest(".audio-asr-row");
+    if (!row) return;
+    isDragSelecting = true;
+    document.body.classList.add("is-drag-selecting");
+    applyDragSelection(row.dataset.chapterNum);
+    event.preventDefault();
+  });
+  document.getElementById("audioAsrTableBody").addEventListener("pointerover", (event) => {
+    if (!isDragSelecting) return;
+    const row = event.target.closest(".audio-asr-row");
+    if (!row) return;
+    applyDragSelection(row.dataset.chapterNum);
+  });
   document.getElementById("audioAsrTableBody").addEventListener("click", async (event) => {
     const viewBtn = event.target.closest(".audio-asr-view-btn");
     if (viewBtn) {
@@ -278,7 +329,13 @@ function bindEvents() {
     }
     const btn = event.target.closest(".audio-asr-single-btn");
     if (!btn) return;
-    await enqueueSingle(Number(btn.dataset.chapterNum || 0));
+    const chapterNum = Number(btn.dataset.chapterNum || 0);
+    const status = String(btn.dataset.status || "idle");
+    if (["pending", "running", "processing"].includes(status)) {
+      await cancelSingle(chapterNum);
+      return;
+    }
+    await enqueueSingle(chapterNum);
   });
   document.getElementById("audioAsrBatchBtn").addEventListener("click", async () => {
     await enqueueBatch(getSelectedChapterNums());
@@ -286,6 +343,10 @@ function bindEvents() {
   document.getElementById("audioAsrBatchAllBtn").addEventListener("click", async () => {
     const all = chapterItems.filter((item) => item.hasAudio).map((item) => Number(item.chapterNum || 0));
     await enqueueBatch(all);
+  });
+  document.addEventListener("pointerup", () => {
+    isDragSelecting = false;
+    document.body.classList.remove("is-drag-selecting");
   });
 }
 

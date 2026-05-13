@@ -1,5 +1,5 @@
 import { clearWorkflowLogs, fetchWorkflowLogs } from "./store.js";
-import { renderNav, toast } from "./ui.js";
+import { fmtDateTime, renderNav, toast } from "./ui.js";
 
 let workflowLogs = [];
 
@@ -7,6 +7,15 @@ function escapeHtml(text) {
   const div = document.createElement("div");
   div.textContent = String(text || "");
   return div.innerHTML;
+}
+
+function formatDbDateTime(text) {
+  const raw = String(text || "").trim();
+  if (!raw) return "-";
+  const hasZone = /[zZ]|[+-]\d\d:\d\d$/.test(raw);
+  const iso = raw.includes("T") ? raw : raw.replace(" ", "T");
+  const dt = new Date(hasZone ? iso : `${iso}Z`);
+  return Number.isNaN(dt.getTime()) ? escapeHtml(raw) : fmtDateTime(dt);
 }
 
 function render() {
@@ -25,7 +34,7 @@ function render() {
           <h3>#${Number(log.id || 0)} ${escapeHtml(log.workflowName || "-")}</h3>
           <span class="chip ${log.errorLog ? "failed" : "completed"}">${log.errorLog ? "失败" : "成功"}</span>
         </div>
-        <p class="meta"><strong>时间:</strong> ${escapeHtml(log.createdAt || "-")} | <strong>工作流类别:</strong> ${escapeHtml(log.workflowCategory || "-")}</p>
+        <p class="meta"><strong>时间:</strong> ${formatDbDateTime(log.createdAt)} | <strong>工作流类别:</strong> ${escapeHtml(log.workflowCategory || "-")}</p>
         <div class="workflow-log-block">
           <h4>工作流JSON</h4>
           <pre>${escapeHtml(log.workflowJson || "")}</pre>
