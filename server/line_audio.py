@@ -47,6 +47,11 @@ def _chapter_line_audio_path(
     return _chapter_temp_dir(english_dir, chapter_num) / f"{line_hash}.flac"
 
 
+def _comfy_line_audio_prefix(english_dir: str, chapter_id: int) -> str:
+    safe_english_dir = _safe_filename(english_dir) or "novel"
+    return f"temp/{safe_english_dir}/{chapter_id}/chapter-{chapter_id}"
+
+
 def _novel_audio_output_dir(english_dir: str) -> Path:
     return NOVEL_DIR / english_dir / "audio"
 
@@ -967,7 +972,7 @@ def process_line_audio_task(task_id: int) -> None:
             _assign_text_input(workflow[text_prompt_node], line_text, "目标文本")
             _assign_text_input(workflow[ref_text_node], reference_text, "参考文本")
             workflow[output_node]["inputs"]["filename_prefix"] = (
-                f"temp/chapter-{chapter_id:03d}"
+                _comfy_line_audio_prefix(english_dir, chapter_id)
             )
 
             for node in workflow.values():

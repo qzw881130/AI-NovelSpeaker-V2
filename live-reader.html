@@ -100,7 +100,16 @@
             <div class="live-reader-main-head">
               <div>
                 <h2 id="liveReaderChapterTitle">请选择章回</h2>
-                <div id="liveReaderChapterMeta" class="meta"></div>
+                <div class="live-reader-meta-row">
+                  <div id="liveReaderChapterMeta" class="meta"></div>
+                  <span id="liveReaderStatus" class="reader-status">就绪</span>
+                  <span id="liveReaderMatchStatus" class="reader-status">-</span>
+                  <div class="live-reader-ending-controls">
+                    <select id="liveEndingAudioSelect" class="hidden"></select>
+                    <button id="refreshLiveEndingAudioBtn" class="ghost-btn icon-btn hidden" type="button" aria-label="刷新结束语列表" title="刷新结束语列表">↻</button>
+                    <button id="liveEndingAudioPlayBtn" class="ghost-btn hidden" type="button">播放直播结束语</button>
+                  </div>
+                </div>
               </div>
               <div class="chapter-nav-controls">
                 <button id="liveReaderPrevBtn" class="ghost-btn" type="button">上一回</button>
@@ -109,11 +118,9 @@
             </div>
             <div class="live-reader-audio-wrap">
               <audio id="liveReaderAudioPlayer" controls preload="metadata"></audio>
-              <span id="liveReaderStatus" class="reader-status">就绪</span>
-              <span id="liveReaderMatchStatus" class="reader-status">-</span>
-              <button id="liveEndingAudioPlayBtn" class="ghost-btn hidden" type="button">播放直播结束语</button>
               <audio id="liveEndingAudioPlayer" class="hidden" preload="auto"></audio>
             </div>
+            <div id="liveReaderFrameTitle" class="live-reader-frame-title">-</div>
             <div class="live-reader-reader-wrap">
               <article id="liveReaderContent" class="live-reader-content">请先选择章回。</article>
             </div>

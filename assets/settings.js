@@ -207,7 +207,7 @@ function load(settings) {
   document.getElementById("copyrightOutroEnabled").checked = Boolean(copyrightAudio.outroEnabled);
   applyCopyrightAudioState("intro", String(copyrightAudio.introPath || ""));
   applyCopyrightAudioState("outro", String(copyrightAudio.outroPath || ""));
-  applyLiveEndingAudioState(String(liveEndingAudio.path || ""));
+  renderLiveEndingAudioItems(liveEndingAudio.items || []);
   syncLineAudioQueueModeVisibility();
   syncOllamaFieldVisibility();
 }
@@ -222,14 +222,29 @@ function applyCopyrightAudioState(kind, path) {
   status.textContent = normalized ? "已上传音频" : "未上传音频";
 }
 
-function applyLiveEndingAudioState(path) {
-  const normalized = String(path || "").trim();
-  const player = document.getElementById("liveEndingAudioPlayer");
-  const status = document.getElementById("liveEndingAudioStatus");
-  player.dataset.path = normalized;
-  player.classList.toggle("hidden", !normalized);
-  player.src = normalized ? `/api/settings/live-ending-audio/file?v=${Date.now()}` : "";
-  status.textContent = normalized ? "已上传音频" : "未上传音频";
+function renderLiveEndingAudioItems(items) {
+  const root = document.getElementById("liveEndingAudioList");
+  if (!root) return;
+  const normalizedItems = Array.isArray(items) && items.length ? items : [{ label: "", path: "" }];
+  root.innerHTML = normalizedItems.map((item, index) => {
+    const path = String(item?.path || "").trim();
+    const label = String(item?.label || "").trim();
+    return `
+      <div class="copyright-audio-item live-ending-audio-item" data-live-ending-index="${index}">
+        <div class="copyright-audio-head copyright-audio-inline">
+          <strong>直播结束语 ${index + 1}</strong>
+          <button class="ghost-btn btn-sm remove-live-ending-audio-btn" type="button" data-live-ending-index="${index}">删除</button>
+        </div>
+        <div class="audio-upload-row copyright-audio-actions-row">
+          <input class="live-ending-audio-label" data-live-ending-label-index="${index}" type="text" placeholder="填写备注" value="${label.replaceAll('"', '&quot;')}" />
+          <input class="live-ending-audio-file hidden" data-live-ending-file-index="${index}" type="file" accept="audio/*,.flac,.wav,.mp3,.m4a,.aac" />
+          <button class="ghost-btn upload-live-ending-audio-btn" type="button" data-live-ending-upload-index="${index}">上传</button>
+          <audio class="live-ending-audio-player ${path ? '' : 'hidden'}" data-live-ending-player-index="${index}" data-path="${path}" controls src="${path ? `/api/settings/live-ending-audio/file?path=${encodeURIComponent(path)}&v=${Date.now()}` : ''}"></audio>
+          <span class="caption live-ending-audio-status" data-live-ending-status-index="${index}">${path ? '已上传音频' : '未上传音频'}</span>
+        </div>
+      </div>
+    `;
+  }).join("");
 }
 
 async function uploadCopyrightAudio(kind, file) {
@@ -252,7 +267,7 @@ async function uploadCopyrightAudio(kind, file) {
   return String(data.path || "");
 }
 
-async function uploadLiveEndingAudio(file) {
+async function uploadLiveEndingAudio(index, file) {
   const buffer = await file.arrayBuffer();
   const bytes = new Uint8Array(buffer);
   let binary = "";
@@ -263,7 +278,7 @@ async function uploadLiveEndingAudio(file) {
   const res = await fetch(`/api/settings/live-ending-audio`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ audioBase64, fileName: file.name }),
+    body: JSON.stringify({ index: Number(index), audioBase64, fileName: file.name }),
   });
   const data = await res.json();
   if (!res.ok) {
@@ -364,7 +379,15 @@ function readSettingsForm() {
       outroPath: document.getElementById("copyrightOutroPlayer").src ? document.getElementById("copyrightOutroPlayer").dataset.path || "" : "",
     },
     liveEndingAudio: {
-      path: document.getElementById("liveEndingAudioPlayer").src ? document.getElementById("liveEndingAudioPlayer").dataset.path || "" : "",
+      items: Array.from(document.querySelectorAll(".live-ending-audio-item")).map((item) => {
+        const index = item.dataset.liveEndingIndex;
+        const player = item.querySelector(`.live-ending-audio-player[data-live-ending-player-index="${index}"]`);
+        const label = item.querySelector(`.live-ending-audio-label[data-live-ending-label-index="${index}"]`);
+        return {
+          label: String(label?.value || "").trim(),
+          path: player?.dataset.path || "",
+        };
+      }).filter((item) => item.path),
     },
   };
 }
@@ -476,9 +499,6 @@ function bindEvents() {
   document.getElementById("uploadCopyrightOutroBtn").addEventListener("click", () => {
     document.getElementById("copyrightOutroFile").click();
   });
-  document.getElementById("uploadLiveEndingAudioBtn").addEventListener("click", () => {
-    document.getElementById("liveEndingAudioFile").click();
-  });
   document.getElementById("copyrightIntroFile").addEventListener("change", async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -511,19 +531,66 @@ function bindEvents() {
       event.target.value = "";
     }
   });
-  document.getElementById("liveEndingAudioFile").addEventListener("change", async (event) => {
-    const file = event.target.files?.[0];
+  document.getElementById("addLiveEndingAudioBtn").addEventListener("click", () => {
+    const current = Array.from(document.querySelectorAll('.live-ending-audio-item')).map((item) => {
+      const index = item.dataset.liveEndingIndex;
+      const player = item.querySelector(`.live-ending-audio-player[data-live-ending-player-index="${index}"]`);
+      const label = item.querySelector(`.live-ending-audio-label[data-live-ending-label-index="${index}"]`);
+      return { label: String(label?.value || '').trim(), path: player?.dataset.path || '' };
+    });
+    current.push({ label: '', path: '' });
+    renderLiveEndingAudioItems(current);
+    markLlmDirty();
+  });
+  document.getElementById("liveEndingAudioList").addEventListener("click", async (event) => {
+    const uploadBtn = event.target.closest('.upload-live-ending-audio-btn');
+    if (uploadBtn) {
+      const index = uploadBtn.dataset.liveEndingUploadIndex;
+      document.querySelector(`.live-ending-audio-file[data-live-ending-file-index="${index}"]`)?.click();
+      return;
+    }
+    const removeBtn = event.target.closest('.remove-live-ending-audio-btn');
+    if (removeBtn) {
+      const current = Array.from(document.querySelectorAll('.live-ending-audio-item')).map((item) => {
+        const idx = item.dataset.liveEndingIndex;
+        const player = item.querySelector(`.live-ending-audio-player[data-live-ending-player-index="${idx}"]`);
+        const label = item.querySelector(`.live-ending-audio-label[data-live-ending-label-index="${idx}"]`);
+        return { label: String(label?.value || '').trim(), path: player?.dataset.path || '' };
+      });
+      current.splice(Number(removeBtn.dataset.liveEndingIndex || 0), 1);
+      renderLiveEndingAudioItems(current);
+      markLlmDirty();
+      return;
+    }
+  });
+  document.getElementById("liveEndingAudioList").addEventListener("change", async (event) => {
+    const labelInput = event.target.closest('.live-ending-audio-label');
+    if (labelInput) {
+      markLlmDirty();
+      return;
+    }
+    const fileInput = event.target.closest('.live-ending-audio-file');
+    if (!fileInput) return;
+    const index = fileInput.dataset.liveEndingFileIndex;
+    const file = fileInput.files?.[0];
     if (!file) return;
     try {
-      const path = await uploadLiveEndingAudio(file);
-      const player = document.getElementById("liveEndingAudioPlayer");
-      player.dataset.path = path;
-      applyLiveEndingAudioState(path);
-      toast("直播结束语音频已上传");
+      const path = await uploadLiveEndingAudio(index, file);
+      const player = document.querySelector(`.live-ending-audio-player[data-live-ending-player-index="${index}"]`);
+      const status = document.querySelector(`.live-ending-audio-status[data-live-ending-status-index="${index}"]`);
+      if (player) {
+        player.dataset.path = path;
+        player.src = `/api/settings/live-ending-audio/file?path=${encodeURIComponent(path)}&v=${Date.now()}`;
+        player.classList.remove('hidden');
+        player.load();
+      }
+      if (status) status.textContent = '已上传音频';
+      toast('直播结束语音频已上传');
+      markLlmDirty();
     } catch (err) {
       toast(`上传直播结束语音频失败: ${err.message}`);
     } finally {
-      event.target.value = "";
+      fileInput.value = '';
     }
   });
 

@@ -1527,15 +1527,28 @@ menu {
 }
 
 .copyright-audio-actions-row {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 10px;
   flex-wrap: nowrap;
-  margin-left: auto;
+  width: 100%;
+  margin-left: 0;
 }
 
 .copyright-audio-actions-row audio {
-  width: 220px;
+  flex: 1 1 auto;
+  min-width: 220px;
+  width: auto;
+}
+
+.live-ending-audio-item .live-ending-audio-label {
+  flex: 1 1 280px;
+}
+
+.live-ending-audio-item .upload-live-ending-audio-btn,
+.live-ending-audio-item .remove-live-ending-audio-btn,
+.live-ending-audio-item .live-ending-audio-status {
+  flex: 0 0 auto;
 }
 
 .switch-row {
@@ -2510,6 +2523,37 @@ menu {
   margin-bottom: 28px;
 }
 
+.live-reader-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.live-reader-ending-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+  width: 100%;
+}
+
+.icon-btn {
+  width: 36px;
+  min-width: 36px;
+  padding: 0;
+  text-align: center;
+}
+
+.live-reader-ending-controls select {
+  flex: 1 1 auto;
+  min-width: 240px;
+}
+
+.live-reader-ending-controls .ghost-btn {
+  white-space: nowrap;
+}
+
 .live-reader-audio-wrap audio {
   flex: 1 1 520px;
   min-width: 280px;
@@ -2518,13 +2562,28 @@ menu {
 .live-reader-reader-wrap {
   overflow: auto;
   border: 1px solid var(--line);
-  border-radius: 18px;
+  border-radius: 4px;
   background: linear-gradient(180deg, #fffef7 0%, #f8eddc 100%);
   padding: 18px;
   margin: 0 auto;
   box-sizing: border-box;
   scrollbar-width: none;
   -ms-overflow-style: none;
+}
+
+.live-reader-frame-title {
+  margin: 0 auto 10px;
+  width: fit-content;
+  max-width: calc(100% - 40px);
+  padding: 0 14px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 22px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+  background: transparent;
 }
 
 .live-reader-reader-wrap::-webkit-scrollbar {

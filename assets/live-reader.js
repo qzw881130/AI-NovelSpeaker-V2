@@ -125,13 +125,52 @@ function setMatchStatus(text) {
 }
 
 function syncLiveEndingAudioState() {
-  const path = String((window.__liveReaderSettings?.liveEndingAudio || {}).path || "").trim();
+  const items = Array.isArray((window.__liveReaderSettings?.liveEndingAudio || {}).items)
+    ? (window.__liveReaderSettings.liveEndingAudio.items || [])
+    : [];
+  const select = document.getElementById("liveEndingAudioSelect");
   const btn = document.getElementById("liveEndingAudioPlayBtn");
+  const refreshBtn = document.getElementById("refreshLiveEndingAudioBtn");
   const player = document.getElementById("liveEndingAudioPlayer");
-  if (!btn || !player) return;
-  const hasAudio = Boolean(path);
+  if (!btn || !player || !select || !refreshBtn) return;
+  select.innerHTML = items
+    .map((item, index) => `<option value="${index}">${(item.label || `结束语${index + 1}`).replaceAll('<', '&lt;')}</option>`)
+    .join("");
+  const hasAudio = items.length > 0;
   btn.classList.toggle("hidden", !hasAudio);
-  player.src = hasAudio ? `/api/settings/live-ending-audio/file?v=${Date.now()}` : "";
+  select.classList.toggle("hidden", !hasAudio);
+  refreshBtn.classList.toggle("hidden", !hasAudio);
+  if (hasAudio) {
+    const nextValue = items[Number(select.value)] ? String(select.value) : "0";
+    applyLiveEndingAudioSelection(nextValue);
+  } else {
+    player.src = "";
+    player.dataset.path = "";
+  }
+}
+
+function applyLiveEndingAudioSelection(nextValue) {
+  const items = Array.isArray((window.__liveReaderSettings?.liveEndingAudio || {}).items)
+    ? (window.__liveReaderSettings.liveEndingAudio.items || [])
+    : [];
+  const select = document.getElementById("liveEndingAudioSelect");
+  const player = document.getElementById("liveEndingAudioPlayer");
+  if (!select || !player) return null;
+  const index = Number(nextValue || 0);
+  const item = items[index];
+  if (!item) {
+    select.value = "";
+    player.src = "";
+    player.dataset.path = "";
+    return null;
+  }
+  const path = String(item.path || "").trim();
+  select.value = String(index);
+  player.dataset.path = path;
+  player.src = path
+    ? `/api/settings/live-ending-audio/file?path=${encodeURIComponent(path)}&v=${Date.now()}`
+    : "";
+  return item;
 }
 
 function applyControlsCollapsedState() {
@@ -776,9 +815,14 @@ function renderReadingContentFromPayload(payload) {
   });
 }
 
+function prependFrameTitleToHtml(html, title) {
+  return html;
+}
+
 async function buildRenderedChapterPayload(text, asrText) {
   const rawText = String(text || "").trim();
   const rawAsrText = String(asrText || "");
+  const chapterTitle = String(activeChapterDetail?.title || "").trim();
   const cacheKey = makeChapterCacheKey(activeNovel?.id, activeChapterNum, rawText, rawAsrText);
   const cached = getChapterRenderCache(cacheKey);
   if (cached) {
@@ -794,7 +838,7 @@ async function buildRenderedChapterPayload(text, asrText) {
   const currentAsrModeLocal = asrSegments.length > 0;
   const readingSegmentsLocal = currentAsrModeLocal ? asrSegments : buildReadingSegments(rawText);
   const html = currentAsrModeLocal
-    ? await renderOriginalParagraphsWithHighlights(rawText, asrSegments)
+    ? prependFrameTitleToHtml(await renderOriginalParagraphsWithHighlights(rawText, asrSegments), chapterTitle)
     : readingSegmentsLocal
         .map(
           (segment) =>
@@ -802,16 +846,18 @@ async function buildRenderedChapterPayload(text, asrText) {
         )
         .join("");
 
+  const finalHtml = currentAsrModeLocal ? html : prependFrameTitleToHtml(html, chapterTitle);
+
   setChapterRenderCache(cacheKey, {
     currentAsrMode: currentAsrModeLocal,
     readingSegments: readingSegmentsLocal.map((segment) => ({ ...segment })),
-    html,
+    html: finalHtml,
   });
 
   return {
     currentAsrMode: currentAsrModeLocal,
     readingSegments: readingSegmentsLocal,
-    html,
+    html: finalHtml,
     cacheHit: false,
   };
 }
@@ -935,6 +981,9 @@ async function loadChapter(chapterNum, options = {}) {
   activeChapterDetail = detail;
   document.getElementById("liveReaderChapterTitle").textContent = detail.title;
   document.getElementById("liveReaderChapterMeta").textContent = `${detail.novelName} · 章节 ${detail.chapterNum} · 字数 ${detail.wordCount || 0}`;
+  document.getElementById("liveReaderMatchStatus").textContent = "匹配: 初始化中";
+  const frameTitleEl = document.getElementById("liveReaderFrameTitle");
+  if (frameTitleEl) frameTitleEl.textContent = detail.title;
   let asrSegments = [];
   let asrText = "";
   try {
@@ -983,6 +1032,8 @@ async function loadNovelChapters() {
   } else {
     document.getElementById("liveReaderChapterTitle").textContent = "暂无可播放章回";
     document.getElementById("liveReaderChapterMeta").textContent = "";
+    const frameTitleEl = document.getElementById("liveReaderFrameTitle");
+    if (frameTitleEl) frameTitleEl.textContent = "-";
     document.getElementById("liveReaderContent").textContent = "当前小说还没有可用音频章回。";
     readingSegments = [];
     setMatchStatus("匹配: -");
@@ -1027,16 +1078,28 @@ function bindEvents() {
     applyControlsCollapsedState();
   });
   document.getElementById("liveEndingAudioPlayBtn")?.addEventListener("click", async () => {
+    const select = document.getElementById("liveEndingAudioSelect");
+    applyLiveEndingAudioSelection(select?.value || "0");
     const player = document.getElementById("liveEndingAudioPlayer");
     if (!player?.src) {
       toast("未配置直播结束语音频");
       return;
     }
+    player.currentTime = 0;
     try {
       await player.play();
     } catch {
       toast("播放直播结束语失败，请重试");
     }
+  });
+  document.getElementById("refreshLiveEndingAudioBtn")?.addEventListener("click", async () => {
+    const data = await getData();
+    window.__liveReaderSettings = data.settings || {};
+    syncLiveEndingAudioState();
+    toast("直播结束语列表已刷新");
+  });
+  document.getElementById("liveEndingAudioSelect")?.addEventListener("change", (event) => {
+    applyLiveEndingAudioSelection(event.target.value || "0");
   });
   document.getElementById("liveReaderPrevBtn")?.addEventListener("click", async () => {
     await playAdjacentChapter(-1);

@@ -34,7 +34,7 @@ const DEFAULT_SETTINGS = {
     outroPath: "",
   },
   liveEndingAudio: {
-    path: "",
+    items: [],
   },
 };
 

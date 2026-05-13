@@ -4,6 +4,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from .services import *  # noqa: F401,F403
+from .services import normalize_live_ending_audio_items
 from .roles import (
     list_roles,
     get_role,
@@ -971,17 +972,34 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if route == "/api/settings/live-ending-audio/file":
+            requested_path = str((parse_qs(parsed.query or "").get("path") or [""])[0] or "").strip()
             conn = db_conn()
             row = conn.execute(
+                "SELECT setting_value FROM app_settings WHERE setting_key=?",
+                ("live_ending_audio_items",),
+            ).fetchone()
+            legacy_row = conn.execute(
                 "SELECT setting_value FROM app_settings WHERE setting_key=?",
                 ("live_ending_audio_path",),
             ).fetchone()
             conn.close()
-            file_path = str(row["setting_value"] or "").strip() if row else ""
+            items = normalize_live_ending_audio_items(
+                str(row["setting_value"] or "").strip() if row else "",
+                str(legacy_row["setting_value"] or "").strip() if legacy_row else "",
+            )
+            file_path = requested_path or (items[0]["path"] if items else "")
             if not file_path:
                 self.send_json({"error": "audio file not found"}, 404)
                 return
             abs_path = (ROOT_DIR / file_path).resolve()
+            allowed_dir = (ROOT_DIR / "temp" / "settings").resolve()
+            if requested_path:
+                try:
+                    abs_path.relative_to(allowed_dir)
+                except ValueError:
+                    if items and file_path not in {str(item.get("path") or "").strip() for item in items}:
+                        self.send_json({"error": "audio file not found"}, 404)
+                        return
             if not abs_path.exists() or not abs_path.is_file():
                 self.send_json({"error": "audio file not found"}, 404)
                 return
@@ -1192,11 +1210,18 @@ class Handler(BaseHTTPRequestHandler):
 
         if route == "/api/settings/live-ending-audio":
             body = self.read_json()
+            try:
+                item_index = int(body.get("index"))
+            except (TypeError, ValueError):
+                item_index = -1
             audio_base64 = str(body.get("audioBase64") or "").strip()
             file_name = (
                 str(body.get("fileName") or "live-ending.flac").strip()
                 or "live-ending.flac"
             )
+            if item_index < 0:
+                self.send_json({"error": "index is required"}, 400)
+                return
             if not audio_base64:
                 self.send_json({"error": "audioBase64 is required"}, 400)
                 return
@@ -1209,7 +1234,7 @@ class Handler(BaseHTTPRequestHandler):
             target_dir = ROOT_DIR / "temp" / "settings"
             target_dir.mkdir(parents=True, exist_ok=True)
             suffix = Path(safe_name).suffix or ".flac"
-            target_path = target_dir / f"live-ending{suffix}"
+            target_path = target_dir / f"live-ending-{item_index}{suffix}"
             target_path.write_bytes(audio_bytes)
             rel_path = db_rel_path(target_path.relative_to(ROOT_DIR))
             conn = db_conn()
@@ -2521,9 +2546,18 @@ class Handler(BaseHTTPRequestHandler):
                 "copyright_audio_outro_path": str(
                     ((body.get("copyrightAudio") or {}).get("outroPath") or "")
                 ).strip(),
-                "live_ending_audio_path": str(
-                    ((body.get("liveEndingAudio") or {}).get("path") or "")
-                ).strip(),
+                "live_ending_audio_items": json.dumps(
+                    [
+                        {
+                            "label": str(item.get("label") or "直播结束语").strip() or "直播结束语",
+                            "path": str(item.get("path") or "").strip(),
+                        }
+                        for item in ((body.get("liveEndingAudio") or {}).get("items") or [])
+                        if str(item.get("path") or "").strip()
+                    ],
+                    ensure_ascii=False,
+                ),
+                "live_ending_audio_path": "",
             }
             conn = db_conn()
             for k, v in pairs.items():
