@@ -12,6 +12,7 @@ const HIGHLIGHT_INTENSITY_KEY = "ai_novel_live_reader_highlight_intensity";
 const FOLLOW_SENSITIVITY_KEY = "ai_novel_live_reader_follow_sensitivity";
 const FOLLOW_SMOOTHNESS_KEY = "ai_novel_live_reader_follow_smoothness";
 const CONTROLS_COLLAPSED_KEY = "ai_novel_live_reader_controls_collapsed";
+const PLAYLIST_COLLAPSED_KEY = "ai_novel_live_reader_playlist_collapsed";
 let deferredInstallPrompt = null;
 
 let allNovels = [];
@@ -111,6 +112,14 @@ function setControlsCollapsed(collapsed) {
   saveBool(CONTROLS_COLLAPSED_KEY, collapsed);
 }
 
+function isPlaylistCollapsed() {
+  return getSavedBool(PLAYLIST_COLLAPSED_KEY, false);
+}
+
+function setPlaylistCollapsed(collapsed) {
+  saveBool(PLAYLIST_COLLAPSED_KEY, collapsed);
+}
+
 function setStatus(text) {
   const el = document.getElementById("liveReaderStatus");
   if (el) el.textContent = translateText(text);
@@ -183,6 +192,25 @@ function applyControlsCollapsedState() {
   if (btn) {
     btn.textContent = collapsed ? "展开" : "收起";
     btn.setAttribute("aria-expanded", collapsed ? "false" : "true");
+  }
+}
+
+function applyPlaylistCollapsedState() {
+  const collapsed = isPlaylistCollapsed();
+  const layout = document.querySelector(".live-reader-layout");
+  const panel = document.querySelector(".live-reader-playlist-panel");
+  const btn = document.getElementById("toggleLiveReaderPlaylistBtn");
+  if (layout) {
+    layout.classList.toggle("is-playlist-collapsed", collapsed);
+  }
+  if (panel) {
+    panel.classList.toggle("is-collapsed", collapsed);
+  }
+  if (btn) {
+    btn.textContent = collapsed ? "▶" : "◀";
+    btn.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    btn.setAttribute("aria-label", collapsed ? "展开章回播放列表" : "收起章回播放列表");
+    btn.title = collapsed ? "展开章回播放列表" : "收起章回播放列表";
   }
 }
 
@@ -1051,12 +1079,15 @@ async function switchNovel(novelId) {
   await loadNovelChapters();
 }
 
-async function playAdjacentChapter(step) {
+async function playAdjacentChapter(step, options = {}) {
   const idx = audioChapterItems.findIndex((item) => Number(item.chapterNum) === Number(activeChapterNum));
   if (idx < 0) return;
   const next = audioChapterItems[idx + step];
-  if (!next) return;
-  await loadChapter(next.chapterNum, { autoplay: true });
+  const shouldWrap = Boolean(options.wrap);
+  const wrapped = step > 0 ? audioChapterItems[0] : audioChapterItems[audioChapterItems.length - 1];
+  const target = next || (shouldWrap ? wrapped : null);
+  if (!target) return;
+  await loadChapter(target.chapterNum, { autoplay: true });
 }
 
 function bindEvents() {
@@ -1076,6 +1107,10 @@ function bindEvents() {
   document.getElementById("toggleLiveReaderControlsBtn")?.addEventListener("click", () => {
     setControlsCollapsed(!isControlsCollapsed());
     applyControlsCollapsedState();
+  });
+  document.getElementById("toggleLiveReaderPlaylistBtn")?.addEventListener("click", () => {
+    setPlaylistCollapsed(!isPlaylistCollapsed());
+    applyPlaylistCollapsedState();
   });
   document.getElementById("liveEndingAudioPlayBtn")?.addEventListener("click", async () => {
     const select = document.getElementById("liveEndingAudioSelect");
@@ -1158,7 +1193,7 @@ function bindEvents() {
     updateSegmentHighlight(true);
     setStatus("播放结束");
     if (document.getElementById("liveReaderAutoNext")?.checked) {
-      await playAdjacentChapter(1);
+      await playAdjacentChapter(1, { wrap: true });
     }
   });
 }
@@ -1172,6 +1207,7 @@ async function init() {
   }
   applyReaderSettings();
   applyControlsCollapsedState();
+  applyPlaylistCollapsedState();
   updateInstallButtonVisibility();
   const data = await getData();
   window.__liveReaderSettings = data.settings || {};
