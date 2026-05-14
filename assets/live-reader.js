@@ -235,9 +235,26 @@ function formatMatchStrategy(strategy) {
   return value;
 }
 
+function getMaxReaderHeight() {
+  const wrap = document.querySelector(".live-reader-reader-wrap");
+  const panel = document.querySelector(".live-reader-main-panel");
+  const page = document.querySelector(".live-reader-page");
+  const minHeight = 320;
+  const fallbackMax = 1200;
+  if (!wrap) return fallbackMax;
+  const rect = wrap.getBoundingClientRect();
+  const panelStyle = panel ? window.getComputedStyle(panel) : null;
+  const pageStyle = page ? window.getComputedStyle(page) : null;
+  const panelBottomPadding = panelStyle ? parseFloat(panelStyle.paddingBottom || "0") || 0 : 0;
+  const pageBottomPadding = pageStyle ? parseFloat(pageStyle.paddingBottom || "0") || 0 : 0;
+  const bottomReserve = panelBottomPadding + pageBottomPadding + 8;
+  return Math.max(minHeight, Math.floor(window.innerHeight - rect.top - bottomReserve));
+}
+
 function applyReaderSettings() {
   const width = getSavedNumber(WIDTH_KEY, 520, 140, 900);
-  const height = getSavedNumber(HEIGHT_KEY, 820, 320, 1200);
+  const maxReaderHeight = getMaxReaderHeight();
+  const height = getSavedNumber(HEIGHT_KEY, 820, 320, maxReaderHeight);
   const fontSize = getSavedNumber(FONT_SIZE_KEY, 28, 18, 42);
   const highlightIntensity = getSavedNumber(HIGHLIGHT_INTENSITY_KEY, 45, 0, 100) / 100;
   const followSensitivity = getSavedNumber(FOLLOW_SENSITIVITY_KEY, 60, 0, 240);
@@ -257,6 +274,7 @@ function applyReaderSettings() {
   document.getElementById("liveReaderWidthRange").value = String(width);
   document.getElementById("liveReaderWidthValue").textContent = `${width}px`;
   document.getElementById("liveReaderHeightRange").value = String(height);
+  document.getElementById("liveReaderHeightRange").max = String(maxReaderHeight);
   document.getElementById("liveReaderHeightValue").textContent = `${height}px`;
   document.getElementById("liveReaderFontSizeRange").value = String(fontSize);
   document.getElementById("liveReaderFontSizeValue").textContent = `${fontSize}px`;
@@ -1097,6 +1115,7 @@ function bindEvents() {
     updateInstallButtonVisibility();
   });
   window.matchMedia("(display-mode: standalone)").addEventListener?.("change", updateInstallButtonVisibility);
+  window.addEventListener("resize", applyReaderSettings);
   document.getElementById("liveReaderNovelSelect")?.addEventListener("change", async (event) => {
     await switchNovel(event.target.value);
   });
