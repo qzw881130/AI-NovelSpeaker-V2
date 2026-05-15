@@ -260,11 +260,16 @@ function applyReaderSettings() {
   const followSensitivity = getSavedNumber(FOLLOW_SENSITIVITY_KEY, 60, 0, 240);
   const followSmoothness = getSavedNumber(FOLLOW_SMOOTHNESS_KEY, 45, 10, 100);
   const content = document.getElementById("liveReaderContent");
+  const progressTrack = document.getElementById("liveReaderProgressTrack");
   const wrap = document.querySelector(".live-reader-reader-wrap");
   if (content) {
     content.style.width = `${width}px`;
     content.style.maxWidth = `${width}px`;
     content.style.fontSize = `${fontSize}px`;
+  }
+  if (progressTrack) {
+    progressTrack.style.width = `${width}px`;
+    progressTrack.style.maxWidth = `${width}px`;
   }
   if (wrap) {
     wrap.style.height = `${height}px`;
@@ -289,6 +294,16 @@ function applyReaderSettings() {
   document.getElementById("liveReaderHighlight").checked = getSavedBool(HIGHLIGHT_KEY, true);
   document.documentElement.style.setProperty("--live-highlight-alpha", String(highlightIntensity));
   document.documentElement.style.setProperty("--live-paragraph-alpha", String(Math.max(0, highlightIntensity * 0.45)));
+}
+
+function updateReaderProgressBar() {
+  const player = document.getElementById("liveReaderAudioPlayer");
+  const fill = document.getElementById("liveReaderProgressFill");
+  if (!player || !fill) return;
+  const duration = Number(player.duration || 0);
+  const currentTime = Number(player.currentTime || 0);
+  const ratio = duration > 0 ? Math.max(0, Math.min(currentTime / duration, 1)) : 0;
+  fill.style.width = `${ratio * 100}%`;
 }
 
 function getFollowSensitivity() {
@@ -1059,6 +1074,7 @@ async function loadChapter(chapterNum, options = {}) {
     player.removeAttribute("src");
     player.load();
   }
+  updateReaderProgressBar();
   resetReaderScroll();
   updateSegmentHighlight(true);
   setStatus(asrSegments.length ? "已加载精准时间轴" : "就绪");
@@ -1203,12 +1219,19 @@ function bindEvents() {
   });
   const player = document.getElementById("liveReaderAudioPlayer");
   player?.addEventListener("timeupdate", scheduleTimeUpdate);
+  player?.addEventListener("timeupdate", updateReaderProgressBar);
+  player?.addEventListener("loadedmetadata", updateReaderProgressBar);
   player?.addEventListener("play", () => {
     setStatus("播放中");
+    updateReaderProgressBar();
     updateSegmentHighlight(true);
   });
-  player?.addEventListener("pause", () => setStatus("已暂停"));
+  player?.addEventListener("pause", () => {
+    setStatus("已暂停");
+    updateReaderProgressBar();
+  });
   player?.addEventListener("ended", async () => {
+    updateReaderProgressBar();
     updateSegmentHighlight(true);
     setStatus("播放结束");
     if (document.getElementById("liveReaderAutoNext")?.checked) {

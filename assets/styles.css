@@ -751,6 +751,33 @@ textarea {
   overflow: auto;
 }
 
+.bundle-estimate-wrap {
+  margin-top: 10px;
+}
+
+.bundle-estimate-table {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0 12px;
+}
+
+.bundle-estimate-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fffdf8;
+}
+
+.bundle-estimate-row.active {
+  border-color: #d9b898;
+  background: #fff8ef;
+  box-shadow: inset 0 0 0 1px rgba(164, 74, 28, 0.08);
+}
+
 .bundle-item {
   display: flex;
   align-items: center;
@@ -2619,6 +2646,24 @@ menu {
   box-sizing: border-box;
   scrollbar-width: none;
   -ms-overflow-style: none;
+}
+
+.live-reader-progress-track {
+  position: relative;
+  height: 4px;
+  margin: 0 auto -4px;
+  border-radius: 999px;
+  background: rgba(169, 127, 90, 0.18);
+  overflow: hidden;
+  z-index: 2;
+}
+
+.live-reader-progress-fill {
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #bc5b23 0%, #d48a4f 100%);
+  transition: width 0.12s linear;
 }
 
 .live-reader-frame-title {
