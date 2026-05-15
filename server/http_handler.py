@@ -71,12 +71,88 @@ def _build_bundle_record(zip_path: Path) -> dict:
         "fileName": zip_path.name,
         "sizeBytes": int(stat.st_size),
         "createdAt": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+        "audioPreset": _detect_bundle_audio_preset(zip_path.name),
     }
+
+
+BUNDLE_AUDIO_PRESETS = {
+    "lossless": {"suffix": "lossless", "audio_ext": ".flac", "codec": None, "bitrate": None, "channels": None},
+    "mp3-128k": {"suffix": "mp3-128k", "audio_ext": ".mp3", "codec": "libmp3lame", "bitrate": "128k", "channels": None},
+    "mp3-96k": {"suffix": "mp3-96k", "audio_ext": ".mp3", "codec": "libmp3lame", "bitrate": "96k", "channels": None},
+    "mp3-64k": {"suffix": "mp3-64k", "audio_ext": ".mp3", "codec": "libmp3lame", "bitrate": "64k", "channels": None},
+    "mp3-48k-mono": {"suffix": "mp3-48k-mono", "audio_ext": ".mp3", "codec": "libmp3lame", "bitrate": "48k", "channels": 1},
+}
+
+BUNDLE_TASKS_LOCK = threading.Lock()
+BUNDLE_TASKS: dict[int, dict] = {}
+
+
+def _normalize_bundle_audio_preset(value: str) -> str:
+    preset = str(value or "lossless").strip().lower()
+    return preset if preset in BUNDLE_AUDIO_PRESETS else "lossless"
+
+
+def _get_bundle_task_status(novel_id: int) -> dict | None:
+    with BUNDLE_TASKS_LOCK:
+        task = BUNDLE_TASKS.get(int(novel_id))
+        return dict(task) if task else None
+
+
+def _set_bundle_task_status(novel_id: int, **updates) -> dict:
+    with BUNDLE_TASKS_LOCK:
+        current = dict(BUNDLE_TASKS.get(int(novel_id)) or {})
+        current.update(updates)
+        BUNDLE_TASKS[int(novel_id)] = current
+        return dict(current)
+
+
+def _detect_bundle_audio_preset(file_name: str) -> str:
+    text = str(file_name or "")
+    for key, preset in BUNDLE_AUDIO_PRESETS.items():
+        suffix = str(preset["suffix"])
+        if f"-{suffix}-" in text:
+            return key
+    return "lossless"
+
+
+def _bundle_temp_dir(english_dir: str, stamp: str) -> Path:
+    path = ROOT_DIR / "temp" / "bundle-build" / english_dir / stamp
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _transcode_bundle_audio(src_path: Path, out_path: Path, audio_preset: str) -> None:
+    preset = BUNDLE_AUDIO_PRESETS[_normalize_bundle_audio_preset(audio_preset)]
+    codec = preset.get("codec")
+    if not codec:
+        shutil.copy2(src_path, out_path)
+        return
+    command = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(src_path),
+        "-vn",
+        "-codec:a",
+        str(codec),
+        "-b:a",
+        str(preset["bitrate"]),
+    ]
+    if preset.get("channels"):
+        command.extend(["-ac", str(int(preset["channels"]))])
+    command.append(str(out_path))
+    subprocess.run(
+        command,
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
 
 
 def _get_novel_bundle_entries(
     novel_id: int,
-) -> tuple[bool, str, str, list[tuple[Path, Path]]]:
+    audio_preset: str = "lossless",
+) -> tuple[bool, str, str, list[dict]]:
     conn = db_conn()
     row = conn.execute(
         "SELECT id,name,english_dir FROM novels WHERE id=?",
@@ -101,39 +177,142 @@ def _get_novel_bundle_entries(
     if not english_dir:
         return False, "novel english_dir missing", "", []
 
-    bundle_entries: list[tuple[Path, Path]] = []
+    preset = BUNDLE_AUDIO_PRESETS[_normalize_bundle_audio_preset(audio_preset)]
+    bundle_entries: list[dict] = []
     for chapter in chapters:
         chapter_num = int(chapter["chapter_num"] or 0)
         title = str(chapter["title"] or "")
         text_name = safe_chapter_file_name(chapter_num, title)
-        audio_name = text_name.replace(".txt", ".flac")
+        audio_name = text_name.replace(".txt", str(preset["audio_ext"]))
 
         text_src = _resolve_storage_path(str(chapter["text_file_path"] or ""))
-        if text_src and text_src.exists() and text_src.is_file():
-            arc = Path(english_dir) / "text" / text_name
-            bundle_entries.append((text_src, arc))
+        if not (text_src and text_src.exists() and text_src.is_file()):
+            text_src = None
 
         audio_src = resolve_audio_file(chapter)
-        if audio_src and audio_src.exists() and audio_src.is_file():
-            arc = Path(english_dir) / "audio" / audio_name
-            bundle_entries.append((audio_src, arc))
+        if not (audio_src and audio_src.exists() and audio_src.is_file()):
+            audio_src = None
+
+        if text_src or audio_src:
+            bundle_entries.append(
+                {
+                    "chapterNum": chapter_num,
+                    "textSrc": text_src,
+                    "textArc": Path(english_dir) / "text" / text_name,
+                    "audioSrc": audio_src,
+                    "audioArc": Path(english_dir) / "audio" / audio_name,
+                }
+            )
 
     if not bundle_entries:
         return False, "novel text/audio files not found", english_dir, []
     return True, "ok", english_dir, bundle_entries
 
 
-def _create_novel_bundle_file(novel_id: int) -> tuple[bool, str, dict | None]:
-    ok, msg, english_dir, bundle_entries = _get_novel_bundle_entries(novel_id)
+def _create_novel_bundle_file(
+    novel_id: int, audio_preset: str = "lossless"
+) -> tuple[bool, str, dict | None]:
+    audio_preset = _normalize_bundle_audio_preset(audio_preset)
+    ok, msg, english_dir, bundle_entries = _get_novel_bundle_entries(novel_id, audio_preset)
     if not ok:
         return False, msg, None
 
-    out_name = f"{english_dir}-{datetime.now().strftime('%Y-%m-%d_%H%M%S')}.zip"
+    stamp = datetime.now().strftime('%Y-%m-%d_%H%M%S')
+    suffix = str(BUNDLE_AUDIO_PRESETS[audio_preset]["suffix"])
+    out_name = f"{english_dir}-{suffix}-{stamp}.zip"
     zip_path = _bundle_output_dir() / out_name
-    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        for src_path, arcname in bundle_entries:
-            zf.write(src_path, arcname=str(arcname))
+    temp_dir = _bundle_temp_dir(english_dir, stamp)
+    try:
+        with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for entry in bundle_entries:
+                text_src = entry.get("textSrc")
+                audio_src = entry.get("audioSrc")
+                if text_src:
+                    zf.write(text_src, arcname=str(entry["textArc"]))
+                if audio_src:
+                    target_path = audio_src
+                    if audio_preset != "lossless":
+                        target_path = temp_dir / Path(str(entry["audioArc"])).name
+                        _transcode_bundle_audio(audio_src, target_path, audio_preset)
+                    zf.write(target_path, arcname=str(entry["audioArc"]))
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
     return True, "created", _build_bundle_record(zip_path)
+
+
+def _run_novel_bundle_task(novel_id: int, audio_preset: str) -> None:
+    try:
+        ok, msg, english_dir, bundle_entries = _get_novel_bundle_entries(novel_id, audio_preset)
+        if not ok:
+            _set_bundle_task_status(novel_id, status="failed", error=msg)
+            return
+
+        audio_preset = _normalize_bundle_audio_preset(audio_preset)
+        stamp = datetime.now().strftime('%Y-%m-%d_%H%M%S')
+        suffix = str(BUNDLE_AUDIO_PRESETS[audio_preset]["suffix"])
+        out_name = f"{english_dir}-{suffix}-{stamp}.zip"
+        zip_path = _bundle_output_dir() / out_name
+        temp_dir = _bundle_temp_dir(english_dir, stamp)
+        total = len(bundle_entries)
+        _set_bundle_task_status(
+            novel_id,
+            status="running",
+            current=0,
+            total=total,
+            fileName=out_name,
+            error="",
+            audioPreset=audio_preset,
+        )
+        try:
+            with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+                for index, entry in enumerate(bundle_entries, start=1):
+                    text_src = entry.get("textSrc")
+                    audio_src = entry.get("audioSrc")
+                    if text_src:
+                        zf.write(text_src, arcname=str(entry["textArc"]))
+                    if audio_src:
+                        target_path = audio_src
+                        if audio_preset != "lossless":
+                            target_path = temp_dir / Path(str(entry["audioArc"])).name
+                            _transcode_bundle_audio(audio_src, target_path, audio_preset)
+                        zf.write(target_path, arcname=str(entry["audioArc"]))
+                    _set_bundle_task_status(novel_id, current=index)
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+        _set_bundle_task_status(
+            novel_id,
+            status="completed",
+            current=total,
+            total=total,
+            bundle=_build_bundle_record(zip_path),
+        )
+    except Exception as exc:
+        _set_bundle_task_status(novel_id, status="failed", error=str(exc))
+
+
+def _start_novel_bundle_task(novel_id: int, audio_preset: str) -> tuple[bool, str, dict | None]:
+    current = _get_bundle_task_status(novel_id)
+    if current and current.get("status") == "running":
+        return True, "running", current
+    audio_preset = _normalize_bundle_audio_preset(audio_preset)
+    task = _set_bundle_task_status(
+        novel_id,
+        status="queued",
+        current=0,
+        total=0,
+        error="",
+        audioPreset=audio_preset,
+        startedAt=datetime.now().isoformat(),
+        bundle=None,
+        fileName="",
+    )
+    threading.Thread(
+        target=_run_novel_bundle_task,
+        args=(int(novel_id), audio_preset),
+        daemon=True,
+    ).start()
+    return True, "started", task
 
 
 def _list_novel_bundle_files(novel_id: int) -> tuple[bool, str, str, list[dict]]:
@@ -503,6 +682,21 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": msg}, code)
                 return
             self.send_json({"bundles": bundles})
+            return
+
+        m_bundle_status = re.match(r"^/api/novels/(\d+)/bundles/status$", route)
+        if m_bundle_status:
+            novel_id = int(m_bundle_status.group(1))
+            task = _get_bundle_task_status(novel_id) or {
+                "status": "idle",
+                "current": 0,
+                "total": 0,
+                "error": "",
+                "audioPreset": "lossless",
+                "fileName": "",
+                "bundle": None,
+            }
+            self.send_json({"task": task})
             return
 
         m_bundle_file = re.match(r"^/api/novels/(\d+)/bundles/(.+)$", route)
@@ -1273,12 +1467,14 @@ class Handler(BaseHTTPRequestHandler):
         m_bundle_create = re.match(r"^/api/novels/(\d+)/bundles$", route)
         if m_bundle_create:
             novel_id = int(m_bundle_create.group(1))
-            ok, msg, record = _create_novel_bundle_file(novel_id)
-            if not ok or not record:
+            body = self.read_json()
+            audio_preset = str(body.get("audioPreset") or "lossless").strip()
+            ok, msg, task = _start_novel_bundle_task(novel_id, audio_preset)
+            if not ok or not task:
                 code = 404 if "not found" in msg else 400
                 self.send_json({"error": msg}, code)
                 return
-            self.send_json({"status": "created", "bundle": record})
+            self.send_json({"status": msg, "task": task})
             return
 
         m_role_bundle_create = re.match(

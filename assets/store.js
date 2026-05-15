@@ -189,12 +189,17 @@ async function listNovelBundles(novelId) {
   return data.bundles || [];
 }
 
-async function createNovelBundle(novelId) {
+async function createNovelBundle(novelId, options = {}) {
   const data = await api(`/api/novels/${Number(novelId)}/bundles`, {
     method: "POST",
-    body: "{}",
+    body: JSON.stringify({ audioPreset: String(options.audioPreset || "lossless") }),
   });
-  return data.bundle || null;
+  return data.task || null;
+}
+
+async function fetchNovelBundleStatus(novelId) {
+  const data = await api(`/api/novels/${Number(novelId)}/bundles/status`);
+  return data.task || null;
 }
 
 async function downloadNovelBundleFile(novelId, fileName) {
@@ -753,6 +758,7 @@ export {
   saveNovel,
   listNovelBundles,
   createNovelBundle,
+  fetchNovelBundleStatus,
   listRoleVoiceBundles,
   createRoleVoiceBundle,
   deleteNovelBundleFile,

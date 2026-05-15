@@ -4,6 +4,7 @@ import {
   deleteNovel,
   deleteNovelBundleFile,
   downloadNovelBundleFile,
+  fetchNovelBundleStatus,
   getActiveNovelId,
   getData,
   listNovelBundles,
@@ -19,6 +20,32 @@ let refreshTimer = null;
 let currentData = { novels: [], prompts: [], workflows: [] };
 const REFRESH_INTERVAL_KEY = "ai_novel_index_refresh_interval";
 let activeBundleNovelId = "";
+let bundleTaskTimer = 0;
+
+function setBundleControlsBusy(busy) {
+  const btn = document.getElementById("bundleCreateBtn");
+  const presetSelect = document.getElementById("bundleAudioPresetSelect");
+  if (btn) {
+    btn.disabled = Boolean(busy);
+    btn.textContent = busy ? translateText("打包中...") : translateText("打包");
+  }
+  if (presetSelect) presetSelect.disabled = Boolean(busy);
+}
+
+const BUNDLE_AUDIO_PRESET_LABELS = {
+  lossless: "无损格式",
+  "mp3-128k": "MP3 128k【高音质】",
+  "mp3-96k": "MP3 96k【推荐】",
+  "mp3-64k": "MP3 64k【有声书最佳平衡】",
+  "mp3-48k-mono": "MP3 48k Mono【老人机神器】",
+};
+
+const BUNDLE_AUDIO_PRESET_BITRATES = {
+  "mp3-128k": 128000,
+  "mp3-96k": 96000,
+  "mp3-64k": 64000,
+  "mp3-48k-mono": 48000,
+};
 
 function isValidEnglishDir(value) {
   return /^[A-Za-z0-9_]{1,25}$/.test(String(value || ""));
@@ -190,19 +217,75 @@ function closeNovelModal() {
 async function openBundleModal(novel) {
   activeBundleNovelId = String(novel.id);
   document.getElementById("bundleModalTitle").textContent = `${novel.name} - ${translateText("打包下载")}`;
+  const presetSelect = document.getElementById("bundleAudioPresetSelect");
+  if (presetSelect && !presetSelect.value) presetSelect.value = "lossless";
+  updateBundleEstimate();
   document.getElementById("bundleList").innerHTML = `<p class="empty-text">${translateText("加载中...")}</p>`;
   document.getElementById("bundleModal").showModal();
-  await refreshBundleList();
+  const task = await syncBundleTaskStatus({ silent: true });
+  const status = String(task?.status || "idle");
+  if (status !== "queued" && status !== "running") {
+    await refreshBundleList();
+  } else {
+    startBundleTaskPolling();
+  }
 }
 
 function closeBundleModal() {
+  if (bundleTaskTimer) {
+    window.clearInterval(bundleTaskTimer);
+    bundleTaskTimer = 0;
+  }
   document.getElementById("bundleModal").close();
 }
 
-function setBundleListLoading() {
+function setBundleListLoading(task = null) {
   const listEl = document.getElementById("bundleList");
   if (!listEl) return;
-  listEl.innerHTML = `<p class="empty-text">${translateText("打包中...")}</p>`;
+  const current = Number(task?.current || 0);
+  const total = Number(task?.total || 0);
+  const progressText = total > 0 ? ` ${current}/${total}` : "";
+  listEl.innerHTML = `<p class="empty-text">${translateText("打包中...")}${progressText}</p>`;
+}
+
+function stopBundleTaskPolling() {
+  if (!bundleTaskTimer) return;
+  window.clearInterval(bundleTaskTimer);
+  bundleTaskTimer = 0;
+}
+
+async function syncBundleTaskStatus(options = {}) {
+  const task = await fetchNovelBundleStatus(activeBundleNovelId);
+  if (!task) return null;
+  const status = String(task.status || "idle");
+  if (status === "queued" || status === "running") {
+    setBundleControlsBusy(true);
+    setBundleListLoading(task);
+    return task;
+  }
+  stopBundleTaskPolling();
+  setBundleControlsBusy(false);
+  if (status === "completed") {
+    if (!options.silent) toast(t("toast.created"));
+    await refreshBundleList();
+    return task;
+  }
+  if (status === "failed") {
+    document.getElementById("bundleList").innerHTML = `<p class="empty-text">打包失败：${task.error || "未知错误"}</p>`;
+    return task;
+  }
+  await refreshBundleList();
+  return task;
+}
+
+function startBundleTaskPolling() {
+  stopBundleTaskPolling();
+  bundleTaskTimer = window.setInterval(() => {
+    if (!activeBundleNovelId) return;
+    syncBundleTaskStatus({ silent: true }).catch(() => {
+      // ignore
+    });
+  }, 1000);
 }
 
 async function refreshBundleList() {
@@ -221,7 +304,7 @@ async function refreshBundleList() {
         <div class="bundle-item">
           <div>
             <strong>${bundle.fileName}</strong>
-            <p class="meta">${translateText("创建时间")} ${fmtDateTime(bundle.createdAt)} · ${bytesToText(bundle.sizeBytes)}</p>
+            <p class="meta">${escapeBundlePresetLabel(bundle.audioPreset)} · ${translateText("创建时间")} ${fmtDateTime(bundle.createdAt)} · ${bytesToText(bundle.sizeBytes)}</p>
           </div>
           <div class="bundle-item-actions">
             <button class="ghost-btn bundle-download-btn" data-file="${bundle.fileName}" type="button">${translateText("下载")}</button>
@@ -257,6 +340,54 @@ async function refreshBundleList() {
   } catch (err) {
     listEl.innerHTML = `<p class="empty-text">${err.message}</p>`;
   }
+}
+
+function escapeBundlePresetLabel(audioPreset) {
+  const text = BUNDLE_AUDIO_PRESET_LABELS[String(audioPreset || "lossless")] || String(audioPreset || "无损格式");
+  const div = document.createElement("div");
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function getActiveBundleNovel() {
+  return currentData.novels.find((item) => String(item.id) === String(activeBundleNovelId)) || null;
+}
+
+function estimateBundleSizeBytes(novel, audioPreset) {
+  if (!novel) return 0;
+  const txtBytes = Number(novel.storage?.txtBytes || 0);
+  if (audioPreset === "lossless") {
+    return txtBytes + Number(novel.storage?.audioBytes || 0);
+  }
+  const bitrate = Number(BUNDLE_AUDIO_PRESET_BITRATES[audioPreset] || 0);
+  const totalSeconds = Number(novel.totalAudioDurationSeconds || 0);
+  const audioBytes = bitrate > 0 ? Math.ceil((totalSeconds * bitrate) / 8) : 0;
+  return txtBytes + audioBytes;
+}
+
+function updateBundleEstimate() {
+  const el = document.getElementById("bundleEstimateMeta");
+  const presetSelect = document.getElementById("bundleAudioPresetSelect");
+  const novel = getActiveBundleNovel();
+  if (!el || !presetSelect || !novel) return;
+  const audioPreset = String(presetSelect.value || "lossless");
+  const rows = Object.keys(BUNDLE_AUDIO_PRESET_LABELS)
+    .map((key) => {
+      const active = key === audioPreset ? " active" : "";
+      const label = BUNDLE_AUDIO_PRESET_LABELS[key] || key;
+      const estimatedBytes = estimateBundleSizeBytes(novel, key);
+      return `
+        <div class="bundle-estimate-row${active}">
+          <span>${label}</span>
+          <strong>${bytesToText(estimatedBytes)}</strong>
+        </div>
+      `;
+    })
+    .join("");
+  el.innerHTML = `
+    <p class="meta">预估体积对比</p>
+    <div class="bundle-estimate-table">${rows}</div>
+  `;
 }
 
 async function onNovelAction(action, id) {
@@ -342,25 +473,24 @@ function bindEvents() {
   document.getElementById("novelKeyword").addEventListener("input", renderNovelCards);
   document.getElementById("novelSort").addEventListener("change", renderNovelCards);
   document.getElementById("autoRefreshSelect").addEventListener("change", applyAutoRefresh);
+  document.getElementById("bundleAudioPresetSelect").addEventListener("change", updateBundleEstimate);
   document.getElementById("novelCancelBtn").addEventListener("click", closeNovelModal);
   document.getElementById("bundleCloseBtn").addEventListener("click", closeBundleModal);
   document.getElementById("bundleCreateBtn").addEventListener("click", async () => {
     if (!activeBundleNovelId) return;
-    const btn = document.getElementById("bundleCreateBtn");
-    btn.disabled = true;
-    const previousText = btn.textContent;
-    btn.textContent = translateText("打包中...");
+    const presetSelect = document.getElementById("bundleAudioPresetSelect");
+    const audioPreset = String(presetSelect?.value || "lossless");
+    setBundleControlsBusy(true);
     setBundleListLoading();
     try {
-      await createNovelBundle(activeBundleNovelId);
-      toast(t("toast.created"));
-      await refreshBundleList();
+      const task = await createNovelBundle(activeBundleNovelId, { audioPreset });
+      setBundleListLoading(task);
+      startBundleTaskPolling();
+      await syncBundleTaskStatus({ silent: true });
     } catch (err) {
+      setBundleControlsBusy(false);
       toast(t("error.operationFailed", { msg: err.message }));
       await refreshBundleList();
-    } finally {
-      btn.disabled = false;
-      btn.textContent = previousText;
     }
   });
 

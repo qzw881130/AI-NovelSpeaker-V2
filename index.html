@@ -121,6 +121,17 @@
     <dialog id="bundleModal" class="modal">
       <form method="dialog">
         <h3 id="bundleModalTitle">打包下载</h3>
+        <label>
+          音频格式
+          <select id="bundleAudioPresetSelect">
+            <option value="lossless">无损格式</option>
+            <option value="mp3-128k">MP3 128k【高音质】</option>
+            <option value="mp3-96k">MP3 96k【推荐】</option>
+            <option value="mp3-64k">MP3 64k【有声书最佳平衡】</option>
+            <option value="mp3-48k-mono">MP3 48k Mono【老人机神器】</option>
+          </select>
+        </label>
+        <div id="bundleEstimateMeta" class="bundle-estimate-wrap"></div>
         <div id="bundleList" class="bundle-list"></div>
         <menu>
           <button id="bundleCreateBtn" class="primary-btn" type="button">打包</button>
