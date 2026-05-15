@@ -13,6 +13,8 @@ const FOLLOW_SENSITIVITY_KEY = "ai_novel_live_reader_follow_sensitivity";
 const FOLLOW_SMOOTHNESS_KEY = "ai_novel_live_reader_follow_smoothness";
 const CONTROLS_COLLAPSED_KEY = "ai_novel_live_reader_controls_collapsed";
 const PLAYLIST_COLLAPSED_KEY = "ai_novel_live_reader_playlist_collapsed";
+const TOP_SAFE_OFFSET_KEY = "ai_novel_live_reader_top_safe_offset";
+const DEFAULT_READER_TOP_SAFE_OFFSET = 72;
 let deferredInstallPrompt = null;
 
 let allNovels = [];
@@ -259,6 +261,7 @@ function applyReaderSettings() {
   const highlightIntensity = getSavedNumber(HIGHLIGHT_INTENSITY_KEY, 45, 0, 100) / 100;
   const followSensitivity = getSavedNumber(FOLLOW_SENSITIVITY_KEY, 60, 0, 240);
   const followSmoothness = getSavedNumber(FOLLOW_SMOOTHNESS_KEY, 45, 10, 100);
+  const topSafeOffset = getSavedNumber(TOP_SAFE_OFFSET_KEY, DEFAULT_READER_TOP_SAFE_OFFSET, 0, 180);
   const content = document.getElementById("liveReaderContent");
   const progressTrack = document.getElementById("liveReaderProgressTrack");
   const wrap = document.querySelector(".live-reader-reader-wrap");
@@ -289,11 +292,17 @@ function applyReaderSettings() {
   document.getElementById("liveReaderFollowSensitivityValue").textContent = `${followSensitivity}px`;
   document.getElementById("liveReaderFollowSmoothnessRange").value = String(followSmoothness);
   document.getElementById("liveReaderFollowSmoothnessValue").textContent = `${followSmoothness}%`;
+  document.getElementById("liveReaderTopSafeOffsetRange").value = String(topSafeOffset);
+  document.getElementById("liveReaderTopSafeOffsetValue").textContent = `${topSafeOffset}px`;
   document.getElementById("liveReaderAutoNext").checked = getSavedBool(AUTO_NEXT_KEY, true);
   document.getElementById("liveReaderAutoScroll").checked = getSavedBool(AUTO_SCROLL_KEY, true);
   document.getElementById("liveReaderHighlight").checked = getSavedBool(HIGHLIGHT_KEY, true);
   document.documentElement.style.setProperty("--live-highlight-alpha", String(highlightIntensity));
   document.documentElement.style.setProperty("--live-paragraph-alpha", String(Math.max(0, highlightIntensity * 0.45)));
+}
+
+function getReaderTopSafeOffset() {
+  return getSavedNumber(TOP_SAFE_OFFSET_KEY, DEFAULT_READER_TOP_SAFE_OFFSET, 0, 180);
 }
 
 function updateReaderProgressBar() {
@@ -991,9 +1000,11 @@ function updateSegmentHighlight(force = false) {
   if (!enableHighlight) activeEl.classList.remove("active");
   if (autoScroll && paragraphEl) {
     const sensitivity = getFollowSensitivity();
+    const topSafeOffset = getReaderTopSafeOffset();
+    const visibleHeight = Math.max(80, wrap.clientHeight - topSafeOffset);
     const targetTop = Math.max(
       0,
-      activeEl.offsetTop - (wrap.clientHeight - activeEl.offsetHeight) / 2
+      activeEl.offsetTop - topSafeOffset - (visibleHeight - activeEl.offsetHeight) / 2
     );
     const diff = Math.abs(wrap.scrollTop - targetTop);
     if (diff > sensitivity) {
@@ -1199,6 +1210,10 @@ function bindEvents() {
   });
   document.getElementById("liveReaderFollowSmoothnessRange")?.addEventListener("input", (event) => {
     localStorage.setItem(FOLLOW_SMOOTHNESS_KEY, String(event.target.value || 45));
+    applyReaderSettings();
+  });
+  document.getElementById("liveReaderTopSafeOffsetRange")?.addEventListener("input", (event) => {
+    localStorage.setItem(TOP_SAFE_OFFSET_KEY, String(event.target.value || DEFAULT_READER_TOP_SAFE_OFFSET));
     applyReaderSettings();
   });
   document.getElementById("liveReaderAutoNext")?.addEventListener("change", (event) => {
