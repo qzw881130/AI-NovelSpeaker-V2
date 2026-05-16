@@ -279,6 +279,8 @@ def migrate_chapter_asr_tasks_table(conn: sqlite3.Connection) -> None:
             status TEXT NOT NULL DEFAULT 'pending',
             progress INTEGER NOT NULL DEFAULT 0,
             audio_file_path TEXT NOT NULL DEFAULT '',
+            audio_file_md5 TEXT NOT NULL DEFAULT '',
+            force_extract INTEGER NOT NULL DEFAULT 0,
             asr_file_path TEXT NOT NULL DEFAULT '',
             language TEXT NOT NULL DEFAULT '',
             extracted_text TEXT NOT NULL DEFAULT '',
@@ -305,6 +307,14 @@ def migrate_chapter_asr_tasks_table(conn: sqlite3.Connection) -> None:
     if "total_chunk_count" not in column_names:
         conn.execute(
             "ALTER TABLE chapter_asr_tasks ADD COLUMN total_chunk_count INTEGER NOT NULL DEFAULT 0"
+        )
+    if "audio_file_md5" not in column_names:
+        conn.execute(
+            "ALTER TABLE chapter_asr_tasks ADD COLUMN audio_file_md5 TEXT NOT NULL DEFAULT ''"
+        )
+    if "force_extract" not in column_names:
+        conn.execute(
+            "ALTER TABLE chapter_asr_tasks ADD COLUMN force_extract INTEGER NOT NULL DEFAULT 0"
         )
 
 

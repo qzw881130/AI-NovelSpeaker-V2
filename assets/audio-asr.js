@@ -19,6 +19,10 @@ const selectedChapterNums = new Set();
 let autoRefreshTimer = 0;
 let isDragSelecting = false;
 
+function isForceExtractEnabled() {
+  return Boolean(document.getElementById("audioAsrForceExtract")?.checked);
+}
+
 function renderTaskWorkerStatus(status) {
   const el = document.getElementById("audioAsrWorkerStatus");
   if (!el) return;
@@ -249,8 +253,14 @@ async function refreshPage() {
 }
 
 async function enqueueSingle(chapterNum) {
-  await enqueueChapterAudioAsr(activeNovel.id, chapterNum);
-  toast(`第 ${chapterNum} 回已加入 ASR 队列`);
+  const result = await enqueueChapterAudioAsr(activeNovel.id, chapterNum, {
+    forceExtract: isForceExtractEnabled(),
+  });
+  if (String(result.status || "") === "skipped") {
+    toast(`第 ${chapterNum} 回已跳过，音频无变化`);
+  } else {
+    toast(`第 ${chapterNum} 回已加入 ASR 队列`);
+  }
   await refreshPage();
 }
 
@@ -265,8 +275,17 @@ async function enqueueBatch(chapterNums) {
     toast("请先选择要提取的章回");
     return;
   }
-  const result = await enqueueBatchAudioAsr(activeNovel.id, chapterNums);
-  toast(`已入队 ${Number(result.queued || 0)} 回，跳过 ${Number(result.skipped || 0)} 回`);
+  const result = await enqueueBatchAudioAsr(activeNovel.id, chapterNums, {
+    forceExtract: isForceExtractEnabled(),
+  });
+  const queued = Number(result.queued || 0);
+  const skipped = Number(result.skipped || 0);
+  const skippedUnchanged = Number(result.skippedUnchanged || 0);
+  if (queued <= 0 && skippedUnchanged > 0 && skipped === skippedUnchanged) {
+    toast(`已跳过 ${skippedUnchanged} 回，音频无变化`);
+  } else {
+    toast(`已入队 ${queued} 回，跳过 ${skipped} 回`);
+  }
   await refreshPage();
 }
 

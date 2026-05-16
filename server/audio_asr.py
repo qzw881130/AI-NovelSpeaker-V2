@@ -15,6 +15,7 @@ from .services import (
     comfy_request_json,
     comfy_upload_input_file,
     create_workflow_log,
+    file_md5_hex,
     fetch_settings,
     probe_audio_duration_seconds,
     safe_chapter_file_name,
@@ -37,6 +38,14 @@ def _chapter_asr_output_path(english_dir: str, chapter_num: int, title: str) -> 
     name = safe_chapter_file_name(chapter_num, title)
     stem = name[:-4] if name.endswith(".txt") else name
     return _novel_asr_output_dir(english_dir) / f"{stem}.asr"
+
+
+def _asr_output_exists(rel_path: str) -> bool:
+    rel = str(rel_path or "").strip()
+    if not rel:
+        return False
+    file_path = (ROOT_DIR / rel).resolve()
+    return bool(file_path.exists() and file_path.is_file())
 
 
 def _extract_text_output_from_history(
@@ -416,7 +425,9 @@ def list_audio_asr_chapters(novel_id: int) -> list[dict]:
     return items
 
 
-def enqueue_chapter_audio_asr_task(novel_id: int, chapter_id: int) -> tuple[bool, str]:
+def enqueue_chapter_audio_asr_task(
+    novel_id: int, chapter_id: int, *, force_extract: bool = False
+) -> tuple[bool, str, dict]:
     conn = db_conn()
     row = conn.execute(
         "SELECT chapter_num, title, audio_file_path FROM chapters WHERE novel_id=? AND id=?",
@@ -424,30 +435,48 @@ def enqueue_chapter_audio_asr_task(novel_id: int, chapter_id: int) -> tuple[bool
     ).fetchone()
     if not row:
         conn.close()
-        return False, "chapter not found"
-    if not str(row["audio_file_path"] or "").strip():
+        return False, "chapter not found", {"action": "error"}
+    audio_rel_path = str(row["audio_file_path"] or "").strip()
+    if not audio_rel_path:
         conn.close()
-        return False, "chapter audio not found"
+        return False, "chapter audio not found", {"action": "error"}
+    audio_path = (ROOT_DIR / audio_rel_path).resolve()
+    if not audio_path.exists() or not audio_path.is_file():
+        conn.close()
+        return False, "chapter audio not found", {"action": "error"}
+    current_audio_md5 = file_md5_hex(audio_path)
     existing = conn.execute(
-        "SELECT status FROM chapter_asr_tasks WHERE novel_id=? AND chapter_id=?",
+        "SELECT status, audio_file_md5, asr_file_path FROM chapter_asr_tasks WHERE novel_id=? AND chapter_id=?",
         (novel_id, chapter_id),
     ).fetchone()
     if existing and str(existing["status"] or "") in {"pending", "running", "processing"}:
         conn.close()
-        return False, "audio asr task already queued"
+        return False, "audio asr task already queued", {"action": "error"}
+    if (
+        not force_extract
+        and existing
+        and str(existing["status"] or "") == "completed"
+        and str(existing["audio_file_md5"] or "").strip()
+        and str(existing["audio_file_md5"] or "").strip() == current_audio_md5
+        and _asr_output_exists(str(existing["asr_file_path"] or ""))
+    ):
+        conn.close()
+        return True, "audio unchanged", {"action": "skipped", "reason": "unchanged"}
     conn.execute(
         """
         INSERT INTO chapter_asr_tasks(
             novel_id, chapter_id, chapter_num, chapter_title, status, progress,
-            audio_file_path, asr_file_path, language, extracted_text, timestamps_text,
-            error_message, started_at, updated_at, current_chunk_index, total_chunk_count
-        ) VALUES(?,?,?,?, 'pending', 0, ?, '', '', '', '', '', NULL, CURRENT_TIMESTAMP, 0, 0)
+            audio_file_path, audio_file_md5, force_extract, asr_file_path, language,
+            extracted_text, timestamps_text, error_message, started_at, updated_at,
+            current_chunk_index, total_chunk_count
+        ) VALUES(?,?,?,?, 'pending', 0, ?, ?, ?, '', '', '', '', '', NULL, CURRENT_TIMESTAMP, 0, 0)
         ON CONFLICT(novel_id, chapter_id) DO UPDATE SET
             chapter_num=excluded.chapter_num,
             chapter_title=excluded.chapter_title,
             status='pending',
             progress=0,
             audio_file_path=excluded.audio_file_path,
+            force_extract=excluded.force_extract,
             current_chunk_index=0,
             total_chunk_count=0,
             error_message='',
@@ -459,15 +488,22 @@ def enqueue_chapter_audio_asr_task(novel_id: int, chapter_id: int) -> tuple[bool
             chapter_id,
             int(row["chapter_num"] or 0),
             str(row["title"] or ""),
-            str(row["audio_file_path"] or "").strip(),
+            audio_rel_path,
+            str(existing["audio_file_md5"] or "").strip() if existing else "",
+            1 if force_extract else 0,
         ),
     )
     conn.commit()
     conn.close()
-    return True, "queued"
+    return True, "queued", {"action": "queued"}
 
 
-def enqueue_batch_audio_asr_tasks(novel_id: int, chapter_nums: list[int] | None = None) -> tuple[bool, str, dict]:
+def enqueue_batch_audio_asr_tasks(
+    novel_id: int,
+    chapter_nums: list[int] | None = None,
+    *,
+    force_extract: bool = False,
+) -> tuple[bool, str, dict]:
     conn = db_conn()
     query = "SELECT id, chapter_num FROM chapters WHERE novel_id=? AND COALESCE(audio_file_path,'')<>''"
     params: list[Any] = [novel_id]
@@ -480,13 +516,28 @@ def enqueue_batch_audio_asr_tasks(novel_id: int, chapter_nums: list[int] | None 
     conn.close()
     queued = 0
     skipped = 0
+    skipped_unchanged = 0
     for row in rows:
-        ok, _ = enqueue_chapter_audio_asr_task(novel_id, int(row["id"]))
+        ok, _, data = enqueue_chapter_audio_asr_task(
+            novel_id,
+            int(row["id"]),
+            force_extract=force_extract,
+        )
         if ok:
-            queued += 1
+            if str((data or {}).get("action") or "") == "queued":
+                queued += 1
+            else:
+                skipped += 1
+                if str((data or {}).get("reason") or "") == "unchanged":
+                    skipped_unchanged += 1
         else:
             skipped += 1
-    return True, "ok", {"queued": queued, "skipped": skipped, "total": len(rows)}
+    return True, "ok", {
+        "queued": queued,
+        "skipped": skipped,
+        "skippedUnchanged": skipped_unchanged,
+        "total": len(rows),
+    }
 
 
 def cancel_chapter_audio_asr_task(novel_id: int, chapter_id: int) -> tuple[bool, str]:
@@ -552,7 +603,30 @@ def process_chapter_audio_asr_task(task_id: int) -> None:
         audio_path = (ROOT_DIR / audio_rel_path).resolve()
         if not audio_path.exists() or not audio_path.is_file():
             raise RuntimeError("chapter audio not found")
+        current_audio_md5 = file_md5_hex(audio_path)
         audio_duration_seconds = probe_audio_duration_seconds(audio_path)
+
+        if (
+            not bool(int(row["force_extract"] or 0))
+            and str(row["status"] or "") in {"pending", "running", "processing", "completed"}
+            and str(row["audio_file_md5"] or "").strip()
+            and str(row["audio_file_md5"] or "").strip() == current_audio_md5
+            and _asr_output_exists(str(row["asr_file_path"] or ""))
+        ):
+            conn = db_conn()
+            conn.execute(
+                """
+                UPDATE chapter_asr_tasks
+                SET status='completed', progress=100, error_message='', force_extract=0,
+                    current_chunk_index=0, total_chunk_count=0, updated_at=CURRENT_TIMESTAMP
+                WHERE id=?
+                """,
+                (task_id,),
+            )
+            conn.commit()
+            conn.close()
+            touch_task_worker_heartbeat(made_progress=True)
+            return
 
         workflow_id, workflow, workflow_io_config, workflow_name, workflow_category, workflow_log_enabled = _get_audio_asr_workflow(int(row["novel_id"]))
         if not workflow:
@@ -655,11 +729,14 @@ def process_chapter_audio_asr_task(task_id: int) -> None:
         conn.execute(
             """
             UPDATE chapter_asr_tasks
-            SET status='completed', progress=100, asr_file_path=?, language=?, extracted_text=?, timestamps_text=?, error_message='', current_chunk_index=?, total_chunk_count=?, updated_at=CURRENT_TIMESTAMP
+            SET status='completed', progress=100, asr_file_path=?, audio_file_md5=?, force_extract=0,
+                language=?, extracted_text=?, timestamps_text=?, error_message='',
+                current_chunk_index=?, total_chunk_count=?, updated_at=CURRENT_TIMESTAMP
             WHERE id=?
             """,
             (
                 rel_path,
+                current_audio_md5,
                 str(detected_language or "").strip(),
                 "\n".join(part for part in merged_text_parts if part).strip(),
                 "\n".join(merged_timestamp_lines).strip(),
@@ -677,7 +754,7 @@ def process_chapter_audio_asr_task(task_id: int) -> None:
         update_workflow_log_error(workflow_log_id, str(exc))
         conn = db_conn()
         conn.execute(
-            "UPDATE chapter_asr_tasks SET status='failed', error_message=?, current_chunk_index=0, total_chunk_count=0, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            "UPDATE chapter_asr_tasks SET status='failed', error_message=?, force_extract=0, current_chunk_index=0, total_chunk_count=0, updated_at=CURRENT_TIMESTAMP WHERE id=?",
             (str(exc), task_id),
         )
         conn.commit()

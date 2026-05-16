@@ -2651,7 +2651,7 @@ menu {
 .live-reader-progress-track {
   position: relative;
   height: 4px;
-  margin: 0 auto -4px;
+  margin: 0 auto 2px;
   border-radius: 999px;
   background: rgba(169, 127, 90, 0.18);
   overflow: hidden;

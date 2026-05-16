@@ -501,10 +501,10 @@ async function downloadChapterAudio(novelId, chapterNum) {
   URL.revokeObjectURL(a.href);
 }
 
-async function enqueueChapterAudioAsr(novelId, chapterNum) {
+async function enqueueChapterAudioAsr(novelId, chapterNum, options = {}) {
   return api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/audio-asr/enqueue`, {
     method: "POST",
-    body: "{}",
+    body: JSON.stringify({ forceExtract: Boolean(options.forceExtract) }),
   });
 }
 
@@ -515,10 +515,10 @@ async function cancelChapterAudioAsr(novelId, chapterNum) {
   });
 }
 
-async function enqueueBatchAudioAsr(novelId, chapterNums = []) {
+async function enqueueBatchAudioAsr(novelId, chapterNums = [], options = {}) {
   return api(`/api/novels/${Number(novelId)}/audio-asr/enqueue-batch`, {
     method: "POST",
-    body: JSON.stringify({ chapterNums }),
+    body: JSON.stringify({ chapterNums, forceExtract: Boolean(options.forceExtract) }),
   });
 }
 

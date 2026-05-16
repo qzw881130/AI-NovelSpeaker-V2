@@ -2223,6 +2223,8 @@ class Handler(BaseHTTPRequestHandler):
             ensure_task_worker()
             novel_id = int(m_audio_asr_enqueue.group(1))
             chapter_num = int(m_audio_asr_enqueue.group(2))
+            body = self.read_json()
+            force_extract = bool(body.get("forceExtract")) if isinstance(body, dict) else False
             conn = db_conn()
             chapter_row = conn.execute(
                 "SELECT id FROM chapters WHERE novel_id=? AND chapter_num=?",
@@ -2232,11 +2234,15 @@ class Handler(BaseHTTPRequestHandler):
             if not chapter_row:
                 self.send_json({"error": "chapter not found"}, 404)
                 return
-            ok, msg = enqueue_chapter_audio_asr_task(novel_id, int(chapter_row["id"]))
+            ok, msg, data = enqueue_chapter_audio_asr_task(
+                novel_id,
+                int(chapter_row["id"]),
+                force_extract=force_extract,
+            )
             if not ok:
                 self.send_json({"error": msg}, 409)
                 return
-            self.send_json({"status": "queued"})
+            self.send_json({"status": str((data or {}).get("action") or "queued"), "message": msg, **(data or {})})
             return
 
         m_audio_asr_cancel = re.match(
@@ -2268,6 +2274,7 @@ class Handler(BaseHTTPRequestHandler):
             novel_id = int(m_audio_asr_enqueue_batch.group(1))
             body = self.read_json()
             raw_nums = body.get("chapterNums") or []
+            force_extract = bool(body.get("forceExtract")) if isinstance(body, dict) else False
             chapter_nums: list[int] = []
             if isinstance(raw_nums, list):
                 for item in raw_nums:
@@ -2277,7 +2284,11 @@ class Handler(BaseHTTPRequestHandler):
                         continue
                     if value > 0:
                         chapter_nums.append(value)
-            ok, msg, data = enqueue_batch_audio_asr_tasks(novel_id, chapter_nums or None)
+            ok, msg, data = enqueue_batch_audio_asr_tasks(
+                novel_id,
+                chapter_nums or None,
+                force_extract=force_extract,
+            )
             if not ok:
                 self.send_json({"error": msg}, 409)
                 return
