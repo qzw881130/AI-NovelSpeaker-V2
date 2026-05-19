@@ -356,6 +356,7 @@ function renderJsonViewMode(options = {}) {
   const aceHost = document.getElementById("chapterJsonAceEditor");
   const illegalColonBtn = document.getElementById("checkIllegalColonBtn");
   const findWrap = document.getElementById("jsonFindReplaceWrap");
+  const repairBtn = document.getElementById("jsonRepairBtn");
   const replaceBtn = document.getElementById("jsonReplaceBtn");
   const replaceAllBtn = document.getElementById("jsonReplaceAllBtn");
   const editBtn = document.getElementById("editJsonViewBtn");
@@ -392,6 +393,7 @@ function renderJsonViewMode(options = {}) {
   editor.classList.toggle("hidden", !jsonViewEditing || useAceEditor);
   illegalColonBtn.classList.toggle("hidden", !(jsonViewEditing && jsonViewMode === "juben"));
   findWrap.classList.toggle("hidden", jsonViewMode !== "raw");
+  repairBtn.classList.toggle("hidden", !(jsonViewMode === "raw" && jsonViewEditing));
   replaceBtn.classList.toggle("hidden", !(jsonViewMode === "raw" && jsonViewEditing));
   replaceAllBtn.classList.toggle("hidden", !(jsonViewMode === "raw" && jsonViewEditing));
   if (autosaveHint) {
@@ -791,6 +793,28 @@ function replaceAllInJsonEditor() {
   toast(`已全部替换 ${count} 处`);
 }
 
+function repairJsonInEditor() {
+  if (!(jsonViewMode === "raw" && jsonViewEditing)) {
+    toast("请先进入 JSON 编辑再执行修复");
+    return;
+  }
+  const input = getActiveJsonTextEl();
+  if (!input) return;
+  const original = String(input.value || "");
+  const repaired = original.replace(/[\r\n]+/g, "");
+  if (repaired === original) {
+    toast("未发现可移除的换行符");
+    return;
+  }
+  const removedCount = (original.match(/[\r\n]/g) || []).length;
+  input.value = repaired;
+  input.focus();
+  input.setSelectionRange(0, 0);
+  lastJsonFindQuery = "";
+  lastJsonFindIndex = -1;
+  toast(`已移除 ${removedCount} 个换行符`);
+}
+
 async function refreshChapters() {
   if (!activeNovel) return;
   chapterState = await fetchNovelChapters(activeNovel.id);
@@ -936,6 +960,9 @@ function bindActions() {
   });
   document.getElementById("jsonReplaceAllBtn").addEventListener("click", () => {
     replaceAllInJsonEditor();
+  });
+  document.getElementById("jsonRepairBtn").addEventListener("click", () => {
+    repairJsonInEditor();
   });
   document.getElementById("checkIllegalColonBtn").addEventListener("click", () => {
     checkIllegalColonInJubenEditor();

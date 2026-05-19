@@ -1251,10 +1251,10 @@ def replace_novel_text_occurrences(
             continue
         updated = raw.replace(needle, replacement)
         abs_path.write_text(updated, encoding="utf-8")
-        title, content = split_title_and_content(updated, str(row["title"] or ""))
+        _, content = split_title_and_content(updated, str(row["title"] or ""))
         conn.execute(
-            "UPDATE chapters SET title=?, word_count=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
-            (title, count_words(content), int(row["id"])),
+            "UPDATE chapters SET word_count=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            (count_words(content), int(row["id"])),
         )
         txt_replaced += count
 
@@ -1266,17 +1266,14 @@ def replace_novel_text_occurrences(
     for row in json_rows:
         raw = str(row["merged_result_json"] or "")
         count = raw.count(needle)
-        title = str(row["chapter_title"] or "")
-        title_count = title.count(needle)
-        if count <= 0 and title_count <= 0:
+        if count <= 0:
             continue
         updated = raw.replace(needle, replacement)
-        updated_title = title.replace(needle, replacement)
         conn.execute(
-            "UPDATE json_tasks SET chapter_title=?, merged_result_json=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
-            (updated_title, updated, int(row["id"])),
+            "UPDATE json_tasks SET merged_result_json=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            (updated, int(row["id"])),
         )
-        json_replaced += count + title_count
+        json_replaced += count
 
     recalc_novel_stats(conn, novel_id)
     return {"ok": True, "txtReplaced": txt_replaced, "jsonReplaced": json_replaced}
@@ -2455,7 +2452,7 @@ def _finalize_json_task_if_ready(task_id: int) -> bool:
     if not task:
         conn.close()
         return False
-    if str(task["status"] or "") in {"cancelled", "timeout"}:
+    if str(task["status"] or "") == "cancelled":
         conn.close()
         return False
     rows = conn.execute(

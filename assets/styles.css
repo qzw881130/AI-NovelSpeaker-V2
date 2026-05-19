@@ -1645,13 +1645,13 @@ menu {
   display: flex;
   gap: 8px;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   margin: 10px 0;
 }
 
 .json-find-replace input {
-  min-width: 160px;
-  flex: 1 1 180px;
+  min-width: 120px;
+  flex: 1 1 140px;
 }
 
 .json-view-tabs {
