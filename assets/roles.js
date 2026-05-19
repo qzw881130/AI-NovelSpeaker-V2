@@ -96,6 +96,16 @@ function renderRoleStats(stats) {
   document.getElementById("roleNoSampleCount").textContent = String(stats?.without_sample || 0);
 }
 
+function syncRoleStatsFromItems() {
+  renderRoleStats({
+    total: roleItems.length,
+    level_1: roleItems.filter((item) => Number(item.roleLevel) === 1).length,
+    level_2: roleItems.filter((item) => Number(item.roleLevel) === 2).length,
+    level_3: roleItems.filter((item) => Number(item.roleLevel) === 3).length,
+    without_sample: roleItems.filter((item) => !String(item.sampleAudioPath || "").trim()).length,
+  });
+}
+
 function parseRoleNamesFromJsonText(jsonText) {
   const text = String(jsonText || "").trim();
   if (!text) return [];
@@ -531,6 +541,7 @@ function renderRolesTable() {
           roleItems[idx] = data.role || roleItems[idx];
         }
         setRolesPageStatus(`${translateText("已生成")}: ${data.role?.name || translateText("角色")} ${translateText("声音示例")}`);
+        syncRoleStatsFromItems();
         renderRolesTable();
       } catch (err) {
         setRolesPageStatus(err.message || translateText("生成示例失败"), true);
@@ -597,6 +608,7 @@ function renderRolesTable() {
           roleItems[idx] = result.role || roleItems[idx];
         }
         setRolesPageStatus(`${translateText("已上传")}: ${result.role?.name || translateText("角色")} ${translateText("声音示例")}`);
+        syncRoleStatsFromItems();
         renderRolesTable();
       } catch (err) {
         setRolesPageStatus(err.message || translateText("上传声音示例失败"), true);
@@ -725,8 +737,10 @@ function bindActions() {
 
   document.getElementById("generateMissingSamplesBtn").addEventListener("click", async () => {
     if (!activeNovel) return;
+    await refreshRolesPage();
     const missingRoles = getRolesMissingSampleAudio();
     if (!missingRoles.length) {
+      setRolesPageStatus(translateText("当前没有缺失声音示例的角色"));
       toast(translateText("当前没有缺失声音示例的角色"));
       return;
     }

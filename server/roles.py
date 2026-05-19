@@ -83,6 +83,23 @@ def _is_sample_audio_referenced_elsewhere(
     return bool(row)
 
 
+def _remove_role_audio_if_unreferenced(
+    sample_audio_path: str, exclude_role_id: int | None = None
+) -> None:
+    path = str(sample_audio_path or "").strip()
+    if not path:
+        return
+    conn = db_conn()
+    still_referenced = _is_sample_audio_referenced_elsewhere(conn, path, exclude_role_id)
+    conn.close()
+    if still_referenced:
+        return
+    full_path = (ROOT_DIR / path).resolve()
+    root_path = ROOT_DIR.resolve()
+    if root_path in full_path.parents and full_path != root_path:
+        _remove_cached_playable_variants(full_path)
+
+
 def _normalize_role_level(level: object) -> int:
     try:
         value = int(str(level))
@@ -189,10 +206,7 @@ def upsert_role_default(
         conn.close()
 
         if old_audio_path:
-            old_path = (ROOT_DIR / old_audio_path).resolve()
-            root_path = ROOT_DIR.resolve()
-            if root_path in old_path.parents and old_path != root_path:
-                _remove_cached_playable_variants(old_path)
+            _remove_role_audio_if_unreferenced(old_audio_path, int(row["id"]))
 
         return True, "saved", _row_to_role(saved)
 
@@ -268,15 +282,7 @@ def update_role_fields(
 
     # Delete old audio file if sample text changed
     if should_clear_audio and old_audio_path:
-        conn = db_conn()
-        still_referenced = _is_sample_audio_referenced_elsewhere(
-            conn, old_audio_path, role_id
-        )
-        conn.close()
-        if still_referenced:
-            return True, "saved", _row_to_role(saved)
-        old_full_path = (ROOT_DIR / old_audio_path).resolve()
-        _remove_cached_playable_variants(old_full_path)
+        _remove_role_audio_if_unreferenced(old_audio_path, role_id)
 
     return True, "saved", _row_to_role(saved)
 
@@ -437,8 +443,7 @@ def save_role_sample_audio(
     conn.close()
 
     if old_audio_path:
-        old_full_path = (ROOT_DIR / old_audio_path).resolve()
-        _remove_cached_playable_variants(old_full_path)
+        _remove_role_audio_if_unreferenced(old_audio_path, role_id)
 
     return True, "saved", _row_to_role(saved)
 
@@ -717,11 +722,6 @@ def generate_role_sample_audio(
         abs_path = abs_dir / file_name
         abs_path.write_bytes(audio_data)
 
-        # 删除旧文件
-        if old_audio_path:
-            old_full_path = (ROOT_DIR / old_audio_path).resolve()
-            _remove_cached_playable_variants(old_full_path)
-
         # 更新数据库
         conn = db_conn()
         conn.execute(
@@ -735,6 +735,9 @@ def generate_role_sample_audio(
         conn.commit()
         saved = conn.execute("SELECT * FROM roles WHERE id=?", (role_id,)).fetchone()
         conn.close()
+
+        if old_audio_path:
+            _remove_role_audio_if_unreferenced(old_audio_path, role_id)
 
         return True, "generated", _row_to_role(saved), workflow_copy
 
