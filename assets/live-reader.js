@@ -14,7 +14,81 @@ const FOLLOW_SMOOTHNESS_KEY = "ai_novel_live_reader_follow_smoothness";
 const CONTROLS_COLLAPSED_KEY = "ai_novel_live_reader_controls_collapsed";
 const PLAYLIST_COLLAPSED_KEY = "ai_novel_live_reader_playlist_collapsed";
 const TOP_SAFE_OFFSET_KEY = "ai_novel_live_reader_top_safe_offset";
+const READER_THEME_KEY = "ai_novel_live_reader_theme";
 const DEFAULT_READER_TOP_SAFE_OFFSET = 72;
+const DEFAULT_READER_THEME_ID = "parchment";
+const READER_THEMES = [
+  {
+    id: "parchment",
+    label: "羊皮纸暖白",
+    background: "#fff7ea",
+    text: "#4e3625",
+    highlight: "230 192 162",
+    highlightText: "#2f1f13",
+    progressFill: "#bc6a34",
+    progressTrack: "#eadfcd",
+  },
+  {
+    id: "bamboo",
+    label: "竹简浅青",
+    background: "#eef4e6",
+    text: "#324228",
+    highlight: "205 223 179",
+    highlightText: "#233018",
+    progressFill: "#7fa04b",
+    progressTrack: "#d9e6c9",
+  },
+  {
+    id: "mist",
+    label: "雾蓝静读",
+    background: "#edf3f8",
+    text: "#314455",
+    highlight: "198 216 232",
+    highlightText: "#1f3140",
+    progressFill: "#5f89ac",
+    progressTrack: "#d9e4ef",
+  },
+  {
+    id: "ink",
+    label: "水墨素灰",
+    background: "#f3f4f6",
+    text: "#22252b",
+    highlight: "215 221 230",
+    highlightText: "#14181e",
+    progressFill: "#666f7c",
+    progressTrack: "#d9dde3",
+  },
+  {
+    id: "sepia",
+    label: "古籍浅褐",
+    background: "#f4eadf",
+    text: "#4b3525",
+    highlight: "221 193 168",
+    highlightText: "#2e1f13",
+    progressFill: "#a86e46",
+    progressTrack: "#e4d3c0",
+  },
+  {
+    id: "sage",
+    label: "鼠尾草纸",
+    background: "#f1f2e8",
+    text: "#3d4534",
+    highlight: "214 216 191",
+    highlightText: "#262d1c",
+    progressFill: "#7b8660",
+    progressTrack: "#dfe1cf",
+  },
+  {
+    id: "night",
+    label: "夜读墨黑",
+    background: "#1f2329",
+    text: "#e9dfd3",
+    highlight: "95 71 54",
+    highlightText: "#fff4e6",
+    progressFill: "#d6a57c",
+    progressTrack: "#4a515a",
+  },
+];
 let deferredInstallPrompt = null;
 
 let allNovels = [];
@@ -104,6 +178,22 @@ function getSavedBool(key, fallback) {
 
 function saveBool(key, value) {
   localStorage.setItem(key, value ? "1" : "0");
+}
+
+function getSavedThemeId() {
+  const saved = String(localStorage.getItem(READER_THEME_KEY) || "").trim();
+  return READER_THEMES.some((item) => item.id === saved) ? saved : DEFAULT_READER_THEME_ID;
+}
+
+function getReaderTheme(themeId = getSavedThemeId()) {
+  return READER_THEMES.find((item) => item.id === themeId) || READER_THEMES[0];
+}
+
+function renderThemeOptions() {
+  const select = document.getElementById("liveReaderThemeSelect");
+  if (!select || select.dataset.ready === "1") return;
+  select.innerHTML = READER_THEMES.map((item) => `<option value="${item.id}">${item.label}</option>`).join("");
+  select.dataset.ready = "1";
 }
 
 function isControlsCollapsed() {
@@ -254,6 +344,7 @@ function getMaxReaderHeight() {
 }
 
 function applyReaderSettings() {
+  renderThemeOptions();
   const width = getSavedNumber(WIDTH_KEY, 520, 140, 900);
   const maxReaderHeight = getMaxReaderHeight();
   const height = getSavedNumber(HEIGHT_KEY, 820, 320, maxReaderHeight);
@@ -262,9 +353,13 @@ function applyReaderSettings() {
   const followSensitivity = getSavedNumber(FOLLOW_SENSITIVITY_KEY, 60, 0, 240);
   const followSmoothness = getSavedNumber(FOLLOW_SMOOTHNESS_KEY, 45, 10, 100);
   const topSafeOffset = getSavedNumber(TOP_SAFE_OFFSET_KEY, DEFAULT_READER_TOP_SAFE_OFFSET, 0, 180);
+  const theme = getReaderTheme();
   const content = document.getElementById("liveReaderContent");
   const progressTrack = document.getElementById("liveReaderProgressTrack");
   const wrap = document.querySelector(".live-reader-reader-wrap");
+  const themeSelect = document.getElementById("liveReaderThemeSelect");
+  const themeValue = document.getElementById("liveReaderThemeValue");
+  const themePreview = document.getElementById("liveReaderThemePreview");
   if (content) {
     content.style.width = `${width}px`;
     content.style.maxWidth = `${width}px`;
@@ -294,11 +389,28 @@ function applyReaderSettings() {
   document.getElementById("liveReaderFollowSmoothnessValue").textContent = `${followSmoothness}%`;
   document.getElementById("liveReaderTopSafeOffsetRange").value = String(topSafeOffset);
   document.getElementById("liveReaderTopSafeOffsetValue").textContent = `${topSafeOffset}px`;
+  if (themeSelect) themeSelect.value = theme.id;
+  if (themeValue) themeValue.textContent = theme.label;
+  if (themePreview) {
+    themePreview.innerHTML = `
+      <span class="live-reader-theme-chip"><i style="background:${theme.background}"></i>正文背景</span>
+      <span class="live-reader-theme-chip"><i style="background:rgb(${theme.highlight})"></i>高亮背景</span>
+      <span class="live-reader-theme-chip"><i style="background:${theme.text}"></i>正文文字</span>
+      <span class="live-reader-theme-chip"><i style="background:${theme.progressFill}"></i>进度条</span>
+      <span class="live-reader-theme-chip"><i style="background:${theme.progressTrack}"></i>轨道底色</span>
+    `;
+  }
   document.getElementById("liveReaderAutoNext").checked = getSavedBool(AUTO_NEXT_KEY, true);
   document.getElementById("liveReaderAutoScroll").checked = getSavedBool(AUTO_SCROLL_KEY, true);
   document.getElementById("liveReaderHighlight").checked = getSavedBool(HIGHLIGHT_KEY, true);
   document.documentElement.style.setProperty("--live-highlight-alpha", String(highlightIntensity));
   document.documentElement.style.setProperty("--live-paragraph-alpha", String(Math.max(0, highlightIntensity * 0.45)));
+  document.documentElement.style.setProperty("--live-reader-bg", theme.background);
+  document.documentElement.style.setProperty("--live-reader-text-color", theme.text);
+  document.documentElement.style.setProperty("--live-highlight-fill-rgb", theme.highlight);
+  document.documentElement.style.setProperty("--live-highlight-text-color", theme.highlightText);
+  document.documentElement.style.setProperty("--live-progress-fill", theme.progressFill);
+  document.documentElement.style.setProperty("--live-progress-track", theme.progressTrack);
 }
 
 function getReaderTopSafeOffset() {
@@ -1214,6 +1326,14 @@ function bindEvents() {
   });
   document.getElementById("liveReaderTopSafeOffsetRange")?.addEventListener("input", (event) => {
     localStorage.setItem(TOP_SAFE_OFFSET_KEY, String(event.target.value || DEFAULT_READER_TOP_SAFE_OFFSET));
+    applyReaderSettings();
+  });
+  document.getElementById("liveReaderThemeSelect")?.addEventListener("change", (event) => {
+    localStorage.setItem(READER_THEME_KEY, String(event.target.value || DEFAULT_READER_THEME_ID));
+    applyReaderSettings();
+  });
+  document.getElementById("liveReaderResetThemeBtn")?.addEventListener("click", () => {
+    localStorage.setItem(READER_THEME_KEY, DEFAULT_READER_THEME_ID);
     applyReaderSettings();
   });
   document.getElementById("liveReaderAutoNext")?.addEventListener("change", (event) => {

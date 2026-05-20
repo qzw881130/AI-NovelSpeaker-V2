@@ -51,41 +51,50 @@
                 <span>逐段高亮</span>
               </label>
             </div>
-            <label>
+            <label class="live-reader-slider-control">
               正文宽度
               <input id="liveReaderWidthRange" type="range" min="140" max="900" step="10" value="520" />
               <span id="liveReaderWidthValue" class="reader-status">520px</span>
             </label>
-            <label>
+            <label class="live-reader-slider-control">
               正文高度
               <input id="liveReaderHeightRange" type="range" min="320" max="1200" step="10" value="820" />
               <span id="liveReaderHeightValue" class="reader-status">820px</span>
             </label>
-            <label>
+            <label class="live-reader-slider-control">
               字号
               <input id="liveReaderFontSizeRange" type="range" min="18" max="42" step="1" value="28" />
               <span id="liveReaderFontSizeValue" class="reader-status">28px</span>
             </label>
-            <label>
+            <label class="live-reader-slider-control">
               高亮强度
               <input id="liveReaderHighlightIntensityRange" type="range" min="0" max="100" step="1" value="45" />
               <span id="liveReaderHighlightIntensityValue" class="reader-status">45%</span>
             </label>
-            <label>
+            <label class="live-reader-slider-control">
               滚动灵敏度
               <input id="liveReaderFollowSensitivityRange" type="range" min="0" max="240" step="5" value="60" />
               <span id="liveReaderFollowSensitivityValue" class="reader-status">60px</span>
             </label>
-            <label>
+            <label class="live-reader-slider-control">
               滚动平滑度
               <input id="liveReaderFollowSmoothnessRange" type="range" min="10" max="100" step="5" value="45" />
               <span id="liveReaderFollowSmoothnessValue" class="reader-status">45%</span>
             </label>
-            <label>
+            <label class="live-reader-slider-control">
               顶部安全区
               <input id="liveReaderTopSafeOffsetRange" type="range" min="0" max="180" step="4" value="72" />
               <span id="liveReaderTopSafeOffsetValue" class="reader-status">72px</span>
             </label>
+            <div class="live-reader-theme-control">
+              <span>阅读配色</span>
+              <div class="live-reader-theme-row">
+                <select id="liveReaderThemeSelect"></select>
+                <button id="liveReaderResetThemeBtn" class="ghost-btn icon-btn" type="button" aria-label="还原默认配色" title="还原默认配色">↻</button>
+              </div>
+              <span id="liveReaderThemeValue" class="reader-status">羊皮纸暖白</span>
+              <div id="liveReaderThemePreview" class="live-reader-theme-preview" aria-hidden="true"></div>
+            </div>
             <button id="liveReaderInstallBtn" class="ghost-btn hidden" type="button">安装独立阅读器</button>
           </div>
         </section>
