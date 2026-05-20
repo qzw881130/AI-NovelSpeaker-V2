@@ -1092,6 +1092,11 @@ function bindActions() {
   // 台词音频弹窗内按钮
   document.getElementById("enqueueAllLineAudioBtn")?.addEventListener("click", async () => {
     if (!activeNovel || !activeChapterNum) return;
+    const missingRoleRows = getMissingRoleLinePreviewRows();
+    if (missingRoleRows.length) {
+      toast(formatMissingRoleLineWarning(missingRoleRows));
+      return;
+    }
     try {
       const schedule = getLineAudioQueueSchedule();
       const result = await enqueueAllLineAudios(activeNovel.id, activeChapterNum, {
@@ -1399,6 +1404,24 @@ function getFilteredLineIndexesForQueue() {
       return !["pending", "processing", "running", "completed"].includes(taskStatus);
     })
     .map((row) => row.index);
+}
+
+function getMissingRoleLinePreviewRows(rows = linePreviewRows) {
+  return rows.filter((row) => {
+    const entry = getLineAudioEntry(row.index);
+    return entry?.roleInLibrary === false;
+  });
+}
+
+function formatMissingRoleLineWarning(rows) {
+  if (!rows.length) return "";
+  const roleNames = Array.from(new Set(rows.map((row) => String(row.roleName || "").trim()).filter(Boolean)));
+  const lineNos = rows.map((row) => String(Number(row.index) + 1).padStart(3, "0")).slice(0, 8);
+  const roleText = roleNames.slice(0, 6).join("、");
+  const lineText = lineNos.join("、");
+  const moreRoles = roleNames.length > 6 ? ` 等 ${roleNames.length} 个角色` : "";
+  const moreLines = rows.length > 8 ? ` 等 ${rows.length} 行` : "";
+  return `检测到角色未加入角色库：${roleText}${moreRoles}；涉及行号：${lineText}${moreLines}。请先加入角色库后再批量生成所有。`;
 }
 
 function getLineSearchMatches(rows) {
