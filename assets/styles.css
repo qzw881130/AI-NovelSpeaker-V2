@@ -567,6 +567,18 @@ textarea {
   line-height: 1;
 }
 
+.novel-visibility-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  line-height: 1;
+}
+
 .novel-delete-btn {
   position: absolute;
   right: 10px;

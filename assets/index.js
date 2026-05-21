@@ -19,8 +19,54 @@ let editingId = "";
 let refreshTimer = null;
 let currentData = { novels: [], prompts: [], workflows: [] };
 const REFRESH_INTERVAL_KEY = "ai_novel_index_refresh_interval";
+const NOVEL_VISIBILITY_KEY = "ai_novel_index_visibility";
+const STORAGE_TABLE_COLLAPSED_KEY = "ai_novel_index_storage_table_collapsed";
 let activeBundleNovelId = "";
 let bundleTaskTimer = 0;
+
+function getNovelVisibilityMap() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(NOVEL_VISIBILITY_KEY) || "{}");
+    return raw && typeof raw === "object" ? raw : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveNovelVisibilityMap(map) {
+  localStorage.setItem(NOVEL_VISIBILITY_KEY, JSON.stringify(map || {}));
+}
+
+function isNovelMasked(novelId) {
+  return Boolean(getNovelVisibilityMap()[String(novelId)]);
+}
+
+function setNovelMasked(novelId, masked) {
+  const map = getNovelVisibilityMap();
+  map[String(novelId)] = Boolean(masked);
+  saveNovelVisibilityMap(map);
+}
+
+function maskNovelText(value) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .replace(/[^\s]/g, "*");
+}
+
+function isStorageTableCollapsed() {
+  return localStorage.getItem(STORAGE_TABLE_COLLAPSED_KEY) === "1";
+}
+
+function applyStorageTableCollapsedState() {
+  const collapsed = isStorageTableCollapsed();
+  const table = document.getElementById("storageTable");
+  const btn = document.getElementById("toggleStorageTableBtn");
+  if (table) table.classList.toggle("hidden", collapsed);
+  if (btn) {
+    btn.textContent = collapsed ? "展开" : "折叠";
+    btn.setAttribute("aria-expanded", collapsed ? "false" : "true");
+  }
+}
 
 function setBundleControlsBusy(busy) {
   const btn = document.getElementById("bundleCreateBtn");
@@ -96,11 +142,18 @@ function renderNovelCards() {
 
   document.getElementById("novelGrid").innerHTML = list
     .map(
-      (n) => `
+      (n) => {
+        const masked = isNovelMasked(n.id);
+        const displayName = masked ? maskNovelText(n.name) : n.name;
+        const displayAuthor = masked ? maskNovelText(n.author) : n.author;
+        const displayIntro = masked ? maskNovelText(n.intro || "") : (n.intro || "");
+        const visibilityTitle = masked ? "显示小说信息" : "隐藏小说信息";
+        const visibilityIcon = masked ? "👁" : "🙈";
+        return `
       <article class="novel-card">
         <button class="ghost-btn novel-delete-btn" data-action="delete" data-id="${n.id}" title="删除小说" aria-label="删除小说" type="button">✕</button>
-        <div class="novel-card-head"><div class="novel-title-row"><h3>${n.name}</h3><button class="ghost-btn novel-edit-btn" data-action="edit" data-id="${n.id}" title="编辑小说" aria-label="编辑小说" type="button">✎</button></div><p class="meta">${n.author}</p></div>
-        <p class="novel-intro" title="${n.intro || ""}">${n.intro || ""}</p>
+        <div class="novel-card-head"><div class="novel-title-row"><h3>${displayName}</h3><button class="ghost-btn novel-edit-btn" data-action="edit" data-id="${n.id}" title="编辑小说" aria-label="编辑小说" type="button">✎</button><button class="ghost-btn novel-visibility-btn" data-action="toggle-visibility" data-id="${n.id}" title="${visibilityTitle}" aria-label="${visibilityTitle}" type="button">${visibilityIcon}</button></div><p class="meta">${displayAuthor}</p></div>
+        <p class="novel-intro" title="${displayIntro}">${displayIntro}</p>
         <div class="chips">
           <span class="chip">章节 ${fmtNumber(n.chapterCount)}</span>
           <span class="chip">字数 ${fmtNumber(n.totalWords)}</span>
@@ -122,6 +175,7 @@ function renderNovelCards() {
         </div>
       </article>
     `
+      }
     )
     .join("");
 
@@ -395,6 +449,10 @@ async function onNovelAction(action, id) {
   if (!novel) return;
   try {
     if (action === "edit") openNovelModal(novel);
+    if (action === "toggle-visibility") {
+      setNovelMasked(id, !isNovelMasked(id));
+      renderNovelCards();
+    }
     if (action === "download") {
       await openBundleModal(novel);
     }
@@ -476,6 +534,10 @@ function bindEvents() {
   document.getElementById("bundleAudioPresetSelect").addEventListener("change", updateBundleEstimate);
   document.getElementById("novelCancelBtn").addEventListener("click", closeNovelModal);
   document.getElementById("bundleCloseBtn").addEventListener("click", closeBundleModal);
+  document.getElementById("toggleStorageTableBtn")?.addEventListener("click", () => {
+    localStorage.setItem(STORAGE_TABLE_COLLAPSED_KEY, isStorageTableCollapsed() ? "0" : "1");
+    applyStorageTableCollapsedState();
+  });
   document.getElementById("bundleCreateBtn").addEventListener("click", async () => {
     if (!activeBundleNovelId) return;
     const presetSelect = document.getElementById("bundleAudioPresetSelect");
@@ -532,6 +594,7 @@ async function init() {
   renderNav();
   bindEvents();
   await refresh();
+  applyStorageTableCollapsedState();
   localizeDocumentText(document);
   initAutoRefresh();
 }
