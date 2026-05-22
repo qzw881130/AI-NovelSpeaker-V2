@@ -99,6 +99,12 @@ function getSortedChapterItems() {
     } else if (sortState.field === "audioSizeBytes") {
       av = Number(a.audioSizeBytes || 0);
       bv = Number(b.audioSizeBytes || 0);
+    } else if (sortState.field === "nonVerAudioDurationSeconds") {
+      av = Number(a.nonVerAudioDurationSeconds || 0);
+      bv = Number(b.nonVerAudioDurationSeconds || 0);
+    } else if (sortState.field === "nonVerAudioSizeBytes") {
+      av = Number(a.nonVerAudioSizeBytes || 0);
+      bv = Number(b.nonVerAudioSizeBytes || 0);
     }
     if (av === bv) {
       return Number(a.chapterNum || 0) - Number(b.chapterNum || 0);
@@ -174,12 +180,12 @@ function getSelectedChapterItems() {
 function renderTable() {
   const tbody = document.getElementById("novelDownloadTableBody");
   if (!activeNovel) {
-    tbody.innerHTML = '<tr><td colspan="7" class="empty-text">未找到小说</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" class="empty-text">未找到小说</td></tr>';
     clearSelection();
     return;
   }
   if (!chapterItems.length) {
-    tbody.innerHTML = '<tr><td colspan="7" class="empty-text">暂无章回数据</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" class="empty-text">暂无章回数据</td></tr>';
     clearSelection();
     return;
   }
@@ -202,7 +208,12 @@ function renderTable() {
       <td>${Number(item.wordCount || 0).toLocaleString("zh-CN")}</td>
       <td>${item.hasAudio ? formatDuration(item.audioDurationSeconds || 0) : "-"}</td>
       <td>${item.hasAudio ? bytesToText(item.audioSizeBytes || 0) : "-"}</td>
-      <td>${item.hasAudio ? `<a class="ghost-btn btn-sm" href="${item.downloadUrl}">下载音频</a>` : '<span class="text-muted">暂无音频</span>'}</td>
+      <td>${item.hasNonVerAudio ? formatDuration(item.nonVerAudioDurationSeconds || 0) : "-"}</td>
+      <td>${item.hasNonVerAudio ? bytesToText(item.nonVerAudioSizeBytes || 0) : "-"}</td>
+      <td>${[
+        item.hasAudio ? `<a class="ghost-btn btn-sm" href="${item.downloadUrl}">下载音频</a>` : '<span class="text-muted">暂无音频</span>',
+        item.hasNonVerAudio ? `<a class="ghost-btn btn-sm" href="${item.nonVerDownloadUrl}">下载无版权</a>` : ''
+      ].filter(Boolean).join(' ')}</td>
     </tr>
   `).join("");
   updateSortIcons();
@@ -278,11 +289,11 @@ function bindEvents() {
         try {
           await mergeChapterLineAudio(activeNovel.id, item.chapterNum);
           successCount += 1;
+          await refreshPage();
         } catch {
           failedCount += 1;
         }
       }
-      await refreshPage();
       if (failedCount > 0) {
         toast(`批量合并完成：成功 ${successCount} 回，失败 ${failedCount} 回`);
       } else {
@@ -293,6 +304,43 @@ function bindEvents() {
     } finally {
       mergeBtn.disabled = false;
       mergeBtn.textContent = "批量合并音频";
+      setBatchMergeProgress(-1, 0);
+    }
+  });
+  document.getElementById("batchMergeNonVerAudioBtn").addEventListener("click", async () => {
+    if (!activeNovel) return;
+    const selectedItems = getSelectedChapterItems();
+    if (!selectedItems.length) {
+      toast("请先选择要合并的章回");
+      return;
+    }
+    const mergeBtn = document.getElementById("batchMergeNonVerAudioBtn");
+    mergeBtn.disabled = true;
+    mergeBtn.textContent = "合并中...";
+    setBatchMergeProgress(0, selectedItems.length);
+    let successCount = 0;
+    let failedCount = 0;
+    try {
+      for (const [index, item] of selectedItems.entries()) {
+        setBatchMergeProgress(index + 1, selectedItems.length);
+        try {
+          await mergeChapterLineAudio(activeNovel.id, item.chapterNum, { variant: "nonver" });
+          successCount += 1;
+          await refreshPage();
+        } catch {
+          failedCount += 1;
+        }
+      }
+      if (failedCount > 0) {
+        toast(`批量合并无版权音频完成：成功 ${successCount} 回，失败 ${failedCount} 回`);
+      } else {
+        toast(`批量合并无版权音频完成：共 ${successCount} 回`);
+      }
+    } catch (err) {
+      toast(err.message || "批量合并无版权音频失败");
+    } finally {
+      mergeBtn.disabled = false;
+      mergeBtn.textContent = "批量合并无版权音频";
       setBatchMergeProgress(-1, 0);
     }
   });

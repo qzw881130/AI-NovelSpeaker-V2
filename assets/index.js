@@ -71,11 +71,13 @@ function applyStorageTableCollapsedState() {
 function setBundleControlsBusy(busy) {
   const btn = document.getElementById("bundleCreateBtn");
   const presetSelect = document.getElementById("bundleAudioPresetSelect");
+  const variantSelect = document.getElementById("bundleAudioVariantSelect");
   if (btn) {
     btn.disabled = Boolean(busy);
     btn.textContent = busy ? translateText("打包中...") : translateText("打包");
   }
   if (presetSelect) presetSelect.disabled = Boolean(busy);
+  if (variantSelect) variantSelect.disabled = Boolean(busy);
 }
 
 const BUNDLE_AUDIO_PRESET_LABELS = {
@@ -91,6 +93,11 @@ const BUNDLE_AUDIO_PRESET_BITRATES = {
   "mp3-96k": 96000,
   "mp3-64k": 64000,
   "mp3-48k-mono": 48000,
+};
+
+const BUNDLE_AUDIO_VARIANT_LABELS = {
+  ver: "有版权",
+  nonver: "无版权",
 };
 
 function isValidEnglishDir(value) {
@@ -272,7 +279,9 @@ async function openBundleModal(novel) {
   activeBundleNovelId = String(novel.id);
   document.getElementById("bundleModalTitle").textContent = `${novel.name} - ${translateText("打包下载")}`;
   const presetSelect = document.getElementById("bundleAudioPresetSelect");
+  const variantSelect = document.getElementById("bundleAudioVariantSelect");
   if (presetSelect && !presetSelect.value) presetSelect.value = "lossless";
+  if (variantSelect && !variantSelect.value) variantSelect.value = "ver";
   updateBundleEstimate();
   document.getElementById("bundleList").innerHTML = `<p class="empty-text">${translateText("加载中...")}</p>`;
   document.getElementById("bundleModal").showModal();
@@ -358,7 +367,7 @@ async function refreshBundleList() {
         <div class="bundle-item">
           <div>
             <strong>${bundle.fileName}</strong>
-            <p class="meta">${escapeBundlePresetLabel(bundle.audioPreset)} · ${translateText("创建时间")} ${fmtDateTime(bundle.createdAt)} · ${bytesToText(bundle.sizeBytes)}</p>
+            <p class="meta">${escapeBundleVariantLabel(bundle.audioVariant)} · ${escapeBundlePresetLabel(bundle.audioPreset)} · ${translateText("创建时间")} ${fmtDateTime(bundle.createdAt)} · ${bytesToText(bundle.sizeBytes)}</p>
           </div>
           <div class="bundle-item-actions">
             <button class="ghost-btn bundle-download-btn" data-file="${bundle.fileName}" type="button">${translateText("下载")}</button>
@@ -403,18 +412,25 @@ function escapeBundlePresetLabel(audioPreset) {
   return div.innerHTML;
 }
 
+function escapeBundleVariantLabel(audioVariant) {
+  const text = BUNDLE_AUDIO_VARIANT_LABELS[String(audioVariant || "ver")] || String(audioVariant || "有版权");
+  const div = document.createElement("div");
+  div.textContent = text;
+  return div.innerHTML;
+}
+
 function getActiveBundleNovel() {
   return currentData.novels.find((item) => String(item.id) === String(activeBundleNovelId)) || null;
 }
 
-function estimateBundleSizeBytes(novel, audioPreset) {
+function estimateBundleSizeBytes(novel, audioPreset, audioVariant = "ver") {
   if (!novel) return 0;
   const txtBytes = Number(novel.storage?.txtBytes || 0);
   if (audioPreset === "lossless") {
-    return txtBytes + Number(novel.storage?.audioBytes || 0);
+    return txtBytes + Number(audioVariant === "nonver" ? (novel.storage?.audioNonVerBytes || 0) : (novel.storage?.audioBytes || 0));
   }
   const bitrate = Number(BUNDLE_AUDIO_PRESET_BITRATES[audioPreset] || 0);
-  const totalSeconds = Number(novel.totalAudioDurationSeconds || 0);
+  const totalSeconds = Number(audioVariant === "nonver" ? (novel.totalAudioNonVerDurationSeconds || 0) : (novel.totalAudioDurationSeconds || 0));
   const audioBytes = bitrate > 0 ? Math.ceil((totalSeconds * bitrate) / 8) : 0;
   return txtBytes + audioBytes;
 }
@@ -422,14 +438,16 @@ function estimateBundleSizeBytes(novel, audioPreset) {
 function updateBundleEstimate() {
   const el = document.getElementById("bundleEstimateMeta");
   const presetSelect = document.getElementById("bundleAudioPresetSelect");
+  const variantSelect = document.getElementById("bundleAudioVariantSelect");
   const novel = getActiveBundleNovel();
-  if (!el || !presetSelect || !novel) return;
+  if (!el || !presetSelect || !variantSelect || !novel) return;
   const audioPreset = String(presetSelect.value || "lossless");
+  const audioVariant = String(variantSelect.value || "ver");
   const rows = Object.keys(BUNDLE_AUDIO_PRESET_LABELS)
     .map((key) => {
       const active = key === audioPreset ? " active" : "";
       const label = BUNDLE_AUDIO_PRESET_LABELS[key] || key;
-      const estimatedBytes = estimateBundleSizeBytes(novel, key);
+      const estimatedBytes = estimateBundleSizeBytes(novel, key, audioVariant);
       return `
         <div class="bundle-estimate-row${active}">
           <span>${label}</span>
@@ -439,7 +457,7 @@ function updateBundleEstimate() {
     })
     .join("");
   el.innerHTML = `
-    <p class="meta">预估体积对比</p>
+    <p class="meta">预估体积对比 · ${escapeBundleVariantLabel(audioVariant)}</p>
     <div class="bundle-estimate-table">${rows}</div>
   `;
 }
@@ -532,6 +550,7 @@ function bindEvents() {
   document.getElementById("novelSort").addEventListener("change", renderNovelCards);
   document.getElementById("autoRefreshSelect").addEventListener("change", applyAutoRefresh);
   document.getElementById("bundleAudioPresetSelect").addEventListener("change", updateBundleEstimate);
+  document.getElementById("bundleAudioVariantSelect").addEventListener("change", updateBundleEstimate);
   document.getElementById("novelCancelBtn").addEventListener("click", closeNovelModal);
   document.getElementById("bundleCloseBtn").addEventListener("click", closeBundleModal);
   document.getElementById("toggleStorageTableBtn")?.addEventListener("click", () => {
@@ -541,11 +560,13 @@ function bindEvents() {
   document.getElementById("bundleCreateBtn").addEventListener("click", async () => {
     if (!activeBundleNovelId) return;
     const presetSelect = document.getElementById("bundleAudioPresetSelect");
+    const variantSelect = document.getElementById("bundleAudioVariantSelect");
     const audioPreset = String(presetSelect?.value || "lossless");
+    const audioVariant = String(variantSelect?.value || "ver");
     setBundleControlsBusy(true);
     setBundleListLoading();
     try {
-      const task = await createNovelBundle(activeBundleNovelId, { audioPreset });
+      const task = await createNovelBundle(activeBundleNovelId, { audioPreset, audioVariant });
       setBundleListLoading(task);
       startBundleTaskPolling();
       await syncBundleTaskStatus({ silent: true });

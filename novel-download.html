@@ -33,6 +33,7 @@
             </div>
             <div class="panel-head-actions">
               <span id="batchMergeProgress" class="meta hidden">0/0</span>
+              <button id="batchMergeNonVerAudioBtn" class="ghost-btn" type="button">批量合并无版权音频</button>
               <button id="batchMergeAudioBtn" class="ghost-btn" type="button">批量合并音频</button>
               <span id="novelDownloadSummary" class="meta">-</span>
             </div>
@@ -67,12 +68,14 @@
                       <span id="sortSizeIcon" class="table-sort-icon">↕</span>
                     </button>
                   </th>
+                  <th>无版权音频时长</th>
+                  <th>无版权音频大小</th>
                   <th>下载</th>
                 </tr>
               </thead>
               <tbody id="novelDownloadTableBody">
                 <tr>
-                  <td colspan="7" class="empty-text">正在加载...</td>
+                  <td colspan="9" class="empty-text">正在加载...</td>
                 </tr>
               </tbody>
             </table>

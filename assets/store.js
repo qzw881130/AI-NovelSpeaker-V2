@@ -192,7 +192,10 @@ async function listNovelBundles(novelId) {
 async function createNovelBundle(novelId, options = {}) {
   const data = await api(`/api/novels/${Number(novelId)}/bundles`, {
     method: "POST",
-    body: JSON.stringify({ audioPreset: String(options.audioPreset || "lossless") }),
+    body: JSON.stringify({
+      audioPreset: String(options.audioPreset || "lossless"),
+      audioVariant: String(options.audioVariant || "ver"),
+    }),
   });
   return data.task || null;
 }
@@ -671,10 +674,10 @@ async function enqueueAllLineAudios(novelId, chapterNum, options = {}) {
   return res;
 }
 
-async function mergeChapterLineAudio(novelId, chapterNum) {
+async function mergeChapterLineAudio(novelId, chapterNum, options = {}) {
   const res = await api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/merge-line-audio`, {
     method: "POST",
-    body: "{}",
+    body: JSON.stringify({ variant: String(options.variant || "ver") }),
   });
   return res;
 }

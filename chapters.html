@@ -50,7 +50,6 @@
                 <button id="viewRolesBtn" class="ghost-btn" type="button">查看角色</button>
                 <button id="viewLineAudioBtn" class="ghost-btn" type="button">台词预览</button>
                 <button id="mergeLineAudioBtn" class="ghost-btn" type="button">合并音频</button>
-                <button id="downloadAudioBtn" class="ghost-btn" type="button">下载音频</button>
                 <button id="editChapterBtn" class="ghost-btn" type="button">编辑章回</button>
                 <button id="deleteChapterBtn" class="ghost-btn" type="button">删除章回</button>
                 <span class="reader-font-controls">
@@ -65,8 +64,16 @@
                 <span id="chapterStatus" class="reader-status">就绪</span>
               </div>
               <div id="chapterAudioBox" class="chapter-audio-box hidden">
-                <audio id="chapterAudioPlayer" controls preload="metadata"></audio>
-                <span id="chapterAudioDuration" class="meta">时长：-</span>
+                <div id="chapterVerAudioWrap" class="chapter-audio-player-block hidden">
+                  <span class="meta">有版权音频</span>
+                  <audio id="chapterAudioPlayer" controls preload="metadata"></audio>
+                  <span id="chapterAudioDuration" class="meta">时长：-</span>
+                </div>
+                <div id="chapterNonVerAudioWrap" class="chapter-audio-player-block hidden">
+                  <span class="meta">无版权音频</span>
+                  <audio id="chapterNonVerAudioPlayer" controls preload="metadata"></audio>
+                  <span id="chapterNonVerAudioDuration" class="meta">时长：-</span>
+                </div>
               </div>
             </div>
             <article id="chapterContent" class="chapter-reading">请从左侧选择章节查看内容。</article>

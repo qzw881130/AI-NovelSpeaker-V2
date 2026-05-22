@@ -30,6 +30,7 @@ from .line_audio import (
     enqueue_all_line_audio_tasks,
     merge_chapter_line_audio,
     get_chapter_merged_audio_path,
+    get_chapter_merged_audio_stats,
     delete_line_audio_task,
     retry_line_audio_task,
 )
@@ -72,6 +73,7 @@ def _build_bundle_record(zip_path: Path) -> dict:
         "sizeBytes": int(stat.st_size),
         "createdAt": datetime.fromtimestamp(stat.st_mtime).isoformat(),
         "audioPreset": _detect_bundle_audio_preset(zip_path.name),
+        "audioVariant": _detect_bundle_audio_variant(zip_path.name),
     }
 
 
@@ -115,6 +117,15 @@ def _detect_bundle_audio_preset(file_name: str) -> str:
     return "lossless"
 
 
+def _normalize_bundle_audio_variant(value: str) -> str:
+    variant = str(value or "ver").strip().lower()
+    return variant if variant in {"ver", "nonver"} else "ver"
+
+
+def _detect_bundle_audio_variant(file_name: str) -> str:
+    return "nonver" if "-nonver-" in str(file_name or "") else "ver"
+
+
 def _bundle_temp_dir(english_dir: str, stamp: str) -> Path:
     path = ROOT_DIR / "temp" / "bundle-build" / english_dir / stamp
     path.mkdir(parents=True, exist_ok=True)
@@ -152,7 +163,9 @@ def _transcode_bundle_audio(src_path: Path, out_path: Path, audio_preset: str) -
 def _get_novel_bundle_entries(
     novel_id: int,
     audio_preset: str = "lossless",
+    audio_variant: str = "ver",
 ) -> tuple[bool, str, str, list[dict]]:
+    audio_variant = _normalize_bundle_audio_variant(audio_variant)
     conn = db_conn()
     row = conn.execute(
         "SELECT id,name,english_dir FROM novels WHERE id=?",
@@ -189,7 +202,14 @@ def _get_novel_bundle_entries(
         if not (text_src and text_src.exists() and text_src.is_file()):
             text_src = None
 
-        audio_src = resolve_audio_file(chapter)
+        if audio_variant == "ver":
+            audio_src = resolve_audio_file(chapter)
+        else:
+            audio_src = get_chapter_merged_audio_path(
+                novel_id,
+                int(chapter["id"]),
+                include_copyright=False,
+            )
         if not (audio_src and audio_src.exists() and audio_src.is_file()):
             audio_src = None
 
@@ -200,7 +220,7 @@ def _get_novel_bundle_entries(
                     "textSrc": text_src,
                     "textArc": Path(english_dir) / "text" / text_name,
                     "audioSrc": audio_src,
-                    "audioArc": Path(english_dir) / "audio" / audio_name,
+                    "audioArc": Path(english_dir) / ("audio" if audio_variant == "ver" else "audio_non_ver") / audio_name,
                 }
             )
 
@@ -210,16 +230,17 @@ def _get_novel_bundle_entries(
 
 
 def _create_novel_bundle_file(
-    novel_id: int, audio_preset: str = "lossless"
+    novel_id: int, audio_preset: str = "lossless", audio_variant: str = "ver"
 ) -> tuple[bool, str, dict | None]:
     audio_preset = _normalize_bundle_audio_preset(audio_preset)
-    ok, msg, english_dir, bundle_entries = _get_novel_bundle_entries(novel_id, audio_preset)
+    audio_variant = _normalize_bundle_audio_variant(audio_variant)
+    ok, msg, english_dir, bundle_entries = _get_novel_bundle_entries(novel_id, audio_preset, audio_variant)
     if not ok:
         return False, msg, None
 
     stamp = datetime.now().strftime('%Y-%m-%d_%H%M%S')
     suffix = str(BUNDLE_AUDIO_PRESETS[audio_preset]["suffix"])
-    out_name = f"{english_dir}-{suffix}-{stamp}.zip"
+    out_name = f"{english_dir}-{audio_variant}-{suffix}-{stamp}.zip"
     zip_path = _bundle_output_dir() / out_name
     temp_dir = _bundle_temp_dir(english_dir, stamp)
     try:
@@ -240,17 +261,18 @@ def _create_novel_bundle_file(
     return True, "created", _build_bundle_record(zip_path)
 
 
-def _run_novel_bundle_task(novel_id: int, audio_preset: str) -> None:
+def _run_novel_bundle_task(novel_id: int, audio_preset: str, audio_variant: str) -> None:
     try:
-        ok, msg, english_dir, bundle_entries = _get_novel_bundle_entries(novel_id, audio_preset)
+        ok, msg, english_dir, bundle_entries = _get_novel_bundle_entries(novel_id, audio_preset, audio_variant)
         if not ok:
             _set_bundle_task_status(novel_id, status="failed", error=msg)
             return
 
         audio_preset = _normalize_bundle_audio_preset(audio_preset)
+        audio_variant = _normalize_bundle_audio_variant(audio_variant)
         stamp = datetime.now().strftime('%Y-%m-%d_%H%M%S')
         suffix = str(BUNDLE_AUDIO_PRESETS[audio_preset]["suffix"])
-        out_name = f"{english_dir}-{suffix}-{stamp}.zip"
+        out_name = f"{english_dir}-{audio_variant}-{suffix}-{stamp}.zip"
         zip_path = _bundle_output_dir() / out_name
         temp_dir = _bundle_temp_dir(english_dir, stamp)
         total = len(bundle_entries)
@@ -262,6 +284,7 @@ def _run_novel_bundle_task(novel_id: int, audio_preset: str) -> None:
             fileName=out_name,
             error="",
             audioPreset=audio_preset,
+            audioVariant=audio_variant,
         )
         try:
             with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
@@ -291,11 +314,12 @@ def _run_novel_bundle_task(novel_id: int, audio_preset: str) -> None:
         _set_bundle_task_status(novel_id, status="failed", error=str(exc))
 
 
-def _start_novel_bundle_task(novel_id: int, audio_preset: str) -> tuple[bool, str, dict | None]:
+def _start_novel_bundle_task(novel_id: int, audio_preset: str, audio_variant: str) -> tuple[bool, str, dict | None]:
     current = _get_bundle_task_status(novel_id)
     if current and current.get("status") == "running":
         return True, "running", current
     audio_preset = _normalize_bundle_audio_preset(audio_preset)
+    audio_variant = _normalize_bundle_audio_variant(audio_variant)
     task = _set_bundle_task_status(
         novel_id,
         status="queued",
@@ -303,13 +327,14 @@ def _start_novel_bundle_task(novel_id: int, audio_preset: str) -> tuple[bool, st
         total=0,
         error="",
         audioPreset=audio_preset,
+        audioVariant=audio_variant,
         startedAt=datetime.now().isoformat(),
         bundle=None,
         fileName="",
     )
     threading.Thread(
         target=_run_novel_bundle_task,
-        args=(int(novel_id), audio_preset),
+        args=(int(novel_id), audio_preset, audio_variant),
         daemon=True,
     ).start()
     return True, "started", task
@@ -934,7 +959,7 @@ class Handler(BaseHTTPRequestHandler):
             conn = db_conn()
             row = conn.execute(
                 """
-                SELECT c.id,c.novel_id,c.chapter_num,c.title,c.word_count,c.text_file_path,c.audio_file_path,c.has_json,c.has_audio,
+                SELECT c.id,c.novel_id,c.chapter_num,c.title,c.word_count,c.text_file_path,c.audio_file_path,c.audio_duration_seconds,c.has_json,c.has_audio,
                        n.name AS novel_name,n.english_dir
                 FROM chapters c
                 JOIN novels n ON n.id=c.novel_id
@@ -946,6 +971,9 @@ class Handler(BaseHTTPRequestHandler):
             if not row:
                 self.send_json({"error": "chapter not found"}, 404)
                 return
+            non_ver_stats = get_chapter_merged_audio_stats(
+                novel_id, int(row["id"]), include_copyright=False
+            )
             self.send_json(
                 {
                     "id": int(row["id"]),
@@ -954,6 +982,9 @@ class Handler(BaseHTTPRequestHandler):
                     "wordCount": int(row["word_count"] or 0),
                     "hasJson": bool(row["has_json"]),
                     "hasAudio": resolve_audio_file(row) is not None,
+                    "audioDurationSeconds": float(row["audio_duration_seconds"] or 0),
+                    "hasNonVerAudio": bool(non_ver_stats["hasAudio"]),
+                    "nonVerAudioDurationSeconds": float(non_ver_stats["durationSeconds"] or 0),
                     "content": chapter_content(
                         str(row["english_dir"]),
                         chapter_num,
@@ -1293,9 +1324,10 @@ class Handler(BaseHTTPRequestHandler):
         if m_merged_audio:
             novel_id = int(m_merged_audio.group(1))
             chapter_num = int(m_merged_audio.group(2))
+            variant = _normalize_bundle_audio_variant(parse_qs(parsed.query).get("variant", ["ver"])[0])
             conn = db_conn()
             chapter_row = conn.execute(
-                "SELECT id FROM chapters WHERE novel_id=? AND chapter_num=?",
+                "SELECT id, title FROM chapters WHERE novel_id=? AND chapter_num=?",
                 (novel_id, chapter_num),
             ).fetchone()
             conn.close()
@@ -1303,13 +1335,17 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": "chapter not found"}, 404)
                 return
             merged_path = get_chapter_merged_audio_path(
-                novel_id, int(chapter_row["id"])
+                novel_id, int(chapter_row["id"]), include_copyright=(variant == "ver")
             )
             if not merged_path:
                 self.send_json({"error": "merged audio not found"}, 404)
                 return
             ctype = mimetypes.guess_type(merged_path.name)[0] or "audio/flac"
-            self.send_file_response(merged_path, ctype)
+            download_name = safe_chapter_file_name(
+                chapter_num,
+                str(chapter_row["title"] or f"chapter_{chapter_num}"),
+            ).replace(".txt", ".flac")
+            self.send_file_response(merged_path, ctype, download_name=download_name)
             return
 
         if not self.serve_static(route):
@@ -1469,7 +1505,8 @@ class Handler(BaseHTTPRequestHandler):
             novel_id = int(m_bundle_create.group(1))
             body = self.read_json()
             audio_preset = str(body.get("audioPreset") or "lossless").strip()
-            ok, msg, task = _start_novel_bundle_task(novel_id, audio_preset)
+            audio_variant = str(body.get("audioVariant") or "ver").strip()
+            ok, msg, task = _start_novel_bundle_task(novel_id, audio_preset, audio_variant)
             if not ok or not task:
                 code = 404 if "not found" in msg else 400
                 self.send_json({"error": msg}, code)
@@ -2357,6 +2394,8 @@ class Handler(BaseHTTPRequestHandler):
         if m_merge_audio:
             novel_id = int(m_merge_audio.group(1))
             chapter_num = int(m_merge_audio.group(2))
+            body = self.read_json()
+            variant = _normalize_bundle_audio_variant((body or {}).get("variant") if isinstance(body, dict) else "ver")
             conn = db_conn()
             chapter_row = conn.execute(
                 "SELECT id FROM chapters WHERE novel_id=? AND chapter_num=?",
@@ -2366,11 +2405,15 @@ class Handler(BaseHTTPRequestHandler):
             if not chapter_row:
                 self.send_json({"error": "chapter not found"}, 404)
                 return
-            ok, msg, path = merge_chapter_line_audio(novel_id, int(chapter_row["id"]))
+            ok, msg, path = merge_chapter_line_audio(
+                novel_id,
+                int(chapter_row["id"]),
+                include_copyright=(variant == "ver"),
+            )
             if not ok:
                 self.send_json({"error": msg}, 409)
                 return
-            if path:
+            if path and variant == "ver":
                 conn = db_conn()
                 conn.execute(
                     "UPDATE chapters SET audio_file_path=?,has_audio=1,updated_at=CURRENT_TIMESTAMP WHERE novel_id=? AND chapter_num=?",
@@ -2383,7 +2426,7 @@ class Handler(BaseHTTPRequestHandler):
                     chapter_id=int(chapter_row["id"]),
                     audio_rel_path=path,
                 )
-            self.send_json({"status": "merged", "path": path})
+            self.send_json({"status": "merged", "path": path, "variant": variant})
             return
 
         self.send_json({"error": "not found"}, 404)

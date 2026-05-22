@@ -1050,16 +1050,18 @@ textarea {
 
 .chapter-audio-box {
   margin-top: 10px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
+  display: grid;
+  gap: 12px;
 }
 
 .chapter-audio-box audio {
-  flex: 1 1 760px;
   width: min(760px, 100%);
   min-width: 320px;
+}
+
+.chapter-audio-player-block {
+  display: grid;
+  gap: 6px;
 }
 
 .chapter-reading {

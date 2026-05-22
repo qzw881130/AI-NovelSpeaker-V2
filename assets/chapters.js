@@ -1,7 +1,6 @@
 import {
   createChapter,
   deleteChapter,
-  downloadChapterAudio,
   fetchChapterDetail,
   fetchChapterJsonOutput,
   fetchNovelChapters,
@@ -260,13 +259,25 @@ function updateChapterNavButtons() {
 
 function resetChapterAudioPlayer() {
   const box = document.getElementById("chapterAudioBox");
+  const verWrap = document.getElementById("chapterVerAudioWrap");
   const player = document.getElementById("chapterAudioPlayer");
+  const nonVerWrap = document.getElementById("chapterNonVerAudioWrap");
+  const nonVerPlayer = document.getElementById("chapterNonVerAudioPlayer");
   const duration = document.getElementById("chapterAudioDuration");
+  const nonVerDuration = document.getElementById("chapterNonVerAudioDuration");
   box.classList.add("hidden");
-  duration.textContent = "-";
+  if (verWrap) verWrap.classList.add("hidden");
+  duration.textContent = "时长：-";
   player.pause();
   player.removeAttribute("src");
   player.load();
+  if (nonVerWrap) nonVerWrap.classList.add("hidden");
+  if (nonVerDuration) nonVerDuration.textContent = "时长：-";
+  if (nonVerPlayer) {
+    nonVerPlayer.pause();
+    nonVerPlayer.removeAttribute("src");
+    nonVerPlayer.load();
+  }
 }
 
 function getChapterAudioStreamUrl(chapterNum) {
@@ -275,22 +286,49 @@ function getChapterAudioStreamUrl(chapterNum) {
   return `/api/novels/${Number(activeNovel.id)}/chapters/${Number(chapterNum)}/audio-stream?rand=${nonce}`;
 }
 
+function getChapterNonVerAudioUrl(chapterNum) {
+  if (!activeNovel) return "";
+  const nonce = Date.now();
+  return `/api/novels/${Number(activeNovel.id)}/chapters/${Number(chapterNum)}/merged-audio?variant=nonver&rand=${nonce}`;
+}
+
 function refreshChapterAudioState(detail) {
-  const downloadBtn = document.getElementById("downloadAudioBtn");
-  if (!activeNovel || !detail?.hasAudio) {
-    downloadBtn.classList.add("hidden");
-    downloadBtn.disabled = true;
+  if (!activeNovel || (!detail?.hasAudio && !detail?.hasNonVerAudio)) {
     resetChapterAudioPlayer();
     return;
   }
   const box = document.getElementById("chapterAudioBox");
+  const verWrap = document.getElementById("chapterVerAudioWrap");
   const player = document.getElementById("chapterAudioPlayer");
+  const nonVerWrap = document.getElementById("chapterNonVerAudioWrap");
+  const nonVerPlayer = document.getElementById("chapterNonVerAudioPlayer");
   const duration = document.getElementById("chapterAudioDuration");
-  player.src = getChapterAudioStreamUrl(detail.chapterNum);
-  duration.textContent = "...";
+  const nonVerDuration = document.getElementById("chapterNonVerAudioDuration");
+  if (detail?.hasAudio) {
+    if (verWrap) verWrap.classList.remove("hidden");
+    player.src = getChapterAudioStreamUrl(detail.chapterNum);
+    duration.textContent = `时长：${fmtDuration(detail.audioDurationSeconds || 0)}`;
+  } else {
+    if (verWrap) verWrap.classList.add("hidden");
+    player.pause();
+    player.removeAttribute("src");
+    player.load();
+    duration.textContent = "时长：-";
+  }
+  if (detail?.hasNonVerAudio) {
+    if (nonVerWrap) nonVerWrap.classList.remove("hidden");
+    if (nonVerPlayer) nonVerPlayer.src = getChapterNonVerAudioUrl(detail.chapterNum);
+    if (nonVerDuration) nonVerDuration.textContent = `时长：${fmtDuration(detail.nonVerAudioDurationSeconds || 0)}`;
+  } else {
+    if (nonVerWrap) nonVerWrap.classList.add("hidden");
+    if (nonVerPlayer) {
+      nonVerPlayer.pause();
+      nonVerPlayer.removeAttribute("src");
+      nonVerPlayer.load();
+    }
+    if (nonVerDuration) nonVerDuration.textContent = "时长：-";
+  }
   box.classList.remove("hidden");
-  downloadBtn.classList.remove("hidden");
-  downloadBtn.disabled = false;
 }
 
 async function loadChapter(chapterNum) {
@@ -314,8 +352,6 @@ async function loadChapter(chapterNum) {
     localizeDocumentText(document);
   } catch (err) {
     resetChapterAudioPlayer();
-    document.getElementById("downloadAudioBtn").classList.add("hidden");
-    document.getElementById("downloadAudioBtn").disabled = true;
     setStatus(t("error.loadFailed", { msg: err.message }));
   }
 }
@@ -822,8 +858,6 @@ async function refreshChapters() {
     activeChapterNum = null;
     activeChapterDetail = null;
     resetChapterAudioPlayer();
-    document.getElementById("downloadAudioBtn").classList.add("hidden");
-    document.getElementById("downloadAudioBtn").disabled = true;
     document.getElementById("chapterTitle").textContent = "暂无章节";
     document.getElementById("chapterMeta").textContent = "当前小说尚未创建章节";
     document.getElementById("chapterContent").textContent = '请先点击"创建章回"录入章节信息。';
@@ -980,21 +1014,6 @@ function bindActions() {
     const value = Number(event.target.value || 18);
     localStorage.setItem(JSON_VIEW_FONT_SIZE_KEY, String(value));
     renderJsonViewMode();
-  });
-
-  document.getElementById("downloadAudioBtn").addEventListener("click", () => {
-    if (!activeNovel || !activeChapterDetail) return;
-    if (!activeChapterDetail.hasAudio) {
-      setStatus(t("api.notFound"));
-      return;
-    }
-    downloadChapterAudio(activeNovel.id, activeChapterDetail.chapterNum)
-      .then(() => {
-        setStatus(translateText("开始下载音频"));
-      })
-      .catch((err) => {
-        setStatus(t("error.operationFailed", { msg: err.message }));
-      });
   });
 
   document.getElementById("createChapterBtn").addEventListener("click", () => {
@@ -1173,14 +1192,8 @@ function bindActions() {
 
   document.getElementById("mergeLineAudioBtn")?.addEventListener("click", async () => {
     if (!activeNovel || !activeChapterNum) return;
-    try {
-      await mergeChapterLineAudio(activeNovel.id, activeChapterNum);
-      await refreshChapters();
-      setStatus(translateText("音频已合并"));
-      toast(translateText("音频已合并"));
-    } catch (err) {
-      toast(err.message);
-    }
+    const url = `./novel-download.html?novelId=${encodeURIComponent(activeNovel.id)}`;
+    window.open(url, "_blank");
   });
 
   document.getElementById("lineRoleFilter")?.addEventListener("change", (event) => {
@@ -2205,8 +2218,6 @@ function openChapterModal(mode) {
 
 async function init() {
   renderNav();
-  document.getElementById("downloadAudioBtn").classList.add("hidden");
-  document.getElementById("downloadAudioBtn").disabled = true;
   applyChapterFontSize(getSavedChapterFontSize());
   updateChapterNavButtons();
   resetChapterAudioPlayer();

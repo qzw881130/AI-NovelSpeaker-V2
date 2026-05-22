@@ -177,6 +177,21 @@ def update_novel_total_audio_duration_seconds(
     return total
 
 
+def calculate_audio_dir_total_duration_seconds(audio_dir: Path) -> float:
+    directory = Path(audio_dir)
+    if not directory.exists() or not directory.is_dir():
+      return 0.0
+    total = 0.0
+    for path in sorted(directory.glob("*.flac")):
+        if not path.is_file():
+            continue
+        try:
+            total += probe_audio_duration_seconds(path)
+        except Exception:
+            continue
+    return total
+
+
 def refresh_novel_audio_duration_cache_async(
     novel_id: int,
     chapter_id: int | None = None,
@@ -214,6 +229,7 @@ def refresh_novel_audio_duration_cache_async(
 def ensure_novel_dirs(english_dir: str) -> None:
     (NOVEL_DIR / english_dir / "text").mkdir(parents=True, exist_ok=True)
     (NOVEL_DIR / english_dir / "audio").mkdir(parents=True, exist_ok=True)
+    (NOVEL_DIR / english_dir / "audio_non_ver").mkdir(parents=True, exist_ok=True)
     (NOVEL_DIR / english_dir / "asr").mkdir(parents=True, exist_ok=True)
 
 
@@ -747,7 +763,11 @@ def fetch_novels(conn: sqlite3.Connection) -> list[dict]:
         )
         txt_bytes = dir_size_bytes(base_dir / "text")
         audio_bytes = dir_size_bytes(base_dir / "audio")
+        audio_non_ver_bytes = dir_size_bytes(base_dir / "audio_non_ver")
         temp_bytes = dir_size_bytes(temp_dir)
+        total_audio_non_ver_duration_seconds = calculate_audio_dir_total_duration_seconds(
+            base_dir / "audio_non_ver"
+        )
         json_progress = 0
         audio_progress = 0
         if chapter_count > 0:
@@ -785,9 +805,13 @@ def fetch_novels(conn: sqlite3.Connection) -> list[dict]:
                 "totalAudioDurationSeconds": float(
                     r["total_audio_duration_seconds"] or 0
                 ),
+                "totalAudioNonVerDurationSeconds": float(
+                    total_audio_non_ver_duration_seconds or 0
+                ),
                 "storage": {
                     "txtBytes": txt_bytes,
                     "audioBytes": audio_bytes,
+                    "audioNonVerBytes": audio_non_ver_bytes,
                     "tempBytes": temp_bytes,
                     "dbBytes": db_size,
                 },
@@ -1008,6 +1032,8 @@ def fetch_chapters(conn: sqlite3.Connection, novel_id: int) -> list[dict]:
 def fetch_novel_download_chapters(
     conn: sqlite3.Connection, novel_id: int
 ) -> list[dict]:
+    from .line_audio import get_chapter_merged_audio_stats
+
     rows = conn.execute(
         """
         SELECT c.id,c.novel_id,c.chapter_num,c.title,c.word_count,c.audio_file_path,
@@ -1031,6 +1057,9 @@ def fetch_novel_download_chapters(
                 conn, int(row["id"]), abs_audio
             )
             download_url = f"/api/novels/{int(row['novel_id'])}/chapters/{int(row['chapter_num'])}/audio-file"
+        non_ver_stats = get_chapter_merged_audio_stats(
+            int(row["novel_id"]), int(row["id"]), include_copyright=False
+        )
         result.append(
             {
                 "id": int(row["id"]),
@@ -1041,6 +1070,14 @@ def fetch_novel_download_chapters(
                 "audioSizeBytes": size_bytes,
                 "downloadUrl": download_url,
                 "hasAudio": bool(download_url),
+                "nonVerAudioDurationSeconds": float(non_ver_stats["durationSeconds"] or 0),
+                "nonVerAudioSizeBytes": int(non_ver_stats["sizeBytes"] or 0),
+                "nonVerDownloadUrl": (
+                    f"/api/novels/{int(row['novel_id'])}/chapters/{int(row['chapter_num'])}/merged-audio?variant=nonver"
+                    if non_ver_stats["hasAudio"]
+                    else ""
+                ),
+                "hasNonVerAudio": bool(non_ver_stats["hasAudio"]),
             }
         )
     return result

@@ -18,8 +18,10 @@ from .services import (
     comfy_request_json,
     comfy_upload_input_file,
     create_workflow_log,
+    db_rel_path,
     extract_audio_output_from_history,
     fetch_settings,
+    probe_audio_duration_seconds,
     parse_datetime_utc,
     update_workflow_log_error,
     update_workflow_log_json,
@@ -56,6 +58,10 @@ def _novel_audio_output_dir(english_dir: str) -> Path:
     return NOVEL_DIR / english_dir / "audio"
 
 
+def _novel_audio_output_dir_non_ver(english_dir: str) -> Path:
+    return NOVEL_DIR / english_dir / "audio_non_ver"
+
+
 def _assign_text_input(node: dict, value: str, purpose: str) -> None:
     inputs = node.get("inputs")
     if not isinstance(inputs, dict):
@@ -70,6 +76,13 @@ def _assign_text_input(node: dict, value: str, purpose: str) -> None:
 def _chapter_merged_output_path(english_dir: str, chapter_num: int) -> Path:
     return (
         _novel_audio_output_dir(english_dir) / f"chapter-{chapter_num:03d}-merged.flac"
+    )
+
+
+def _chapter_merged_output_path_non_ver(english_dir: str, chapter_num: int) -> Path:
+    return (
+        _novel_audio_output_dir_non_ver(english_dir)
+        / f"chapter-{chapter_num:03d}-merged.flac"
     )
 
 
@@ -1089,7 +1102,9 @@ def process_line_audio_task(task_id: int) -> None:
         conn.close()
 
 
-def get_chapter_merged_audio_path(novel_id: int, chapter_id: int) -> Path | None:
+def get_chapter_merged_audio_path(
+    novel_id: int, chapter_id: int, include_copyright: bool = True
+) -> Path | None:
     """获取章节合并后的音频文件路径"""
     conn = db_conn()
     row = conn.execute(
@@ -1104,24 +1119,29 @@ def get_chapter_merged_audio_path(novel_id: int, chapter_id: int) -> Path | None
     english_dir = str(row["english_dir"])
     chapter_num = int(row["chapter_num"])
 
-    path = _chapter_merged_output_path(english_dir, chapter_num)
+    path = (
+        _chapter_merged_output_path(english_dir, chapter_num)
+        if include_copyright
+        else _chapter_merged_output_path_non_ver(english_dir, chapter_num)
+    )
     if path.exists() and path.is_file() and path.stat().st_size > 0:
         return path
 
-    legacy_path = (
-        ROOT_DIR / "temp" / english_dir / "audio" / str(chapter_num) / "merged.flac"
-    )
-    if (
-        legacy_path.exists()
-        and legacy_path.is_file()
-        and legacy_path.stat().st_size > 0
-    ):
-        return legacy_path
+    if include_copyright:
+        legacy_path = (
+            ROOT_DIR / "temp" / english_dir / "audio" / str(chapter_num) / "merged.flac"
+        )
+        if (
+            legacy_path.exists()
+            and legacy_path.is_file()
+            and legacy_path.stat().st_size > 0
+        ):
+            return legacy_path
     return None
 
 
 def merge_chapter_line_audio(
-    novel_id: int, chapter_id: int
+    novel_id: int, chapter_id: int, include_copyright: bool = True
 ) -> tuple[bool, str, str | None]:
     """合并章节所有台词音频为一个文件"""
     # 获取章节信息
@@ -1172,24 +1192,25 @@ def merge_chapter_line_audio(
     if missing_count > 0:
         return False, f"还有 {missing_count} 条台词未生成音频", None
 
-    settings_conn = db_conn()
-    settings = fetch_settings(settings_conn)
-    settings_conn.close()
-    copyright_audio = settings.get("copyrightAudio") or {}
-
     intro_path = None
-    intro_rel = str(copyright_audio.get("introPath") or "").strip()
-    if copyright_audio.get("introEnabled") and intro_rel:
-        candidate = (ROOT_DIR / intro_rel).resolve()
-        if candidate.exists() and candidate.is_file():
-            intro_path = candidate
-
     outro_path = None
-    outro_rel = str(copyright_audio.get("outroPath") or "").strip()
-    if copyright_audio.get("outroEnabled") and outro_rel:
-        candidate = (ROOT_DIR / outro_rel).resolve()
-        if candidate.exists() and candidate.is_file():
-            outro_path = candidate
+    if include_copyright:
+        settings_conn = db_conn()
+        settings = fetch_settings(settings_conn)
+        settings_conn.close()
+        copyright_audio = settings.get("copyrightAudio") or {}
+
+        intro_rel = str(copyright_audio.get("introPath") or "").strip()
+        if copyright_audio.get("introEnabled") and intro_rel:
+            candidate = (ROOT_DIR / intro_rel).resolve()
+            if candidate.exists() and candidate.is_file():
+                intro_path = candidate
+
+        outro_rel = str(copyright_audio.get("outroPath") or "").strip()
+        if copyright_audio.get("outroEnabled") and outro_rel:
+            candidate = (ROOT_DIR / outro_rel).resolve()
+            if candidate.exists() and candidate.is_file():
+                outro_path = candidate
 
     def prepare_merge_audio(
         source_path: Path, target_path: Path
@@ -1277,9 +1298,17 @@ def merge_chapter_line_audio(
             fp.write(concat_file_line(outro_path))
 
     # 执行合并
-    output_dir = _novel_audio_output_dir(english_dir)
+    output_dir = (
+        _novel_audio_output_dir(english_dir)
+        if include_copyright
+        else _novel_audio_output_dir_non_ver(english_dir)
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = _chapter_merged_output_path(english_dir, chapter_num)
+    output_path = (
+        _chapter_merged_output_path(english_dir, chapter_num)
+        if include_copyright
+        else _chapter_merged_output_path_non_ver(english_dir, chapter_num)
+    )
     try:
         subprocess.run(
             [
@@ -1304,6 +1333,27 @@ def merge_chapter_line_audio(
 
     rel_path = str(output_path.relative_to(ROOT_DIR))
     return True, "merged", rel_path
+
+
+def get_chapter_merged_audio_stats(
+    novel_id: int, chapter_id: int, include_copyright: bool = True
+) -> dict:
+    path = get_chapter_merged_audio_path(
+        novel_id, chapter_id, include_copyright=include_copyright
+    )
+    if not path:
+        return {
+            "hasAudio": False,
+            "sizeBytes": 0,
+            "durationSeconds": 0.0,
+            "relPath": "",
+        }
+    return {
+        "hasAudio": True,
+        "sizeBytes": int(path.stat().st_size),
+        "durationSeconds": float(probe_audio_duration_seconds(path)),
+        "relPath": db_rel_path(path.relative_to(ROOT_DIR)),
+    }
 
 
 def run_line_audio_queue_once() -> bool:
