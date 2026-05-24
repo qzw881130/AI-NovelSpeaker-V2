@@ -80,6 +80,8 @@ const NAV_BADGE_KEYS = {
   lineAudio: "ai_novel_nav_badge_line_audio",
 };
 
+const QQ_GROUP_NUMBER = "1104949466";
+
 function getNavBadgeCount(type) {
   const key = NAV_BADGE_KEYS[type];
   if (!key) return 0;
@@ -161,6 +163,10 @@ function renderNav() {
     </div>
     <button class="nav-toggle" id="navToggle" title="${collapsed ? "展开菜单" : "收起菜单"}">◀</button>
     ${links}
+    <div class="nav-community-box" title="QQ交流群 ${QQ_GROUP_NUMBER}">
+      <div class="nav-community-title">QQ交流群</div>
+      <div class="nav-community-number">${QQ_GROUP_NUMBER}</div>
+    </div>
     <div class="nav-external-row">${externals}</div>
   `;
 

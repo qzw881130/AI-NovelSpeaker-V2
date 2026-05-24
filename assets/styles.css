@@ -39,14 +39,11 @@ p {
 
 .app-shell {
   display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
   min-height: 100vh;
   transition: grid-template-columns 0.3s ease;
 }
 
-.app-shell.nav-collapsed {
-  grid-template-columns: 50px minmax(0, 1fr);
-}
+.app-shell.nav-collapsed {}
 
 .nav-toggle {
   position: absolute;
@@ -120,15 +117,45 @@ p {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  position: relative;
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 240px;
+  height: 100vh;
+  overflow-y: auto;
+  z-index: 20;
+}
+
+.app-shell.nav-collapsed .main-nav {
+  width: 50px;
 }
 
 .nav-external-row {
-  margin-top: auto;
   display: flex;
   align-items: center;
   gap: 10px;
   padding-top: 8px;
+}
+
+.nav-community-box {
+  margin-top: auto;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.58);
+}
+
+.nav-community-title {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.nav-community-number {
+  font-size: 18px;
+  font-weight: 700;
+  color: #6a4a31;
+  letter-spacing: 0.5px;
 }
 
 .nav-external-link {
@@ -166,6 +193,28 @@ p {
 .app-shell.nav-collapsed .nav-external-row {
   flex-direction: column;
   align-items: center;
+}
+
+.app-shell.nav-collapsed .nav-community-box {
+  padding: 8px 4px;
+  text-align: center;
+}
+
+.app-shell.nav-collapsed .nav-community-title,
+.app-shell.nav-collapsed .nav-community-number {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  margin: 0 auto;
+}
+
+.app-shell.nav-collapsed .nav-community-title {
+  font-size: 11px;
+  margin-bottom: 6px;
+}
+
+.app-shell.nav-collapsed .nav-community-number {
+  font-size: 12px;
+  letter-spacing: 0;
 }
 
 .brand {
@@ -281,6 +330,11 @@ p {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  margin-left: 240px;
+}
+
+.app-shell.nav-collapsed .page {
+  margin-left: 50px;
 }
 
 .json-tasks-page {
@@ -1995,8 +2049,20 @@ menu {
   }
 
   .main-nav {
+    position: relative;
+    left: auto;
+    top: auto;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    z-index: auto;
     border-right: none;
     border-bottom: 1px solid var(--line);
+  }
+
+  .page,
+  .app-shell.nav-collapsed .page {
+    margin-left: 0;
   }
 
   .hero-grid {

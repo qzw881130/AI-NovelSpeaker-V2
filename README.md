@@ -13,6 +13,12 @@
 - B站：https://www.bilibili.com/video/BV136AKzcE2c
 - YouTube：https://youtu.be/pVB0qMpFdqg
 
+## 社区交流
+
+- QQ 群：`1104949466`
+
+![AI-NovelSpeaker QQ群](docs/qq-group.jpg)
+
 ## 功能概览
 
 - 小说管理：创建/编辑/删除小说，项目统计，自动刷新，打包下载真实 ZIP，支持小说级提示词与工作流绑定，可刷新并缓存小说总音频时长
