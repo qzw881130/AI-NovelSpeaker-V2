@@ -17,7 +17,7 @@
 
 - QQ 群：`1104949466`
 
-![AI-NovelSpeaker QQ群](docs/qq-group.jpg)
+<img src="docs/qq-group.jpg" alt="AI-NovelSpeaker QQ群" width="300" />
 
 ## 功能概览
 
