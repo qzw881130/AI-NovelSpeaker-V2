@@ -3,11 +3,11 @@ import {
   cancelChapterAudioAsr,
   enqueueBatchAudioAsr,
   enqueueChapterAudioAsr,
-  fetchTaskWorkerStatus,
+  fetchAudioAsrWorkerStatus,
   fetchNovelAudioAsrChapters,
   getData,
   getActiveNovelId,
-  restartTaskWorker,
+  restartAudioAsrWorker,
   setActiveNovelId,
 } from "./store.js";
 import { renderNav, toast } from "./ui.js";
@@ -38,7 +38,7 @@ function renderTaskWorkerStatus(status) {
 
 async function refreshTaskWorkerStatus() {
   try {
-    const status = await fetchTaskWorkerStatus();
+    const status = await fetchAudioAsrWorkerStatus();
     renderTaskWorkerStatus(status);
   } catch {
     renderTaskWorkerStatus({ state: "stopped" });
@@ -302,7 +302,7 @@ function bindEvents() {
     toast("音频ASR列表已刷新");
   });
   document.getElementById("restartAudioAsrTaskWorkerBtn").addEventListener("click", async () => {
-    await restartTaskWorker();
+    await restartAudioAsrWorker();
     toast("任务Worker已重启");
     await refreshPage();
   });

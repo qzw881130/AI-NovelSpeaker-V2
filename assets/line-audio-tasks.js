@@ -6,8 +6,8 @@ import {
   fetchLineAudioTaskDetail,
   deleteLineAudioTask,
   retryLineAudioTask,
-  fetchTaskWorkerStatus,
-  restartTaskWorker,
+  fetchLineAudioWorkerStatus,
+  restartLineAudioWorker,
 } from "./store.js";
 import { clearNavBadge, renderNav, toast, fmtDateTime } from "./ui.js";
 import { localizeDocumentText, t, translateText } from "./i18n.js";
@@ -41,7 +41,7 @@ function renderTaskWorkerStatus(status) {
 
 async function refreshTaskWorkerStatus() {
   try {
-    const status = await fetchTaskWorkerStatus();
+    const status = await fetchLineAudioWorkerStatus();
     renderTaskWorkerStatus(status);
   } catch {
     renderTaskWorkerStatus({ state: "stopped" });
@@ -400,7 +400,7 @@ function bindActions() {
     refreshLineAudioTasks();
   });
   document.getElementById("restartTaskWorkerBtn").addEventListener("click", async () => {
-    await restartTaskWorker();
+    await restartLineAudioWorker();
     toast(translateText("任务Worker已重启"));
     await refreshLineAudioTasks();
   });

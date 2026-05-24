@@ -107,6 +107,7 @@ let segmentElementMap = new Map();
 let pendingTimeUpdate = false;
 let lastMatchStatusText = "";
 let lastTimeUpdateAt = 0;
+let chapterLoadToken = 0;
 const TIMEUPDATE_MIN_INTERVAL_MS = 120;
 const CHAPTER_RENDER_CACHE_LIMIT = 8;
 const chapterRenderCache = new Map();
@@ -1160,24 +1161,16 @@ function resetReaderScroll() {
 
 async function loadChapter(chapterNum, options = {}) {
   if (!activeNovel) return;
+  const loadToken = ++chapterLoadToken;
   activeChapterNum = chapterNum;
   const detail = await fetchChapterDetail(activeNovel.id, chapterNum);
+  if (loadToken !== chapterLoadToken) return;
   activeChapterDetail = detail;
   document.getElementById("liveReaderChapterTitle").textContent = detail.title;
   document.getElementById("liveReaderChapterMeta").textContent = `${detail.novelName} · 章节 ${detail.chapterNum} · 字数 ${detail.wordCount || 0}`;
   document.getElementById("liveReaderMatchStatus").textContent = "匹配: 初始化中";
   const frameTitleEl = document.getElementById("liveReaderFrameTitle");
   if (frameTitleEl) frameTitleEl.textContent = detail.title;
-  let asrSegments = [];
-  let asrText = "";
-  try {
-    asrText = await fetchChapterAsrFile(activeNovel.id, chapterNum);
-  } catch {
-    asrText = "";
-  }
-  const renderPayload = await buildRenderedChapterPayload(String(detail.content || "").trim(), asrText);
-  asrSegments = renderPayload.currentAsrMode ? renderPayload.readingSegments : [];
-  renderReadingContentFromPayload(renderPayload);
   const player = document.getElementById("liveReaderAudioPlayer");
   if (detail.hasAudio) {
     player.pause();
@@ -1199,11 +1192,30 @@ async function loadChapter(chapterNum, options = {}) {
   }
   updateReaderProgressBar();
   resetReaderScroll();
-  updateSegmentHighlight(true);
-  setStatus(asrSegments.length ? "已加载精准时间轴" : "就绪");
-  setMatchStatus(asrSegments.length ? "匹配: 初始化中" : "匹配: 估算同步");
   updatePlaylistActiveState();
   updateNavButtons();
+
+  const basePayload = await buildRenderedChapterPayload(String(detail.content || "").trim(), "");
+  if (loadToken !== chapterLoadToken) return;
+  renderReadingContentFromPayload(basePayload);
+  updateSegmentHighlight(true);
+  setStatus("就绪");
+  setMatchStatus("匹配: 估算同步");
+
+  let asrText = "";
+  try {
+    asrText = await fetchChapterAsrFile(activeNovel.id, chapterNum);
+  } catch {
+    asrText = "";
+  }
+  if (loadToken !== chapterLoadToken || !asrText) return;
+  const renderPayload = await buildRenderedChapterPayload(String(detail.content || "").trim(), asrText);
+  if (loadToken !== chapterLoadToken) return;
+  renderReadingContentFromPayload(renderPayload);
+  resetReaderScroll();
+  updateSegmentHighlight(true);
+  setStatus(renderPayload.currentAsrMode ? "已加载精准时间轴" : "就绪");
+  setMatchStatus(renderPayload.currentAsrMode ? "匹配: 初始化中" : "匹配: 估算同步");
 }
 
 async function loadNovelChapters() {

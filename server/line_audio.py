@@ -23,6 +23,8 @@ from .services import (
     fetch_settings,
     probe_audio_duration_seconds,
     parse_datetime_utc,
+    update_chapter_non_ver_audio_duration_cache,
+    update_novel_total_non_ver_audio_duration_seconds,
     update_workflow_log_error,
     update_workflow_log_json,
     workflow_json_to_prompt_json,
@@ -1330,6 +1332,15 @@ def merge_chapter_line_audio(
         )
     except (subprocess.CalledProcessError, FileNotFoundError) as exc:
         return False, f"合并音频失败: {exc}", None
+
+    if not include_copyright:
+        conn = db_conn()
+        try:
+            update_chapter_non_ver_audio_duration_cache(conn, int(chapter["id"]), output_path)
+            update_novel_total_non_ver_audio_duration_seconds(conn, int(chapter["novel_id"]))
+            conn.commit()
+        finally:
+            conn.close()
 
     rel_path = str(output_path.relative_to(ROOT_DIR))
     return True, "merged", rel_path

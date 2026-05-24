@@ -1050,6 +1050,18 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(get_task_worker_status())
             return
 
+        if route == "/api/line-audio-worker/status":
+            self.send_json(get_line_audio_worker_status())
+            return
+
+        if route == "/api/audio-asr-worker/status":
+            self.send_json(get_audio_asr_worker_status())
+            return
+
+        if route == "/api/nsfw-review-worker/status":
+            self.send_json(get_nsfw_review_worker_status())
+            return
+
         if route == "/api/settings":
             conn = db_conn()
             data = fetch_settings(conn)
@@ -1263,7 +1275,7 @@ class Handler(BaseHTTPRequestHandler):
 
         m_line_audio_tasks = re.match(r"^/api/novels/(\d+)/line-audio-tasks$", route)
         if m_line_audio_tasks:
-            ensure_task_worker()
+            ensure_line_audio_worker()
             kick_line_audio_queue_once()
             novel_id = int(m_line_audio_tasks.group(1))
             query = parse_qs(parsed.query or "")
@@ -1879,6 +1891,21 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"status": "ok"})
             return
 
+        if route == "/api/line-audio-worker/restart":
+            restart_line_audio_worker()
+            self.send_json({"status": "ok"})
+            return
+
+        if route == "/api/audio-asr-worker/restart":
+            restart_audio_asr_worker()
+            self.send_json({"status": "ok"})
+            return
+
+        if route == "/api/nsfw-review-worker/restart":
+            restart_nsfw_review_worker()
+            self.send_json({"status": "ok"})
+            return
+
         if route == "/api/prompts":
             body = self.read_json()
             conn = db_conn()
@@ -2191,7 +2218,7 @@ class Handler(BaseHTTPRequestHandler):
             r"^/api/novels/(\d+)/chapters/(\d+)/line-audio/enqueue$", route
         )
         if m_line_audio_enqueue:
-            ensure_task_worker()
+            ensure_line_audio_worker()
             novel_id = int(m_line_audio_enqueue.group(1))
             chapter_num = int(m_line_audio_enqueue.group(2))
             body = self.read_json()
@@ -2226,7 +2253,7 @@ class Handler(BaseHTTPRequestHandler):
             r"^/api/novels/(\d+)/chapters/(\d+)/line-audio/enqueue-all$", route
         )
         if m_line_audio_enqueue_all:
-            ensure_task_worker()
+            ensure_line_audio_worker()
             novel_id = int(m_line_audio_enqueue_all.group(1))
             chapter_num = int(m_line_audio_enqueue_all.group(2))
             body = self.read_json()
@@ -2257,7 +2284,7 @@ class Handler(BaseHTTPRequestHandler):
             r"^/api/novels/(\d+)/chapters/(\d+)/audio-asr/enqueue$", route
         )
         if m_audio_asr_enqueue:
-            ensure_task_worker()
+            ensure_audio_asr_worker()
             novel_id = int(m_audio_asr_enqueue.group(1))
             chapter_num = int(m_audio_asr_enqueue.group(2))
             body = self.read_json()
@@ -2286,7 +2313,7 @@ class Handler(BaseHTTPRequestHandler):
             r"^/api/novels/(\d+)/chapters/(\d+)/audio-asr/cancel$", route
         )
         if m_audio_asr_cancel:
-            ensure_task_worker()
+            ensure_audio_asr_worker()
             novel_id = int(m_audio_asr_cancel.group(1))
             chapter_num = int(m_audio_asr_cancel.group(2))
             conn = db_conn()
@@ -2307,7 +2334,7 @@ class Handler(BaseHTTPRequestHandler):
 
         m_audio_asr_enqueue_batch = re.match(r"^/api/novels/(\d+)/audio-asr/enqueue-batch$", route)
         if m_audio_asr_enqueue_batch:
-            ensure_task_worker()
+            ensure_audio_asr_worker()
             novel_id = int(m_audio_asr_enqueue_batch.group(1))
             body = self.read_json()
             raw_nums = body.get("chapterNums") or []
@@ -2334,7 +2361,7 @@ class Handler(BaseHTTPRequestHandler):
 
         m_nsfw_enqueue = re.match(r"^/api/novels/(\d+)/chapters/(\d+)/nsfw-review/enqueue$", route)
         if m_nsfw_enqueue:
-            ensure_task_worker()
+            ensure_nsfw_review_worker()
             novel_id = int(m_nsfw_enqueue.group(1))
             chapter_num = int(m_nsfw_enqueue.group(2))
             conn = db_conn()
@@ -2355,7 +2382,7 @@ class Handler(BaseHTTPRequestHandler):
 
         m_nsfw_enqueue_batch = re.match(r"^/api/novels/(\d+)/nsfw-review/enqueue-batch$", route)
         if m_nsfw_enqueue_batch:
-            ensure_task_worker()
+            ensure_nsfw_review_worker()
             novel_id = int(m_nsfw_enqueue_batch.group(1))
             body = self.read_json()
             raw_nums = body.get("chapterNums") or []
@@ -2377,7 +2404,7 @@ class Handler(BaseHTTPRequestHandler):
 
         m_retry_line_task = re.match(r"^/api/line-audio-tasks/(\d+)/retry$", route)
         if m_retry_line_task:
-            ensure_task_worker()
+            ensure_line_audio_worker()
             task_id = int(m_retry_line_task.group(1))
             ok, msg = retry_line_audio_task(task_id)
             if not ok:
@@ -3021,7 +3048,7 @@ class Handler(BaseHTTPRequestHandler):
         # 台词音频DELETE API
         m_delete_line_task = re.match(r"^/api/line-audio-tasks/(\d+)$", route)
         if m_delete_line_task:
-            ensure_task_worker()
+            ensure_line_audio_worker()
             task_id = int(m_delete_line_task.group(1))
             ok, msg = delete_line_audio_task(task_id)
             if not ok:

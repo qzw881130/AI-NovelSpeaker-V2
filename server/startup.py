@@ -6,6 +6,9 @@ from http.server import ThreadingHTTPServer
 from .app_context import DB_PATH, db_conn
 from .http_handler import Handler
 from .services import (
+    ensure_audio_asr_worker,
+    ensure_line_audio_worker,
+    ensure_nsfw_review_worker,
     ensure_task_worker,
     sync_system_prompts_from_files,
     sync_system_workflow_from_file,
@@ -23,6 +26,9 @@ def main() -> None:
     conn.close()
 
     ensure_task_worker()
+    ensure_line_audio_worker()
+    ensure_audio_asr_worker()
+    ensure_nsfw_review_worker()
 
     host = str(os.getenv("NOVELSPEAKER_HOST", "0.0.0.0") or "0.0.0.0")
     try:

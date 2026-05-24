@@ -1,11 +1,11 @@
 import {
   enqueueBatchNsfwReview,
   enqueueChapterNsfwReview,
-  fetchTaskWorkerStatus,
+  fetchNsfwReviewWorkerStatus,
   fetchNovelNsfwReviewChapters,
   getData,
   getActiveNovelId,
-  restartTaskWorker,
+  restartNsfwReviewWorker,
   setActiveNovelId,
 } from "./store.js";
 import { renderNav, toast } from "./ui.js";
@@ -31,7 +31,7 @@ function renderTaskWorkerStatus(status) {
 
 async function refreshTaskWorkerStatus() {
   try {
-    const status = await fetchTaskWorkerStatus();
+    const status = await fetchNsfwReviewWorkerStatus();
     renderTaskWorkerStatus(status);
   } catch {
     renderTaskWorkerStatus({ state: "stopped" });
@@ -236,7 +236,7 @@ function bindEvents() {
     toast("NSFW审查列表已刷新");
   });
   document.getElementById("restartNsfwTaskWorkerBtn").addEventListener("click", async () => {
-    await restartTaskWorker();
+    await restartNsfwReviewWorker();
     toast("任务Worker已重启");
     await refreshPage();
   });

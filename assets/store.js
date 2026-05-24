@@ -358,6 +358,39 @@ async function restartTaskWorker() {
   });
 }
 
+async function fetchLineAudioWorkerStatus() {
+  return api("/api/line-audio-worker/status");
+}
+
+async function restartLineAudioWorker() {
+  return api("/api/line-audio-worker/restart", {
+    method: "POST",
+    body: "{}",
+  });
+}
+
+async function fetchAudioAsrWorkerStatus() {
+  return api("/api/audio-asr-worker/status");
+}
+
+async function restartAudioAsrWorker() {
+  return api("/api/audio-asr-worker/restart", {
+    method: "POST",
+    body: "{}",
+  });
+}
+
+async function fetchNsfwReviewWorkerStatus() {
+  return api("/api/nsfw-review-worker/status");
+}
+
+async function restartNsfwReviewWorker() {
+  return api("/api/nsfw-review-worker/restart", {
+    method: "POST",
+    body: "{}",
+  });
+}
+
 async function searchNovelText(novelId, searchText) {
   return api(`/api/novels/${Number(novelId)}/text-fix/search`, {
     method: "POST",
@@ -725,6 +758,9 @@ export {
   deleteWorkflow,
   downloadNovelBundle,
   duplicateWorkflow,
+  fetchAudioAsrWorkerStatus,
+  fetchLineAudioWorkerStatus,
+  fetchNsfwReviewWorkerStatus,
   fetchWorkflowLogs,
   fetchTaskWorkerStatus,
   searchNovelText,
@@ -768,6 +804,9 @@ export {
   savePrompt,
   saveSettings,
   saveWorkflow,
+  restartAudioAsrWorker,
+  restartLineAudioWorker,
+  restartNsfwReviewWorker,
   restartTaskWorker,
   setActiveNovelId,
   clearWorkflowLogs,

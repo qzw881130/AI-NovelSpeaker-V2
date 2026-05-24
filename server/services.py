@@ -50,6 +50,24 @@ TASK_WORKER_LAST_PROGRESS_TS = 0.0
 TASK_WORKER_GENERATION = 0
 TASK_WORKER_KICK_THREAD: threading.Thread | None = None
 TASK_WORKER_STALE_SECONDS = 90.0
+LINE_AUDIO_WORKER_THREAD: threading.Thread | None = None
+LINE_AUDIO_WORKER_STOP = threading.Event()
+LINE_AUDIO_WORKER_HEARTBEAT_TS = 0.0
+LINE_AUDIO_WORKER_LAST_PROGRESS_TS = 0.0
+LINE_AUDIO_WORKER_GENERATION = 0
+LINE_AUDIO_WORKER_STALE_SECONDS = 90.0
+AUDIO_ASR_WORKER_THREAD: threading.Thread | None = None
+AUDIO_ASR_WORKER_STOP = threading.Event()
+AUDIO_ASR_WORKER_HEARTBEAT_TS = 0.0
+AUDIO_ASR_WORKER_LAST_PROGRESS_TS = 0.0
+AUDIO_ASR_WORKER_GENERATION = 0
+AUDIO_ASR_WORKER_STALE_SECONDS = 90.0
+NSFW_REVIEW_WORKER_THREAD: threading.Thread | None = None
+NSFW_REVIEW_WORKER_STOP = threading.Event()
+NSFW_REVIEW_WORKER_HEARTBEAT_TS = 0.0
+NSFW_REVIEW_WORKER_LAST_PROGRESS_TS = 0.0
+NSFW_REVIEW_WORKER_GENERATION = 0
+NSFW_REVIEW_WORKER_STALE_SECONDS = 90.0
 DURATION_CACHE_LOCK = threading.Lock()
 DURATION_CACHE_PENDING: set[int] = set()
 LEGACY_SYSTEM_WORKFLOW_NAME = "古典小说默认工作流"
@@ -79,6 +97,30 @@ def touch_task_worker_heartbeat(*, made_progress: bool = False) -> None:
     TASK_WORKER_HEARTBEAT_TS = now
     if made_progress:
         TASK_WORKER_LAST_PROGRESS_TS = now
+
+
+def touch_line_audio_worker_heartbeat(*, made_progress: bool = False) -> None:
+    global LINE_AUDIO_WORKER_HEARTBEAT_TS, LINE_AUDIO_WORKER_LAST_PROGRESS_TS
+    now = time.time()
+    LINE_AUDIO_WORKER_HEARTBEAT_TS = now
+    if made_progress:
+        LINE_AUDIO_WORKER_LAST_PROGRESS_TS = now
+
+
+def touch_audio_asr_worker_heartbeat(*, made_progress: bool = False) -> None:
+    global AUDIO_ASR_WORKER_HEARTBEAT_TS, AUDIO_ASR_WORKER_LAST_PROGRESS_TS
+    now = time.time()
+    AUDIO_ASR_WORKER_HEARTBEAT_TS = now
+    if made_progress:
+        AUDIO_ASR_WORKER_LAST_PROGRESS_TS = now
+
+
+def touch_nsfw_review_worker_heartbeat(*, made_progress: bool = False) -> None:
+    global NSFW_REVIEW_WORKER_HEARTBEAT_TS, NSFW_REVIEW_WORKER_LAST_PROGRESS_TS
+    now = time.time()
+    NSFW_REVIEW_WORKER_HEARTBEAT_TS = now
+    if made_progress:
+        NSFW_REVIEW_WORKER_LAST_PROGRESS_TS = now
 
 
 def probe_audio_duration_seconds(file_path: Path) -> float:
@@ -177,18 +219,60 @@ def update_novel_total_audio_duration_seconds(
     return total
 
 
-def calculate_audio_dir_total_duration_seconds(audio_dir: Path) -> float:
-    directory = Path(audio_dir)
-    if not directory.exists() or not directory.is_dir():
-      return 0.0
+def update_chapter_non_ver_audio_duration_cache(
+    conn: sqlite3.Connection, chapter_id: int, audio_path: Path | None
+) -> float:
+    if audio_path is None:
+        conn.execute(
+            "UPDATE chapters SET non_ver_audio_duration_seconds=0, non_ver_audio_duration_md5='', updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            (chapter_id,),
+        )
+        return 0.0
+
+    md5_hex = file_md5_hex(audio_path)
+    row = conn.execute(
+        "SELECT non_ver_audio_duration_seconds, non_ver_audio_duration_md5 FROM chapters WHERE id=?",
+        (chapter_id,),
+    ).fetchone()
+    if row and str(row["non_ver_audio_duration_md5"] or "") == md5_hex:
+        return float(row["non_ver_audio_duration_seconds"] or 0)
+
+    duration = probe_audio_duration_seconds(audio_path)
+    conn.execute(
+        "UPDATE chapters SET non_ver_audio_duration_seconds=?, non_ver_audio_duration_md5=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+        (duration, md5_hex, chapter_id),
+    )
+    return duration
+
+
+def calculate_novel_total_non_ver_audio_duration_seconds(
+    conn: sqlite3.Connection, novel_id: int
+) -> float:
+    rows = conn.execute(
+        "SELECT c.id, c.chapter_num, c.non_ver_audio_duration_seconds, c.non_ver_audio_duration_md5, n.english_dir FROM chapters c JOIN novels n ON n.id=c.novel_id WHERE c.novel_id=?",
+        (novel_id,),
+    ).fetchall()
     total = 0.0
-    for path in sorted(directory.glob("*.flac")):
-        if not path.is_file():
+    for row in rows:
+        abs_path = NOVEL_DIR / str(row["english_dir"] or "") / "audio_non_ver" / f"chapter-{int(row['chapter_num'] or 0):03d}-merged.flac"
+        if not abs_path.exists() or not abs_path.is_file():
             continue
-        try:
-            total += probe_audio_duration_seconds(path)
-        except Exception:
+        md5_hex = file_md5_hex(abs_path)
+        if md5_hex and str(row["non_ver_audio_duration_md5"] or "") == md5_hex:
+            total += float(row["non_ver_audio_duration_seconds"] or 0)
             continue
+        total += update_chapter_non_ver_audio_duration_cache(conn, int(row["id"]), abs_path)
+    return total
+
+
+def update_novel_total_non_ver_audio_duration_seconds(
+    conn: sqlite3.Connection, novel_id: int
+) -> float:
+    total = calculate_novel_total_non_ver_audio_duration_seconds(conn, novel_id)
+    conn.execute(
+        "UPDATE novels SET total_audio_non_ver_duration_seconds=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+        (total, novel_id),
+    )
     return total
 
 
@@ -213,6 +297,7 @@ def refresh_novel_audio_duration_cache_async(
                         abs_audio = (ROOT_DIR / raw_path).resolve()
                     update_chapter_audio_duration_cache(conn, chapter_id, abs_audio)
                 update_novel_total_audio_duration_seconds(conn, novel_id)
+                update_novel_total_non_ver_audio_duration_seconds(conn, novel_id)
                 conn.commit()
             finally:
                 conn.close()
@@ -719,7 +804,7 @@ def fetch_novels(conn: sqlite3.Connection) -> list[dict]:
         """
         SELECT n.id,n.name,n.author,n.english_dir,n.intro,n.chapter_count,n.total_words,
                n.prompt_id,n.nsfw_prompt_id,n.workflow_id,n.voice_sample_workflow_id,n.line_audio_workflow_id,n.voice_transcribe_workflow_id,
-               n.audio_asr_workflow_id,n.total_audio_duration_seconds,n.created_at,n.updated_at,
+               n.audio_asr_workflow_id,n.total_audio_duration_seconds,n.total_audio_non_ver_duration_seconds,n.created_at,n.updated_at,
                COALESCE(SUM(CASE WHEN c.has_audio=1 THEN 1 ELSE 0 END),0) AS audio_done,
                COALESCE(COUNT(c.id),0) AS chapter_total,
                COALESCE(SUM(c.word_count),0) AS chapter_words
@@ -765,9 +850,6 @@ def fetch_novels(conn: sqlite3.Connection) -> list[dict]:
         audio_bytes = dir_size_bytes(base_dir / "audio")
         audio_non_ver_bytes = dir_size_bytes(base_dir / "audio_non_ver")
         temp_bytes = dir_size_bytes(temp_dir)
-        total_audio_non_ver_duration_seconds = calculate_audio_dir_total_duration_seconds(
-            base_dir / "audio_non_ver"
-        )
         json_progress = 0
         audio_progress = 0
         if chapter_count > 0:
@@ -806,7 +888,7 @@ def fetch_novels(conn: sqlite3.Connection) -> list[dict]:
                     r["total_audio_duration_seconds"] or 0
                 ),
                 "totalAudioNonVerDurationSeconds": float(
-                    total_audio_non_ver_duration_seconds or 0
+                    r["total_audio_non_ver_duration_seconds"] or 0
                 ),
                 "storage": {
                     "txtBytes": txt_bytes,
@@ -1037,7 +1119,9 @@ def fetch_novel_download_chapters(
     rows = conn.execute(
         """
         SELECT c.id,c.novel_id,c.chapter_num,c.title,c.word_count,c.audio_file_path,
-               c.audio_duration_seconds,c.audio_duration_md5,n.english_dir
+               c.audio_duration_seconds,c.audio_duration_md5,
+               c.non_ver_audio_duration_seconds,c.non_ver_audio_duration_md5,
+               n.english_dir
         FROM chapters c
         JOIN novels n ON n.id = c.novel_id
         WHERE c.novel_id=?
@@ -1060,6 +1144,17 @@ def fetch_novel_download_chapters(
         non_ver_stats = get_chapter_merged_audio_stats(
             int(row["novel_id"]), int(row["id"]), include_copyright=False
         )
+        non_ver_duration = float(row["non_ver_audio_duration_seconds"] or 0)
+        non_ver_size = int(non_ver_stats["sizeBytes"] or 0)
+        if non_ver_stats["hasAudio"]:
+            rel_path = str(non_ver_stats["relPath"] or "").strip()
+            non_ver_path = (ROOT_DIR / rel_path).resolve() if rel_path else None
+            if non_ver_path and non_ver_path.exists() and non_ver_path.is_file():
+                md5_hex = file_md5_hex(non_ver_path)
+                if md5_hex and md5_hex != str(row["non_ver_audio_duration_md5"] or ""):
+                    non_ver_duration = update_chapter_non_ver_audio_duration_cache(
+                        conn, int(row["id"]), non_ver_path
+                    )
         result.append(
             {
                 "id": int(row["id"]),
@@ -1070,8 +1165,8 @@ def fetch_novel_download_chapters(
                 "audioSizeBytes": size_bytes,
                 "downloadUrl": download_url,
                 "hasAudio": bool(download_url),
-                "nonVerAudioDurationSeconds": float(non_ver_stats["durationSeconds"] or 0),
-                "nonVerAudioSizeBytes": int(non_ver_stats["sizeBytes"] or 0),
+                "nonVerAudioDurationSeconds": non_ver_duration,
+                "nonVerAudioSizeBytes": non_ver_size,
                 "nonVerDownloadUrl": (
                     f"/api/novels/{int(row['novel_id'])}/chapters/{int(row['chapter_num'])}/merged-audio?variant=nonver"
                     if non_ver_stats["hasAudio"]
@@ -2997,42 +3092,117 @@ def advance_status(conn: sqlite3.Connection, table: str) -> None:
 
 
 def task_worker_loop() -> None:
-    from .line_audio import run_line_audio_queue_once
-    from .audio_asr import run_audio_asr_queue_once
-    from .nsfw_review import run_nsfw_review_queue_once
-
     generation = TASK_WORKER_GENERATION
     while not TASK_WORKER_STOP.is_set() and generation == TASK_WORKER_GENERATION:
         touch_task_worker_heartbeat()
         has_json_work = False
-        has_line_audio_work = False
-        has_audio_asr_work = False
-        has_nsfw_review_work = False
         with TASK_WORKER_LOCK:
             try:
                 has_json_work = run_json_queue_once()
             except Exception as exc:
                 print(f"[task-worker] json queue error: {exc}")
-            try:
-                has_line_audio_work = run_line_audio_queue_once()
-            except Exception as exc:
-                print(f"[task-worker] line audio queue error: {exc}")
-            try:
-                has_audio_asr_work = run_audio_asr_queue_once()
-            except Exception as exc:
-                print(f"[task-worker] audio asr queue error: {exc}")
-            try:
-                has_nsfw_review_work = run_nsfw_review_queue_once()
-            except Exception as exc:
-                print(f"[task-worker] nsfw review queue error: {exc}")
-        touch_task_worker_heartbeat(
-            made_progress=has_json_work or has_line_audio_work or has_audio_asr_work or has_nsfw_review_work
-        )
-        TASK_WORKER_STOP.wait(1.0 if (has_json_work or has_line_audio_work or has_audio_asr_work or has_nsfw_review_work) else 3.0)
+        touch_task_worker_heartbeat(made_progress=has_json_work)
+        TASK_WORKER_STOP.wait(1.0 if has_json_work else 3.0)
 
 
 def kick_line_audio_queue_once() -> None:
-    ensure_task_worker()
+    ensure_line_audio_worker()
+
+
+def line_audio_worker_loop() -> None:
+    from .line_audio import run_line_audio_queue_once
+
+    generation = LINE_AUDIO_WORKER_GENERATION
+    while not LINE_AUDIO_WORKER_STOP.is_set() and generation == LINE_AUDIO_WORKER_GENERATION:
+        touch_line_audio_worker_heartbeat()
+        has_line_audio_work = False
+        try:
+            has_line_audio_work = run_line_audio_queue_once()
+        except Exception as exc:
+            print(f"[line-audio-worker] queue error: {exc}")
+        touch_line_audio_worker_heartbeat(made_progress=has_line_audio_work)
+        LINE_AUDIO_WORKER_STOP.wait(1.0 if has_line_audio_work else 3.0)
+
+
+def audio_asr_worker_loop() -> None:
+    from .audio_asr import run_audio_asr_queue_once
+
+    generation = AUDIO_ASR_WORKER_GENERATION
+    while not AUDIO_ASR_WORKER_STOP.is_set() and generation == AUDIO_ASR_WORKER_GENERATION:
+        touch_audio_asr_worker_heartbeat()
+        has_audio_asr_work = False
+        try:
+            has_audio_asr_work = run_audio_asr_queue_once()
+        except Exception as exc:
+            print(f"[audio-asr-worker] queue error: {exc}")
+        touch_audio_asr_worker_heartbeat(made_progress=has_audio_asr_work)
+        AUDIO_ASR_WORKER_STOP.wait(1.0 if has_audio_asr_work else 3.0)
+
+
+def nsfw_review_worker_loop() -> None:
+    from .nsfw_review import run_nsfw_review_queue_once
+
+    generation = NSFW_REVIEW_WORKER_GENERATION
+    while not NSFW_REVIEW_WORKER_STOP.is_set() and generation == NSFW_REVIEW_WORKER_GENERATION:
+        touch_nsfw_review_worker_heartbeat()
+        has_nsfw_review_work = False
+        try:
+            has_nsfw_review_work = run_nsfw_review_queue_once()
+        except Exception as exc:
+            print(f"[nsfw-review-worker] queue error: {exc}")
+        touch_nsfw_review_worker_heartbeat(made_progress=has_nsfw_review_work)
+        NSFW_REVIEW_WORKER_STOP.wait(1.0 if has_nsfw_review_work else 3.0)
+
+
+def ensure_line_audio_worker() -> None:
+    global LINE_AUDIO_WORKER_THREAD, LINE_AUDIO_WORKER_GENERATION, LINE_AUDIO_WORKER_HEARTBEAT_TS
+    now = time.time()
+    if LINE_AUDIO_WORKER_THREAD and LINE_AUDIO_WORKER_THREAD.is_alive():
+        if LINE_AUDIO_WORKER_HEARTBEAT_TS > 0 and now - LINE_AUDIO_WORKER_HEARTBEAT_TS > LINE_AUDIO_WORKER_STALE_SECONDS:
+            print("[line-audio-worker] heartbeat stale, restarting worker")
+            LINE_AUDIO_WORKER_GENERATION += 1
+            LINE_AUDIO_WORKER_STOP.clear()
+            LINE_AUDIO_WORKER_THREAD = threading.Thread(target=line_audio_worker_loop, daemon=True)
+            LINE_AUDIO_WORKER_THREAD.start()
+        return
+    LINE_AUDIO_WORKER_STOP.clear()
+    LINE_AUDIO_WORKER_GENERATION += 1
+    LINE_AUDIO_WORKER_THREAD = threading.Thread(target=line_audio_worker_loop, daemon=True)
+    LINE_AUDIO_WORKER_THREAD.start()
+
+
+def ensure_audio_asr_worker() -> None:
+    global AUDIO_ASR_WORKER_THREAD, AUDIO_ASR_WORKER_GENERATION, AUDIO_ASR_WORKER_HEARTBEAT_TS
+    now = time.time()
+    if AUDIO_ASR_WORKER_THREAD and AUDIO_ASR_WORKER_THREAD.is_alive():
+        if AUDIO_ASR_WORKER_HEARTBEAT_TS > 0 and now - AUDIO_ASR_WORKER_HEARTBEAT_TS > AUDIO_ASR_WORKER_STALE_SECONDS:
+            print("[audio-asr-worker] heartbeat stale, restarting worker")
+            AUDIO_ASR_WORKER_GENERATION += 1
+            AUDIO_ASR_WORKER_STOP.clear()
+            AUDIO_ASR_WORKER_THREAD = threading.Thread(target=audio_asr_worker_loop, daemon=True)
+            AUDIO_ASR_WORKER_THREAD.start()
+        return
+    AUDIO_ASR_WORKER_STOP.clear()
+    AUDIO_ASR_WORKER_GENERATION += 1
+    AUDIO_ASR_WORKER_THREAD = threading.Thread(target=audio_asr_worker_loop, daemon=True)
+    AUDIO_ASR_WORKER_THREAD.start()
+
+
+def ensure_nsfw_review_worker() -> None:
+    global NSFW_REVIEW_WORKER_THREAD, NSFW_REVIEW_WORKER_GENERATION, NSFW_REVIEW_WORKER_HEARTBEAT_TS
+    now = time.time()
+    if NSFW_REVIEW_WORKER_THREAD and NSFW_REVIEW_WORKER_THREAD.is_alive():
+        if NSFW_REVIEW_WORKER_HEARTBEAT_TS > 0 and now - NSFW_REVIEW_WORKER_HEARTBEAT_TS > NSFW_REVIEW_WORKER_STALE_SECONDS:
+            print("[nsfw-review-worker] heartbeat stale, restarting worker")
+            NSFW_REVIEW_WORKER_GENERATION += 1
+            NSFW_REVIEW_WORKER_STOP.clear()
+            NSFW_REVIEW_WORKER_THREAD = threading.Thread(target=nsfw_review_worker_loop, daemon=True)
+            NSFW_REVIEW_WORKER_THREAD.start()
+        return
+    NSFW_REVIEW_WORKER_STOP.clear()
+    NSFW_REVIEW_WORKER_GENERATION += 1
+    NSFW_REVIEW_WORKER_THREAD = threading.Thread(target=nsfw_review_worker_loop, daemon=True)
+    NSFW_REVIEW_WORKER_THREAD.start()
 
 
 def ensure_task_worker() -> None:
@@ -3063,6 +3233,39 @@ def restart_task_worker() -> None:
     TASK_WORKER_THREAD.start()
 
 
+def restart_line_audio_worker() -> None:
+    global LINE_AUDIO_WORKER_THREAD, LINE_AUDIO_WORKER_GENERATION, LINE_AUDIO_WORKER_HEARTBEAT_TS, LINE_AUDIO_WORKER_LAST_PROGRESS_TS
+    LINE_AUDIO_WORKER_STOP.set()
+    LINE_AUDIO_WORKER_GENERATION += 1
+    LINE_AUDIO_WORKER_STOP.clear()
+    LINE_AUDIO_WORKER_HEARTBEAT_TS = 0.0
+    LINE_AUDIO_WORKER_LAST_PROGRESS_TS = 0.0
+    LINE_AUDIO_WORKER_THREAD = threading.Thread(target=line_audio_worker_loop, daemon=True)
+    LINE_AUDIO_WORKER_THREAD.start()
+
+
+def restart_audio_asr_worker() -> None:
+    global AUDIO_ASR_WORKER_THREAD, AUDIO_ASR_WORKER_GENERATION, AUDIO_ASR_WORKER_HEARTBEAT_TS, AUDIO_ASR_WORKER_LAST_PROGRESS_TS
+    AUDIO_ASR_WORKER_STOP.set()
+    AUDIO_ASR_WORKER_GENERATION += 1
+    AUDIO_ASR_WORKER_STOP.clear()
+    AUDIO_ASR_WORKER_HEARTBEAT_TS = 0.0
+    AUDIO_ASR_WORKER_LAST_PROGRESS_TS = 0.0
+    AUDIO_ASR_WORKER_THREAD = threading.Thread(target=audio_asr_worker_loop, daemon=True)
+    AUDIO_ASR_WORKER_THREAD.start()
+
+
+def restart_nsfw_review_worker() -> None:
+    global NSFW_REVIEW_WORKER_THREAD, NSFW_REVIEW_WORKER_GENERATION, NSFW_REVIEW_WORKER_HEARTBEAT_TS, NSFW_REVIEW_WORKER_LAST_PROGRESS_TS
+    NSFW_REVIEW_WORKER_STOP.set()
+    NSFW_REVIEW_WORKER_GENERATION += 1
+    NSFW_REVIEW_WORKER_STOP.clear()
+    NSFW_REVIEW_WORKER_HEARTBEAT_TS = 0.0
+    NSFW_REVIEW_WORKER_LAST_PROGRESS_TS = 0.0
+    NSFW_REVIEW_WORKER_THREAD = threading.Thread(target=nsfw_review_worker_loop, daemon=True)
+    NSFW_REVIEW_WORKER_THREAD.start()
+
+
 def get_task_worker_status() -> dict:
     now = time.time()
     heartbeat_age = max(0.0, now - TASK_WORKER_HEARTBEAT_TS) if TASK_WORKER_HEARTBEAT_TS > 0 else -1.0
@@ -3075,6 +3278,51 @@ def get_task_worker_status() -> dict:
         "heartbeatAgeSeconds": round(heartbeat_age, 1) if heartbeat_age >= 0 else None,
         "progressAgeSeconds": round(progress_age, 1) if progress_age >= 0 else None,
         "generation": TASK_WORKER_GENERATION,
+    }
+
+
+def get_line_audio_worker_status() -> dict:
+    now = time.time()
+    heartbeat_age = max(0.0, now - LINE_AUDIO_WORKER_HEARTBEAT_TS) if LINE_AUDIO_WORKER_HEARTBEAT_TS > 0 else -1.0
+    progress_age = max(0.0, now - LINE_AUDIO_WORKER_LAST_PROGRESS_TS) if LINE_AUDIO_WORKER_LAST_PROGRESS_TS > 0 else -1.0
+    state = "stopped"
+    if LINE_AUDIO_WORKER_THREAD and LINE_AUDIO_WORKER_THREAD.is_alive():
+        state = "stale" if (LINE_AUDIO_WORKER_HEARTBEAT_TS > 0 and heartbeat_age > LINE_AUDIO_WORKER_STALE_SECONDS) else "running"
+    return {
+        "state": state,
+        "heartbeatAgeSeconds": round(heartbeat_age, 1) if heartbeat_age >= 0 else None,
+        "progressAgeSeconds": round(progress_age, 1) if progress_age >= 0 else None,
+        "generation": LINE_AUDIO_WORKER_GENERATION,
+    }
+
+
+def get_audio_asr_worker_status() -> dict:
+    now = time.time()
+    heartbeat_age = max(0.0, now - AUDIO_ASR_WORKER_HEARTBEAT_TS) if AUDIO_ASR_WORKER_HEARTBEAT_TS > 0 else -1.0
+    progress_age = max(0.0, now - AUDIO_ASR_WORKER_LAST_PROGRESS_TS) if AUDIO_ASR_WORKER_LAST_PROGRESS_TS > 0 else -1.0
+    state = "stopped"
+    if AUDIO_ASR_WORKER_THREAD and AUDIO_ASR_WORKER_THREAD.is_alive():
+        state = "stale" if (AUDIO_ASR_WORKER_HEARTBEAT_TS > 0 and heartbeat_age > AUDIO_ASR_WORKER_STALE_SECONDS) else "running"
+    return {
+        "state": state,
+        "heartbeatAgeSeconds": round(heartbeat_age, 1) if heartbeat_age >= 0 else None,
+        "progressAgeSeconds": round(progress_age, 1) if progress_age >= 0 else None,
+        "generation": AUDIO_ASR_WORKER_GENERATION,
+    }
+
+
+def get_nsfw_review_worker_status() -> dict:
+    now = time.time()
+    heartbeat_age = max(0.0, now - NSFW_REVIEW_WORKER_HEARTBEAT_TS) if NSFW_REVIEW_WORKER_HEARTBEAT_TS > 0 else -1.0
+    progress_age = max(0.0, now - NSFW_REVIEW_WORKER_LAST_PROGRESS_TS) if NSFW_REVIEW_WORKER_LAST_PROGRESS_TS > 0 else -1.0
+    state = "stopped"
+    if NSFW_REVIEW_WORKER_THREAD and NSFW_REVIEW_WORKER_THREAD.is_alive():
+        state = "stale" if (NSFW_REVIEW_WORKER_HEARTBEAT_TS > 0 and heartbeat_age > NSFW_REVIEW_WORKER_STALE_SECONDS) else "running"
+    return {
+        "state": state,
+        "heartbeatAgeSeconds": round(heartbeat_age, 1) if heartbeat_age >= 0 else None,
+        "progressAgeSeconds": round(progress_age, 1) if progress_age >= 0 else None,
+        "generation": NSFW_REVIEW_WORKER_GENERATION,
     }
 
 

@@ -171,6 +171,11 @@ def migrate_novels_table(conn: sqlite3.Connection) -> None:
             "ALTER TABLE novels ADD COLUMN total_audio_duration_seconds REAL NOT NULL DEFAULT 0"
         )
 
+    if "total_audio_non_ver_duration_seconds" not in column_names:
+        conn.execute(
+            "ALTER TABLE novels ADD COLUMN total_audio_non_ver_duration_seconds REAL NOT NULL DEFAULT 0"
+        )
+
 
 def migrate_json_prompts_table(conn: sqlite3.Connection) -> None:
     columns = conn.execute("PRAGMA table_info(json_prompts)").fetchall()
@@ -197,6 +202,16 @@ def migrate_chapters_table(conn: sqlite3.Connection) -> None:
     if "audio_duration_md5" not in column_names:
         conn.execute(
             "ALTER TABLE chapters ADD COLUMN audio_duration_md5 TEXT NOT NULL DEFAULT ''"
+        )
+
+    if "non_ver_audio_duration_seconds" not in column_names:
+        conn.execute(
+            "ALTER TABLE chapters ADD COLUMN non_ver_audio_duration_seconds REAL NOT NULL DEFAULT 0"
+        )
+
+    if "non_ver_audio_duration_md5" not in column_names:
+        conn.execute(
+            "ALTER TABLE chapters ADD COLUMN non_ver_audio_duration_md5 TEXT NOT NULL DEFAULT ''"
         )
 
 
