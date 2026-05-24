@@ -70,6 +70,9 @@ NSFW_REVIEW_WORKER_GENERATION = 0
 NSFW_REVIEW_WORKER_STALE_SECONDS = 90.0
 DURATION_CACHE_LOCK = threading.Lock()
 DURATION_CACHE_PENDING: set[int] = set()
+JSON_LLM_THROTTLE_LOCK = threading.Lock()
+JSON_LLM_LAST_REQUEST_TS = 0.0
+JSON_LLM_MIN_INTERVAL_SECONDS = 3.0
 LEGACY_SYSTEM_WORKFLOW_NAME = "古典小说默认工作流"
 
 
@@ -1637,6 +1640,20 @@ class LlmRequestTimeoutError(RuntimeError):
     pass
 
 
+class LlmRateLimitError(RuntimeError):
+    pass
+
+
+def wait_for_json_llm_request_slot() -> None:
+    global JSON_LLM_LAST_REQUEST_TS
+    with JSON_LLM_THROTTLE_LOCK:
+        now = time.time()
+        wait_seconds = max(0.0, JSON_LLM_MIN_INTERVAL_SECONDS - (now - JSON_LLM_LAST_REQUEST_TS))
+        if wait_seconds > 0:
+            time.sleep(wait_seconds)
+        JSON_LLM_LAST_REQUEST_TS = time.time()
+
+
 def is_timeout_error(exc: Exception) -> bool:
     if isinstance(exc, (TimeoutError, socket.timeout)):
         return True
@@ -1712,6 +1729,7 @@ def test_llm_endpoint(
             },
         }
     try:
+        wait_for_json_llm_request_slot()
         code, body = http_json_request(
             "POST",
             url,
@@ -2098,10 +2116,13 @@ def call_llm_json_parse(
                     ).strip()
         except Exception:
             detail = ""
-        raise RuntimeError(
-            f"LLM request failed (HTTP {code})"
-            + (f": {detail[:120]}" if detail else "")
-        )
+        message = f"LLM request failed (HTTP {code})" + (f": {detail[:120]}" if detail else "")
+        if code == 429:
+            friendly = "模型限流（HTTP 429），请稍后重试"
+            if detail:
+                friendly += f"：{detail[:120]}"
+            raise LlmRateLimitError(friendly)
+        raise RuntimeError(message)
 
     parsed_body = json.loads(body or "{}")
     if not isinstance(parsed_body, dict):
@@ -2330,7 +2351,7 @@ def process_json_task(task_id: int) -> None:
             )
             conn.commit()
             conn.close()
-            for attempt in range(1, 4):
+            for attempt in range(1, 6):
                 ensure_json_task_not_cancelled(task_id)
                 try:
                     raw = call_llm_json_parse(
@@ -2355,6 +2376,10 @@ def process_json_task(task_id: int) -> None:
                             f"批次执行超时（>{int(llm.get('batchTimeoutMinutes') or 15)}分钟）"
                         )
                         break
+                    if isinstance(exc, LlmRateLimitError):
+                        if attempt < 5:
+                            time.sleep(min(90, 12 * attempt))
+                            continue
                     conn = db_conn()
                     conn.execute(
                         "UPDATE task_batches SET auto_retry_count=?, updated_at=CURRENT_TIMESTAMP WHERE task_id=? AND batch_index=?",
@@ -2362,7 +2387,7 @@ def process_json_task(task_id: int) -> None:
                     )
                     conn.commit()
                     conn.close()
-                    if attempt < 3:
+                    if attempt < 5:
                         time.sleep(0.8 * attempt)
 
             ensure_json_task_not_cancelled(task_id)
@@ -2542,7 +2567,7 @@ def _process_json_batch_once(
     raw = ""
     parsed = None
     last_exc: Exception | None = None
-    for attempt in range(1, 4):
+    for attempt in range(1, 6):
         ensure_json_task_not_cancelled(int(context["task"]["id"]))
         try:
             raw = call_llm_json_parse(
@@ -2567,7 +2592,11 @@ def _process_json_batch_once(
                     f"批次执行超时（>{int((context['llm'] or {}).get('batchTimeoutMinutes') or 15)}分钟）"
                 )
                 break
-            if attempt < 3:
+            if isinstance(exc, LlmRateLimitError):
+                if attempt < 5:
+                    time.sleep(min(90, 12 * attempt))
+                    continue
+            if attempt < 5:
                 time.sleep(0.8 * attempt)
     ensure_json_task_not_cancelled(int(context["task"]["id"]))
     if last_exc is not None or parsed is None:
