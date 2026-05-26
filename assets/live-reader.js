@@ -148,6 +148,26 @@ function splitParagraphs(text) {
     .filter(Boolean);
 }
 
+function segmentRenderRanges(segment) {
+  if (Array.isArray(segment?.ranges) && segment.ranges.length) {
+    return segment.ranges;
+  }
+  if (
+    Number.isInteger(segment?.paragraphIndex) &&
+    Number.isInteger(segment?.startChar) &&
+    Number.isInteger(segment?.endChar)
+  ) {
+    return [
+      {
+        paragraphIndex: Number(segment.paragraphIndex),
+        startChar: Number(segment.startChar),
+        endChar: Number(segment.endChar),
+      },
+    ];
+  }
+  return [];
+}
+
 function getNovelByQueryOrActive() {
   const url = new URL(window.location.href);
   const queryId = String(url.searchParams.get("novelId") || "");
@@ -806,13 +826,33 @@ async function mapAsrSegmentsToOriginalText(originalText, asrSegments) {
     const matchedLength = match.length;
     const startMap = globalMap[foundAt];
     const endMap = globalMap[Math.min(globalMap.length - 1, foundAt + matchedLength - 1)];
-    if (!startMap || !endMap || startMap.paragraphIndex !== endMap.paragraphIndex) {
+    if (!startMap || !endMap) {
       cursor = foundAt + matchedLength;
       continue;
     }
-    segment.paragraphIndex = startMap.paragraphIndex;
-    segment.startChar = startMap.charIndex;
-    segment.endChar = endMap.charIndex + 1;
+    const ranges = [];
+    for (let paragraphIndex = startMap.paragraphIndex; paragraphIndex <= endMap.paragraphIndex; paragraphIndex += 1) {
+      const paragraph = paragraphMeta[paragraphIndex];
+      if (!paragraph) continue;
+      const isFirst = paragraphIndex === startMap.paragraphIndex;
+      const isLast = paragraphIndex === endMap.paragraphIndex;
+      const startChar = isFirst ? startMap.charIndex : 0;
+      const endChar = isLast ? endMap.charIndex + 1 : paragraph.text.length;
+      if (endChar <= startChar) continue;
+      ranges.push({
+        paragraphIndex,
+        startChar,
+        endChar,
+      });
+    }
+    if (!ranges.length) {
+      cursor = foundAt + matchedLength;
+      continue;
+    }
+    segment.ranges = ranges;
+    segment.paragraphIndex = ranges[0].paragraphIndex;
+    segment.startChar = ranges[0].startChar;
+    segment.endChar = ranges[ranges.length - 1].endChar;
     segment.matchStrategy = match.strategy;
     segment.matched = true;
     cursor = foundAt + matchedLength;
@@ -830,7 +870,14 @@ async function renderOriginalParagraphsWithHighlights(originalText, asrSegments)
   const html = paragraphs
     .map((paragraphText, paragraphIndex) => {
       const ranges = asrSegments
-        .filter((segment) => segment.paragraphIndex === paragraphIndex && Number.isInteger(segment.startChar) && Number.isInteger(segment.endChar))
+        .flatMap((segment) =>
+          segmentRenderRanges(segment)
+            .filter((range) => Number(range.paragraphIndex) === paragraphIndex)
+            .map((range) => ({
+              ...range,
+              index: Number(segment.index || 0),
+            }))
+        )
         .sort((a, b) => a.startChar - b.startChar);
       if (!ranges.length) {
         return `<p class="live-reader-paragraph">${escapeHtml(paragraphText)}</p>`;
@@ -994,7 +1041,10 @@ function renderReadingContentFromPayload(payload) {
   }
   contentEl.innerHTML = String(payload?.html || "");
   contentEl.querySelectorAll("[data-segment-index]").forEach((el) => {
-    segmentElementMap.set(Number(el.dataset.segmentIndex || -1), el);
+    const index = Number(el.dataset.segmentIndex || -1);
+    const list = segmentElementMap.get(index) || [];
+    list.push(el);
+    segmentElementMap.set(index, list);
   });
 }
 
@@ -1084,14 +1134,16 @@ function updateSegmentHighlight(force = false) {
     }
   }
 
-  const prevEl = activeSegmentIndex >= 0 ? wrap.querySelector(`[data-segment-index="${activeSegmentIndex}"]`) : null;
-  const cachedPrevEl = activeSegmentIndex >= 0 ? segmentElementMap.get(activeSegmentIndex) : null;
-  if (cachedPrevEl || prevEl) (cachedPrevEl || prevEl).classList.remove("active");
+  const prevEls = activeSegmentIndex >= 0
+    ? (segmentElementMap.get(activeSegmentIndex) || Array.from(wrap.querySelectorAll(`[data-segment-index="${activeSegmentIndex}"]`)))
+    : [];
+  prevEls.forEach((el) => el.classList.remove("active"));
   if (activeParagraphElement) {
     activeParagraphElement.classList.remove("active");
   }
   activeSegmentIndex = nextIndex;
-  const activeEl = segmentElementMap.get(activeSegmentIndex) || wrap.querySelector(`[data-segment-index="${activeSegmentIndex}"]`);
+  const activeEls = segmentElementMap.get(activeSegmentIndex) || Array.from(wrap.querySelectorAll(`[data-segment-index="${activeSegmentIndex}"]`));
+  const activeEl = activeEls[0] || null;
   if (!activeEl) {
     setMatchStatus(currentAsrMode ? "匹配: 未命中" : "匹配: 估算同步");
     return;
@@ -1109,8 +1161,8 @@ function updateSegmentHighlight(force = false) {
   } else {
     activeParagraphElement = null;
   }
-  if (enableHighlight) activeEl.classList.add("active");
-  if (!enableHighlight) activeEl.classList.remove("active");
+  if (enableHighlight) activeEls.forEach((el) => el.classList.add("active"));
+  if (!enableHighlight) activeEls.forEach((el) => el.classList.remove("active"));
   if (autoScroll && paragraphEl) {
     const sensitivity = getFollowSensitivity();
     const topSafeOffset = getReaderTopSafeOffset();
@@ -1120,7 +1172,7 @@ function updateSegmentHighlight(force = false) {
       activeEl.offsetTop - topSafeOffset - (visibleHeight - activeEl.offsetHeight) / 2
     );
     const diff = Math.abs(wrap.scrollTop - targetTop);
-    if (diff > sensitivity) {
+    if (force || diff > sensitivity) {
       targetReaderScrollTop = targetTop;
       runReaderScrollAnimation();
     }
@@ -1266,7 +1318,10 @@ function bindEvents() {
     updateInstallButtonVisibility();
   });
   window.matchMedia("(display-mode: standalone)").addEventListener?.("change", updateInstallButtonVisibility);
-  window.addEventListener("resize", applyReaderSettings);
+  window.addEventListener("resize", () => {
+    applyReaderSettings();
+    updateSegmentHighlight(true);
+  });
   document.getElementById("liveReaderNovelSelect")?.addEventListener("change", async (event) => {
     await switchNovel(event.target.value);
   });
@@ -1339,6 +1394,7 @@ function bindEvents() {
   document.getElementById("liveReaderTopSafeOffsetRange")?.addEventListener("input", (event) => {
     localStorage.setItem(TOP_SAFE_OFFSET_KEY, String(event.target.value || DEFAULT_READER_TOP_SAFE_OFFSET));
     applyReaderSettings();
+    updateSegmentHighlight(true);
   });
   document.getElementById("liveReaderThemeSelect")?.addEventListener("change", (event) => {
     localStorage.setItem(READER_THEME_KEY, String(event.target.value || DEFAULT_READER_THEME_ID));
