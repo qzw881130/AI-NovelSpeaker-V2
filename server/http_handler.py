@@ -66,6 +66,16 @@ def _bundle_output_dir() -> Path:
     return output_dir
 
 
+def _build_media_cache_token(file_path: Path | None) -> str:
+    if not file_path or not file_path.exists() or not file_path.is_file():
+        return ""
+    stat = file_path.stat()
+    return f"{int(stat.st_mtime_ns)}-{int(stat.st_size)}"
+
+
+MEDIA_OPEN_RANGE_CHUNK_BYTES = 512 * 1024
+
+
 def _build_bundle_record(zip_path: Path) -> dict:
     stat = zip_path.stat()
     return {
@@ -461,8 +471,16 @@ def _create_role_voice_bundle_file(novel_id: int) -> tuple[bool, str, dict | Non
 
 
 class Handler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+
     def log_message(self, fmt: str, *args) -> None:
         return
+
+    def _guess_media_type(self, file_path: Path, fallback: str = "application/octet-stream") -> str:
+        guessed = mimetypes.guess_type(file_path.name)[0]
+        if guessed == "audio/x-flac":
+            return "audio/flac"
+        return guessed or fallback
 
     def send_json(self, payload: dict | list, status: int = 200) -> None:
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -525,8 +543,11 @@ class Handler(BaseHTTPRequestHandler):
         ctype: str,
         cache_control: str | None = None,
         download_name: str | None = None,
+        send_body: bool = True,
+        max_open_range_bytes: int | None = None,
     ) -> None:
         file_size = file_path.stat().st_size
+        stat = file_path.stat()
         range_values = self._parse_range_header(file_size)
 
         if str(self.headers.get("Range") or "").strip() and range_values is None:
@@ -537,6 +558,9 @@ class Handler(BaseHTTPRequestHandler):
         status = 200
         if range_values is not None:
             start, end = range_values
+            range_header = str(self.headers.get("Range") or "").strip()
+            if max_open_range_bytes and re.match(r"^bytes=\d+-$", range_header):
+                end = min(end, start + int(max_open_range_bytes) - 1)
             status = 206
 
         content_length = max(end - start + 1, 0)
@@ -555,10 +579,15 @@ class Handler(BaseHTTPRequestHandler):
             )
         if cache_control:
             self.send_header("Cache-Control", cache_control)
+        self.send_header("ETag", f'W/"{int(stat.st_mtime_ns)}-{int(file_size)}"')
+        self.send_header("Last-Modified", self.date_time_string(stat.st_mtime))
         self.send_header("Content-Length", str(content_length))
         if status == 206:
             self.send_header("Content-Range", f"bytes {start}-{end}/{file_size}")
         self.end_headers()
+
+        if not send_body:
+            return
 
         with file_path.open("rb") as fp:
             fp.seek(start)
@@ -917,10 +946,13 @@ class Handler(BaseHTTPRequestHandler):
                 conn.commit()
             conn.close()
 
-            ctype = (
-                mimetypes.guess_type(abs_audio.name)[0] or "application/octet-stream"
+            ctype = self._guess_media_type(abs_audio)
+            self.send_file_response(
+                abs_audio,
+                ctype,
+                cache_control="public, max-age=31536000, immutable",
+                max_open_range_bytes=MEDIA_OPEN_RANGE_CHUNK_BYTES,
             )
-            self.send_file_response(abs_audio, ctype, cache_control="no-store")
             return
 
         m_asr_file = re.match(r"^/api/novels/(\d+)/chapters/(\d+)/asr-file$", route)
@@ -971,6 +1003,10 @@ class Handler(BaseHTTPRequestHandler):
             if not row:
                 self.send_json({"error": "chapter not found"}, 404)
                 return
+            ver_audio_path = resolve_audio_file(row)
+            non_ver_audio_path = get_chapter_merged_audio_path(
+                novel_id, int(row["id"]), include_copyright=False
+            )
             non_ver_stats = get_chapter_merged_audio_stats(
                 novel_id, int(row["id"]), include_copyright=False
             )
@@ -981,10 +1017,12 @@ class Handler(BaseHTTPRequestHandler):
                     "title": str(row["title"]),
                     "wordCount": int(row["word_count"] or 0),
                     "hasJson": bool(row["has_json"]),
-                    "hasAudio": resolve_audio_file(row) is not None,
+                    "hasAudio": ver_audio_path is not None,
                     "audioDurationSeconds": float(row["audio_duration_seconds"] or 0),
+                    "audioVersion": _build_media_cache_token(ver_audio_path),
                     "hasNonVerAudio": bool(non_ver_stats["hasAudio"]),
                     "nonVerAudioDurationSeconds": float(non_ver_stats["durationSeconds"] or 0),
+                    "nonVerAudioVersion": _build_media_cache_token(non_ver_audio_path),
                     "content": chapter_content(
                         str(row["english_dir"]),
                         chapter_num,
@@ -1352,16 +1390,94 @@ class Handler(BaseHTTPRequestHandler):
             if not merged_path:
                 self.send_json({"error": "merged audio not found"}, 404)
                 return
-            ctype = mimetypes.guess_type(merged_path.name)[0] or "audio/flac"
+            ctype = self._guess_media_type(merged_path, "audio/flac")
             download_name = safe_chapter_file_name(
                 chapter_num,
                 str(chapter_row["title"] or f"chapter_{chapter_num}"),
             ).replace(".txt", ".flac")
-            self.send_file_response(merged_path, ctype, download_name=download_name)
+            self.send_file_response(
+                merged_path,
+                ctype,
+                cache_control="public, max-age=31536000, immutable",
+                download_name=download_name,
+                max_open_range_bytes=MEDIA_OPEN_RANGE_CHUNK_BYTES,
+            )
             return
 
         if not self.serve_static(route):
             self.send_json({"error": "not found"}, 404)
+
+    def do_HEAD(self) -> None:
+        parsed = urlparse(self.path)
+        route = parsed.path
+
+        m_audio_stream = re.match(
+            r"^/api/novels/(\d+)/chapters/(\d+)/audio-stream$", route
+        )
+        if m_audio_stream:
+            novel_id = int(m_audio_stream.group(1))
+            chapter_num = int(m_audio_stream.group(2))
+            conn = db_conn()
+            row = conn.execute(
+                """
+                SELECT c.id,c.novel_id,c.chapter_num,c.audio_file_path,n.english_dir
+                FROM chapters c
+                JOIN novels n ON n.id=c.novel_id
+                WHERE c.novel_id=? AND c.chapter_num=?
+                """,
+                (novel_id, chapter_num),
+            ).fetchone()
+            conn.close()
+            if not row:
+                self.send_json({"error": "chapter not found"}, 404)
+                return
+            abs_audio = resolve_audio_file(row)
+            if not abs_audio:
+                self.send_json({"error": "audio file not found"}, 404)
+                return
+            self.send_file_response(
+                abs_audio,
+                self._guess_media_type(abs_audio),
+                cache_control="public, max-age=31536000, immutable",
+                send_body=False,
+            )
+            return
+
+        m_merged_audio = re.match(
+            r"^/api/novels/(\d+)/chapters/(\d+)/merged-audio$", route
+        )
+        if m_merged_audio:
+            novel_id = int(m_merged_audio.group(1))
+            chapter_num = int(m_merged_audio.group(2))
+            variant = _normalize_bundle_audio_variant(parse_qs(parsed.query).get("variant", ["ver"])[0])
+            conn = db_conn()
+            chapter_row = conn.execute(
+                "SELECT id, title FROM chapters WHERE novel_id=? AND chapter_num=?",
+                (novel_id, chapter_num),
+            ).fetchone()
+            conn.close()
+            if not chapter_row:
+                self.send_json({"error": "chapter not found"}, 404)
+                return
+            merged_path = get_chapter_merged_audio_path(
+                novel_id, int(chapter_row["id"]), include_copyright=(variant == "ver")
+            )
+            if not merged_path:
+                self.send_json({"error": "merged audio not found"}, 404)
+                return
+            self.send_file_response(
+                merged_path,
+                self._guess_media_type(merged_path, "audio/flac"),
+                cache_control="public, max-age=31536000, immutable",
+                download_name=safe_chapter_file_name(
+                    chapter_num,
+                    str(chapter_row["title"] or f"chapter_{chapter_num}"),
+                ).replace(".txt", ".flac"),
+                send_body=False,
+            )
+            return
+
+        self.send_error(501, "Unsupported method ('HEAD')")
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)

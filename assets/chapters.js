@@ -280,16 +280,18 @@ function resetChapterAudioPlayer() {
   }
 }
 
-function getChapterAudioStreamUrl(chapterNum) {
+function getChapterAudioStreamUrl(chapterNum, audioVersion = "") {
   if (!activeNovel) return "";
-  const nonce = Date.now();
-  return `/api/novels/${Number(activeNovel.id)}/chapters/${Number(chapterNum)}/audio-stream?rand=${nonce}`;
+  const base = `/api/novels/${Number(activeNovel.id)}/chapters/${Number(chapterNum)}/audio-stream`;
+  const version = String(audioVersion || "").trim();
+  return version ? `${base}?v=${encodeURIComponent(version)}` : base;
 }
 
-function getChapterNonVerAudioUrl(chapterNum) {
+function getChapterNonVerAudioUrl(chapterNum, audioVersion = "") {
   if (!activeNovel) return "";
-  const nonce = Date.now();
-  return `/api/novels/${Number(activeNovel.id)}/chapters/${Number(chapterNum)}/merged-audio?variant=nonver&rand=${nonce}`;
+  const base = `/api/novels/${Number(activeNovel.id)}/chapters/${Number(chapterNum)}/merged-audio?variant=nonver`;
+  const version = String(audioVersion || "").trim();
+  return version ? `${base}&v=${encodeURIComponent(version)}` : base;
 }
 
 function refreshChapterAudioState(detail) {
@@ -306,7 +308,7 @@ function refreshChapterAudioState(detail) {
   const nonVerDuration = document.getElementById("chapterNonVerAudioDuration");
   if (detail?.hasAudio) {
     if (verWrap) verWrap.classList.remove("hidden");
-    player.src = getChapterAudioStreamUrl(detail.chapterNum);
+    player.src = getChapterAudioStreamUrl(detail.chapterNum, detail.audioVersion);
     duration.textContent = `时长：${fmtDuration(detail.audioDurationSeconds || 0)}`;
   } else {
     if (verWrap) verWrap.classList.add("hidden");
@@ -317,7 +319,7 @@ function refreshChapterAudioState(detail) {
   }
   if (detail?.hasNonVerAudio) {
     if (nonVerWrap) nonVerWrap.classList.remove("hidden");
-    if (nonVerPlayer) nonVerPlayer.src = getChapterNonVerAudioUrl(detail.chapterNum);
+    if (nonVerPlayer) nonVerPlayer.src = getChapterNonVerAudioUrl(detail.chapterNum, detail.nonVerAudioVersion);
     if (nonVerDuration) nonVerDuration.textContent = `时长：${fmtDuration(detail.nonVerAudioDurationSeconds || 0)}`;
   } else {
     if (nonVerWrap) nonVerWrap.classList.add("hidden");

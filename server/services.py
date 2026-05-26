@@ -1099,6 +1099,11 @@ def fetch_chapters(conn: sqlite3.Connection, novel_id: int) -> list[dict]:
     ).fetchall()
     result = []
     for r in rows:
+        abs_audio = resolve_audio_file(r)
+        audio_version = ""
+        if abs_audio is not None and abs_audio.exists() and abs_audio.is_file():
+            stat = abs_audio.stat()
+            audio_version = f"{int(stat.st_mtime_ns)}-{int(stat.st_size)}"
         result.append(
             {
                 "id": int(r["id"]),
@@ -1108,7 +1113,8 @@ def fetch_chapters(conn: sqlite3.Connection, novel_id: int) -> list[dict]:
                 "textFilePath": str(r["text_file_path"] or ""),
                 "audioFilePath": str(r["audio_file_path"] or ""),
                 "hasJson": json_text_ready(str(r["latest_json"] or "")),
-                "hasAudio": resolve_audio_file(r) is not None,
+                "hasAudio": abs_audio is not None,
+                "audioVersion": audio_version,
             }
         )
     return result

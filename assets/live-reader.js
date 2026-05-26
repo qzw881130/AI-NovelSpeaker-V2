@@ -108,9 +108,16 @@ let pendingTimeUpdate = false;
 let lastMatchStatusText = "";
 let lastTimeUpdateAt = 0;
 let chapterLoadToken = 0;
+let activeAudioLoadTrace = null;
+let lastWarmupKey = "";
+const preloadedAudioMap = new Map();
 const TIMEUPDATE_MIN_INTERVAL_MS = 120;
 const CHAPTER_RENDER_CACHE_LIMIT = 8;
 const chapterRenderCache = new Map();
+const AUDIO_PRELOAD_CACHE_LIMIT = 6;
+
+const AUDIO_TRACE_ENABLED = new URL(window.location.href).searchParams.has("debugAudio");
+const AUDIO_LOAD_TRACE_EVENTS = ["loadstart", "loadedmetadata", "loadeddata", "canplay", "canplaythrough", "play", "playing", "waiting", "stalled", "suspend", "error"];
 
 function nextAnimationFrame() {
   return new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
@@ -181,8 +188,53 @@ function getNovelByQueryOrActive() {
   return allNovels[0] || null;
 }
 
-function getAudioStreamUrl(chapterNum) {
-  return `/api/novels/${Number(activeNovel?.id || 0)}/chapters/${Number(chapterNum)}/audio-stream?rand=${Date.now()}`;
+function getAudioStreamUrl(chapterNum, audioVersion = "") {
+  const base = `/api/novels/${Number(activeNovel?.id || 0)}/chapters/${Number(chapterNum)}/audio-stream`;
+  const version = String(audioVersion || "").trim();
+  return version ? `${base}?v=${encodeURIComponent(version)}` : base;
+}
+
+function getUpcomingWarmupChapters(chapterNum) {
+  const index = audioChapterItems.findIndex((item) => Number(item.chapterNum) === Number(chapterNum));
+  if (index < 0) return [];
+  const candidates = [
+    audioChapterItems[index + 1]?.chapterNum,
+  ];
+  return candidates
+    .map((value) => Number(value || 0))
+    .filter((value, idx, list) => Number.isInteger(value) && value > 0 && list.indexOf(value) === idx);
+}
+
+function scheduleUpcomingAudioWarmup(chapterNum) {
+  if (!activeNovel) return;
+  const chapters = getUpcomingWarmupChapters(chapterNum);
+  if (!chapters.length) return;
+  const warmupKey = `${Number(activeNovel.id)}:${chapters.join(",")}`;
+  if (warmupKey === lastWarmupKey) return;
+  lastWarmupKey = warmupKey;
+  chapters.forEach((nextChapterNum) => {
+    const item = audioChapterItems.find((chapter) => Number(chapter.chapterNum) === Number(nextChapterNum));
+    preloadChapterAudio(nextChapterNum, item?.audioVersion || "");
+  });
+}
+
+function preloadChapterAudio(chapterNum, audioVersion = "") {
+  if (!activeNovel || !chapterNum) return;
+  const src = getAudioStreamUrl(chapterNum, audioVersion);
+  if (!src || preloadedAudioMap.has(src)) return;
+  const audio = new Audio();
+  audio.preload = "metadata";
+  audio.src = src;
+  audio.load();
+  preloadedAudioMap.set(src, audio);
+  while (preloadedAudioMap.size > AUDIO_PRELOAD_CACHE_LIMIT) {
+    const [oldSrc, oldAudio] = preloadedAudioMap.entries().next().value || [];
+    if (!oldSrc) break;
+    oldAudio?.pause?.();
+    oldAudio?.removeAttribute?.("src");
+    oldAudio?.load?.();
+    preloadedAudioMap.delete(oldSrc);
+  }
 }
 
 function getSavedNumber(key, fallback, min, max) {
@@ -244,6 +296,36 @@ function setMatchStatus(text) {
   if (next === lastMatchStatusText) return;
   lastMatchStatusText = next;
   if (el) el.textContent = next;
+}
+
+function resetAudioLoadTrace(chapterNum, src) {
+  if (!AUDIO_TRACE_ENABLED) return;
+  activeAudioLoadTrace = {
+    chapterNum: Number(chapterNum || 0),
+    src: String(src || ""),
+    startedAt: performance.now(),
+    seen: new Set(),
+  };
+}
+
+function logAudioLoadTrace(eventName) {
+  if (!AUDIO_TRACE_ENABLED) return;
+  const player = document.getElementById("liveReaderAudioPlayer");
+  if (!player || !activeAudioLoadTrace) return;
+  const elapsed = Math.round(performance.now() - activeAudioLoadTrace.startedAt);
+  const duplicateTransient = (eventName === "waiting" || eventName === "stalled") && activeAudioLoadTrace.seen.has(eventName);
+  if (duplicateTransient) return;
+  activeAudioLoadTrace.seen.add(eventName);
+  const payload = {
+    chapterNum: activeAudioLoadTrace.chapterNum,
+    event: eventName,
+    elapsedMs: elapsed,
+    readyState: player.readyState,
+    networkState: player.networkState,
+    currentTime: Number(player.currentTime || 0),
+    duration: Number.isFinite(player.duration) ? Number(player.duration) : null,
+  };
+  console.info("[live-reader-audio]", payload);
 }
 
 function syncLiveEndingAudioState() {
@@ -1228,7 +1310,9 @@ async function loadChapter(chapterNum, options = {}) {
     player.pause();
     player.removeAttribute("src");
     player.load();
-    player.src = getAudioStreamUrl(chapterNum);
+    const nextSrc = getAudioStreamUrl(chapterNum, detail.audioVersion);
+    resetAudioLoadTrace(chapterNum, nextSrc);
+    player.src = nextSrc;
     player.load();
     if (options.autoplay) {
       try {
@@ -1246,6 +1330,7 @@ async function loadChapter(chapterNum, options = {}) {
   resetReaderScroll();
   updatePlaylistActiveState();
   updateNavButtons();
+  scheduleUpcomingAudioWarmup(chapterNum);
 
   const basePayload = await buildRenderedChapterPayload(String(detail.content || "").trim(), "");
   if (loadToken !== chapterLoadToken) return;
@@ -1421,6 +1506,11 @@ function bindEvents() {
     await installStandaloneApp();
   });
   const player = document.getElementById("liveReaderAudioPlayer");
+  if (AUDIO_TRACE_ENABLED) {
+    AUDIO_LOAD_TRACE_EVENTS.forEach((eventName) => {
+      player?.addEventListener(eventName, () => logAudioLoadTrace(eventName));
+    });
+  }
   player?.addEventListener("timeupdate", scheduleTimeUpdate);
   player?.addEventListener("timeupdate", updateReaderProgressBar);
   player?.addEventListener("loadedmetadata", updateReaderProgressBar);
