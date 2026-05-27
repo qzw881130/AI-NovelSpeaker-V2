@@ -12,7 +12,9 @@ const providerDefaults = {
   custom: { baseUrl: "", model: "" },
 };
 
-const PROVIDER_MAX_TOKENS = {};
+const PROVIDER_MAX_TOKENS = {
+  deepseek: 384000,
+};
 
 const BATCH_CHAR_OPTIONS = new Set([0, 3500, 4000, 5000, 6000, 7000, 8000, 9000, 10000]);
 const NUM_CTX_OPTIONS = new Set([32768, 65536, 98304, 131072]);

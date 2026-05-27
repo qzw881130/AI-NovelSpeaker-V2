@@ -74,6 +74,22 @@ JSON_LLM_THROTTLE_LOCK = threading.Lock()
 JSON_LLM_LAST_REQUEST_TS = 0.0
 JSON_LLM_MIN_INTERVAL_SECONDS = 3.0
 LEGACY_SYSTEM_WORKFLOW_NAME = "古典小说默认工作流"
+LLM_PROVIDER_MAX_TOKENS = {
+    "deepseek": 384000,
+}
+
+
+def normalize_llm_max_tokens(provider: str, value, fallback: int = 8192) -> int:
+    try:
+        max_tokens = int(value)
+    except (TypeError, ValueError):
+        max_tokens = fallback
+    if max_tokens <= 0:
+        max_tokens = fallback
+    limit = LLM_PROVIDER_MAX_TOKENS.get(str(provider or "").strip().lower())
+    if limit:
+        max_tokens = min(max_tokens, limit)
+    return max_tokens
 
 
 def now_iso() -> str:
@@ -2077,7 +2093,7 @@ def call_llm_json_parse(
     model = str(llm.get("model") or "").strip()
     api_key = str(llm.get("apiKey") or "").strip()
     temperature = float(llm.get("temperature") or 0.3)
-    max_tokens = int(llm.get("maxTokens") or 8192)
+    max_tokens = normalize_llm_max_tokens(provider, llm.get("maxTokens") or 8192)
     num_ctx = int(llm.get("numCtx") or 65536)
     keep_alive = str(llm.get("keepAlive") or "30m").strip() or "30m"
     unload_after_call = bool(llm.get("unloadAfterCall", False))

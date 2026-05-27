@@ -483,6 +483,7 @@ class Handler(BaseHTTPRequestHandler):
         return guessed or fallback
 
     def send_json(self, payload: dict | list, status: int = 200) -> None:
+        self._drain_unread_request_body()
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -490,9 +491,28 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def read_json(self) -> dict:
+    def _reset_request_body_state(self) -> None:
+        self._request_body_cache = None
+        self._request_body_consumed = False
+
+    def _read_request_body(self) -> bytes:
+        if getattr(self, "_request_body_consumed", False):
+            return getattr(self, "_request_body_cache", None) or b""
         size = int(self.headers.get("Content-Length", "0"))
-        raw = self.rfile.read(size).decode("utf-8", errors="ignore")
+        raw = self.rfile.read(size) if size > 0 else b""
+        self._request_body_cache = raw
+        self._request_body_consumed = True
+        return raw
+
+    def _drain_unread_request_body(self) -> None:
+        if self.command not in {"POST", "PUT", "DELETE", "PATCH"}:
+            return
+        if getattr(self, "_request_body_consumed", False):
+            return
+        self._read_request_body()
+
+    def read_json(self) -> dict:
+        raw = self._read_request_body().decode("utf-8", errors="ignore")
         return json.loads(raw) if raw else {}
 
     def _send_range_not_satisfiable(self, file_size: int, message: str) -> None:
@@ -1497,6 +1517,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_error(501, "Unsupported method ('HEAD')")
 
     def do_POST(self) -> None:
+        self._reset_request_body_state()
         parsed = urlparse(self.path)
         route = parsed.path
 
@@ -2592,6 +2613,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json({"error": "not found"}, 404)
 
     def do_PUT(self) -> None:
+        self._reset_request_body_state()
         parsed = urlparse(self.path)
         route = parsed.path
         body = self.read_json()
@@ -2895,6 +2917,8 @@ class Handler(BaseHTTPRequestHandler):
                 llm_max_tokens = int(raw_max_tokens)
             except (TypeError, ValueError):
                 llm_max_tokens = 8192
+            llm_provider = str(llm.get("provider") or "grok")
+            llm_max_tokens = normalize_llm_max_tokens(llm_provider, llm_max_tokens)
             raw_batch_timeout_minutes = llm.get("batchTimeoutMinutes", 15)
             if raw_batch_timeout_minutes in (None, ""):
                 raw_batch_timeout_minutes = 15
@@ -2949,7 +2973,7 @@ class Handler(BaseHTTPRequestHandler):
             pairs = {
                 "comfy_url": str(body.get("comfyUrl") or ""),
                 "proxy_url": str(body.get("proxyUrl") or ""),
-                "llm_provider": str(llm.get("provider") or "grok"),
+                "llm_provider": llm_provider,
                 "llm_base_url": str(llm.get("baseUrl") or ""),
                 "llm_model": str(llm.get("model") or ""),
                 "llm_api_key": str(llm.get("apiKey") or ""),
@@ -3012,6 +3036,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json({"error": "not found"}, 404)
 
     def do_DELETE(self) -> None:
+        self._reset_request_body_state()
         parsed = urlparse(self.path)
         route = parsed.path
 

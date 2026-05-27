@@ -509,7 +509,7 @@ async function onNovelAction(action, id) {
 }
 
 async function refresh() {
-  currentData = await getData({ include: ["novelsFull", "settings"] });
+  currentData = await getData({ include: ["novelsFull", "prompts", "workflows", "settings"] });
   const activeId = getActiveNovelId();
   if (currentData.novels.length && !currentData.novels.some((n) => String(n.id) === String(activeId || ""))) {
     setActiveNovelId(currentData.novels[0].id);

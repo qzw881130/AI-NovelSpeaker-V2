@@ -13,6 +13,7 @@ from .services import (
     fetch_settings,
     http_json_request,
     normalize_ollama_keep_alive,
+    normalize_llm_max_tokens,
     parse_model_json,
     read_chapter_text,
     split_text_batches,
@@ -53,7 +54,7 @@ def _call_llm_nsfw_review(
     model = str(llm.get("model") or "").strip()
     api_key = str(llm.get("apiKey") or "").strip()
     temperature = float(llm.get("temperature") or 0.1)
-    max_tokens = int(llm.get("maxTokens") or 8192)
+    max_tokens = normalize_llm_max_tokens(provider, llm.get("maxTokens") or 8192)
     num_ctx = int(llm.get("numCtx") or 65536)
     keep_alive = str(llm.get("keepAlive") or "30m").strip() or "30m"
     unload_after_call = bool(llm.get("unloadAfterCall", False))
@@ -135,7 +136,20 @@ def _call_llm_nsfw_review(
                 pass
 
     if not (200 <= code < 300):
-        raise RuntimeError(f"LLM request failed (HTTP {code})")
+        detail = ""
+        try:
+            parsed = json.loads(body or "{}")
+            if isinstance(parsed, dict):
+                err = parsed.get("error")
+                if isinstance(err, dict):
+                    detail = str(err.get("message") or err.get("msg") or "").strip()
+                elif isinstance(err, str):
+                    detail = err.strip()
+                if not detail:
+                    detail = str(parsed.get("message") or parsed.get("msg") or "").strip()
+        except Exception:
+            detail = ""
+        raise RuntimeError(f"LLM request failed (HTTP {code})" + (f": {detail[:200]}" if detail else ""))
     parsed_body = json.loads(body or "{}")
     if not isinstance(parsed_body, dict):
         raise RuntimeError("LLM response is not object")

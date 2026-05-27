@@ -15,6 +15,7 @@ let activeNovel = null;
 let chapterItems = [];
 const selectedChapterNums = new Set();
 let autoRefreshTimer = 0;
+const enqueuingChapterNums = new Set();
 
 function renderTaskWorkerStatus(status) {
   const el = document.getElementById("nsfwReviewWorkerStatus");
@@ -164,7 +165,10 @@ function renderTable() {
     clearSelection();
     return;
   }
-  tbody.innerHTML = chapterItems.map((item) => `
+  tbody.innerHTML = chapterItems.map((item) => {
+    const isEnqueuing = enqueuingChapterNums.has(Number(item.chapterNum || 0));
+    const status = isEnqueuing ? "pending" : item.status;
+    return `
     <tr>
       <td>
         <label class="novel-download-checkbox-cell" aria-label="选择第 ${String(item.chapterNum).padStart(3, "0")} 回">
@@ -174,12 +178,13 @@ function renderTable() {
       <td>${String(item.chapterNum).padStart(3, "0")}</td>
       <td>${escapeHtml(item.title || "-")}</td>
       <td>${Number(item.wordCount || 0)}</td>
-      <td><span class="${statusClass(item.status)}">${statusLabel(item.status)}</span>${item.errorMessage ? `<div class="meta">${escapeHtml(item.errorMessage)}</div>` : ""}</td>
-      <td>${item.status === "completed" ? `<span class="nsfw-flag-dot ${item.hasNsfw ? "is-danger" : "is-safe"}" title="${item.hasNsfw ? "命中NSFW" : "未命中NSFW"}"></span>` : '<span class="text-muted">-</span>'}</td>
+      <td><span class="${statusClass(status)}">${statusLabel(status)}</span>${item.errorMessage && !isEnqueuing ? `<div class="meta">${escapeHtml(item.errorMessage)}</div>` : ""}</td>
+      <td>${status === "completed" ? `<span class="nsfw-flag-dot ${item.hasNsfw ? "is-danger" : "is-safe"}" title="${item.hasNsfw ? "命中NSFW" : "未命中NSFW"}"></span>` : '<span class="text-muted">-</span>'}</td>
       <td>${item.resultJsonText ? `<div class="table-actions-inline"><button class="ghost-btn btn-sm nsfw-review-view-btn" type="button" data-chapter-num="${Number(item.chapterNum || 0)}">查看</button><span class="meta ${item.hasNsfw ? "status-failed" : "status-completed"}">${escapeHtml(item.summary || "")}</span></div>` : '<span class="text-muted">暂无</span>'}</td>
-      <td><button class="ghost-btn btn-sm nsfw-review-single-btn" type="button" data-chapter-num="${Number(item.chapterNum || 0)}">${item.status === "completed" ? "重新审查" : "审查"}</button></td>
+      <td><button class="ghost-btn btn-sm nsfw-review-single-btn" type="button" data-chapter-num="${Number(item.chapterNum || 0)}" ${isEnqueuing ? "disabled" : ""}>${isEnqueuing ? "入队中" : (item.status === "completed" ? "重新审查" : "审查")}</button></td>
     </tr>
-  `).join("");
+  `;
+  }).join("");
   updateSelectionControls();
   scheduleAutoRefreshIfNeeded();
 }
@@ -208,9 +213,19 @@ async function refreshPage() {
 }
 
 async function enqueueSingle(chapterNum) {
-  await enqueueChapterNsfwReview(activeNovel.id, chapterNum);
-  toast(`第 ${chapterNum} 回已加入 NSFW 审查队列`);
-  await refreshPage();
+  if (!activeNovel || !chapterNum || enqueuingChapterNums.has(Number(chapterNum))) return;
+  enqueuingChapterNums.add(Number(chapterNum));
+  renderTable();
+  try {
+    await enqueueChapterNsfwReview(activeNovel.id, chapterNum);
+    toast(`第 ${chapterNum} 回已加入 NSFW 审查队列`);
+    await refreshPage();
+  } catch (err) {
+    toast(err?.message || "加入 NSFW 审查队列失败");
+  } finally {
+    enqueuingChapterNums.delete(Number(chapterNum));
+    renderTable();
+  }
 }
 
 async function enqueueBatch(chapterNums) {
