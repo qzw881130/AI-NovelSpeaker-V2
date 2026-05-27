@@ -6,6 +6,7 @@ let editingId = "";
 let modalMode = "create";
 let currentData = { prompts: [] };
 let activePromptCategory = "json_parse";
+let promptSaving = false;
 
 function promptCategoryLabel(category) {
   return String(category || "json_parse") === "nsfw_review" ? "NSFW 审查提示词" : "JSON 解析提示词";
@@ -136,31 +137,40 @@ function bindEvents() {
   });
   document.getElementById("promptForm").addEventListener("submit", async (event) => {
     event.preventDefault();
+    if (promptSaving) return;
     if (modalMode === "view") {
       document.getElementById("promptModal").close();
       return;
     }
     const form = event.currentTarget;
-    await savePrompt(
-      {
-        name: form.name.value.trim(),
-        category: form.category.value,
-        description: form.description.value.trim(),
-        content: form.content.value.trim(),
-      },
-      editingId
-    );
-    document.getElementById("promptModal").close();
-    toast(editingId ? t("toast.updated") : t("toast.created"));
-    currentData = await getData();
-    render();
+    const submitBtn = form.querySelector("button[type='submit']");
+    promptSaving = true;
+    if (submitBtn) submitBtn.disabled = true;
+    try {
+      await savePrompt(
+        {
+          name: form.name.value.trim(),
+          category: form.category.value,
+          description: form.description.value.trim(),
+          content: form.content.value.trim(),
+        },
+        editingId
+      );
+      document.getElementById("promptModal").close();
+      toast(editingId ? t("toast.updated") : t("toast.created"));
+      currentData = await getData({ include: ["prompts"] });
+      render();
+    } finally {
+      promptSaving = false;
+      if (submitBtn) submitBtn.disabled = false;
+    }
   });
 }
 
 async function init() {
   renderNav();
   bindEvents();
-  currentData = await getData();
+  currentData = await getData({ include: ["prompts"] });
   render();
   localizeDocumentText(document);
 }

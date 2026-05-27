@@ -183,7 +183,7 @@ function renderNav() {
 async function bindNovelSelector(selectId, onChanged) {
   const select = document.getElementById(selectId);
   if (!select) return;
-  const data = await getData();
+  const data = await getData({ include: ["novels"] });
   const activeId = getActiveNovelId();
   select.innerHTML = data.novels
     .map((n) => `<option value="${n.id}">${n.name}</option>`)

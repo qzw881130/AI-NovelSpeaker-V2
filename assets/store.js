@@ -113,15 +113,23 @@ function normalizeData(raw) {
   };
 }
 
-async function refreshCache() {
-  const data = await api("/api/bootstrap");
-  cache = normalizeData(data);
+function buildBootstrapPath(options = {}) {
+  const include = Array.isArray(options.include) ? options.include : [];
+  const sections = include
+    .map((item) => String(item || "").trim())
+    .filter(Boolean);
+  return sections.length ? `/api/bootstrap?include=${encodeURIComponent(sections.join(","))}` : "/api/bootstrap";
+}
+
+async function refreshCache(options = {}) {
+  const data = await api(buildBootstrapPath(options));
+  cache = normalizeData({ ...cache, ...data });
   localStorage.setItem("ai_novel_ui_language", String(cache.settings?.ui?.language || "zh-CN"));
   return cache;
 }
 
-async function getData() {
-  return refreshCache();
+async function getData(options = {}) {
+  return refreshCache(options);
 }
 
 function getCachedData() {
@@ -302,17 +310,17 @@ async function savePrompt(input, id) {
   } else {
     await api("/api/prompts", { method: "POST", body: JSON.stringify(payload) });
   }
-  return refreshCache();
+  return refreshCache({ include: ["prompts"] });
 }
 
 async function duplicatePrompt(id) {
   await api(`/api/prompts/${Number(id)}/duplicate`, { method: "POST", body: "{}" });
-  return refreshCache();
+  return refreshCache({ include: ["prompts"] });
 }
 
 async function deletePrompt(id) {
   await api(`/api/prompts/${Number(id)}`, { method: "DELETE" });
-  return refreshCache();
+  return refreshCache({ include: ["prompts"] });
 }
 
 async function saveWorkflow(input, id) {
@@ -329,12 +337,12 @@ async function saveWorkflow(input, id) {
   } else {
     await api("/api/workflows", { method: "POST", body: JSON.stringify(payload) });
   }
-  return refreshCache();
+  return refreshCache({ include: ["workflows"] });
 }
 
 async function deleteWorkflow(id) {
   await api(`/api/workflows/${Number(id)}`, { method: "DELETE" });
-  return refreshCache();
+  return refreshCache({ include: ["workflows"] });
 }
 
 async function duplicateWorkflow(id) {
@@ -414,7 +422,7 @@ async function clearWorkflowLogs() {
 
 async function saveSettings(nextSettings) {
   await api("/api/settings", { method: "PUT", body: JSON.stringify(nextSettings) });
-  return refreshCache();
+  return refreshCache({ include: ["settings"] });
 }
 
 async function fetchNovelChapters(novelId) {

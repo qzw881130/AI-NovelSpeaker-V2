@@ -4,7 +4,7 @@ import { getLanguage, localizeDocumentText, t, translateText } from "./i18n.js";
 
 const providerDefaults = {
   grok: { baseUrl: "https://api.x.ai/v1", model: "grok-2-latest" },
-  deepseek: { baseUrl: "https://api.deepseek.com", model: "deepseek-chat" },
+  deepseek: { baseUrl: "https://api.deepseek.com", model: "deepseek-v4-flash" },
   qwen: { baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen-plus" },
   gemini: { baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", model: "gemini-2.0-flash" },
   openai: { baseUrl: "https://api.openai.com/v1", model: "gpt-4.1-mini" },
@@ -619,7 +619,7 @@ function bindEvents() {
 async function init() {
   renderNav();
   bindEvents();
-  const data = await getData();
+  const data = await getData({ include: ["settings"] });
   load(data.settings || {});
   localizeDocumentText(document);
   applyTimezoneLabels();

@@ -2223,7 +2223,7 @@ async function init() {
   applyChapterFontSize(getSavedChapterFontSize());
   updateChapterNavButtons();
   resetChapterAudioPlayer();
-  const data = await getData();
+  const data = await getData({ include: ["novels", "settings"] });
   allNovels = data.novels || [];
   currentSettings = data.settings || null;
   activeNovel = getNovelByQueryOrActive();

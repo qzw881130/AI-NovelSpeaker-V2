@@ -330,7 +330,7 @@ async function onTaskAction(action, id) {
 async function reload() {
   const novelValue = document.getElementById("taskNovelSelect")?.value || "";
   const statusValue = document.getElementById("taskStatusSelect")?.value || "all";
-  currentData = await getData();
+  currentData = await getData({ include: ["novels", "jsonTasks"] });
   const alive = new Set((currentData.jsonTasks || []).map((x) => String(x.id)));
   for (const key of Array.from(taskDetails.keys())) {
     if (!alive.has(key)) taskDetails.delete(key);

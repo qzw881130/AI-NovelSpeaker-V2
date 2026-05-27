@@ -907,6 +907,61 @@ def fetch_novels(conn: sqlite3.Connection) -> list[dict]:
     return result
 
 
+def fetch_novels_light(conn: sqlite3.Connection) -> list[dict]:
+    rows = conn.execute(
+        """
+        SELECT n.id,n.name,n.author,n.english_dir,n.intro,n.chapter_count,n.total_words,
+               n.prompt_id,n.nsfw_prompt_id,n.workflow_id,n.voice_sample_workflow_id,n.line_audio_workflow_id,n.voice_transcribe_workflow_id,
+               n.audio_asr_workflow_id,n.total_audio_duration_seconds,n.total_audio_non_ver_duration_seconds,n.created_at,n.updated_at,
+               COALESCE(SUM(CASE WHEN c.has_audio=1 THEN 1 ELSE 0 END),0) AS audio_done,
+               COALESCE(SUM(CASE WHEN c.has_json=1 THEN 1 ELSE 0 END),0) AS json_done,
+               COALESCE(COUNT(c.id),0) AS chapter_total,
+               COALESCE(SUM(c.word_count),0) AS chapter_words
+        FROM novels n
+        LEFT JOIN chapters c ON c.novel_id=n.id
+        GROUP BY n.id
+        ORDER BY n.id ASC
+        """
+    ).fetchall()
+    result: list[dict] = []
+    for r in rows:
+        chapter_total = int(r["chapter_total"] or 0)
+        chapter_count = int(r["chapter_count"] or chapter_total)
+        total_words = int(r["total_words"] or 0)
+        if total_words <= 0:
+            total_words = int(r["chapter_words"] or 0)
+        json_progress = 0
+        audio_progress = 0
+        if chapter_count > 0:
+            json_progress = int(round(100 * int(r["json_done"] or 0) / chapter_count))
+            audio_progress = int(round(100 * int(r["audio_done"] or 0) / chapter_count))
+        result.append(
+            {
+                "id": int(r["id"]),
+                "name": str(r["name"]),
+                "author": str(r["author"]),
+                "englishDir": str(r["english_dir"]),
+                "intro": str(r["intro"] or ""),
+                "chapterCount": chapter_count,
+                "totalWords": total_words,
+                "promptId": int(r["prompt_id"]) if r["prompt_id"] is not None else None,
+                "nsfwPromptId": int(r["nsfw_prompt_id"]) if r["nsfw_prompt_id"] is not None else None,
+                "workflowId": int(r["workflow_id"]) if r["workflow_id"] is not None else None,
+                "voiceSampleWorkflowId": int(r["voice_sample_workflow_id"]) if r["voice_sample_workflow_id"] is not None else None,
+                "lineAudioWorkflowId": int(r["line_audio_workflow_id"]) if r["line_audio_workflow_id"] is not None else None,
+                "voiceTranscribeWorkflowId": int(r["voice_transcribe_workflow_id"]) if r["voice_transcribe_workflow_id"] is not None else None,
+                "audioAsrWorkflowId": int(r["audio_asr_workflow_id"]) if r["audio_asr_workflow_id"] is not None else None,
+                "jsonProgress": json_progress,
+                "audioProgress": audio_progress,
+                "totalAudioDurationSeconds": float(r["total_audio_duration_seconds"] or 0),
+                "totalAudioNonVerDurationSeconds": float(r["total_audio_non_ver_duration_seconds"] or 0),
+                "createdAt": str(r["created_at"]),
+                "updatedAt": str(r["updated_at"]),
+            }
+        )
+    return result
+
+
 def fetch_json_tasks(conn: sqlite3.Connection) -> list[dict]:
     rows = conn.execute(
         """

@@ -16,6 +16,7 @@ const PLAYLIST_COLLAPSED_KEY = "ai_novel_live_reader_playlist_collapsed";
 const TOP_SAFE_OFFSET_KEY = "ai_novel_live_reader_top_safe_offset";
 const READER_THEME_KEY = "ai_novel_live_reader_theme";
 const DEFAULT_READER_TOP_SAFE_OFFSET = 72;
+const MAX_READER_TOP_SAFE_OFFSET = 360;
 const DEFAULT_READER_THEME_ID = "parchment";
 const READER_THEMES = [
   {
@@ -455,7 +456,7 @@ function applyReaderSettings() {
   const highlightIntensity = getSavedNumber(HIGHLIGHT_INTENSITY_KEY, 45, 0, 100) / 100;
   const followSensitivity = getSavedNumber(FOLLOW_SENSITIVITY_KEY, 60, 0, 240);
   const followSmoothness = getSavedNumber(FOLLOW_SMOOTHNESS_KEY, 45, 10, 100);
-  const topSafeOffset = getSavedNumber(TOP_SAFE_OFFSET_KEY, DEFAULT_READER_TOP_SAFE_OFFSET, 0, 180);
+  const topSafeOffset = getSavedNumber(TOP_SAFE_OFFSET_KEY, DEFAULT_READER_TOP_SAFE_OFFSET, 0, MAX_READER_TOP_SAFE_OFFSET);
   const theme = getReaderTheme();
   const content = document.getElementById("liveReaderContent");
   const progressTrack = document.getElementById("liveReaderProgressTrack");
@@ -517,7 +518,7 @@ function applyReaderSettings() {
 }
 
 function getReaderTopSafeOffset() {
-  return getSavedNumber(TOP_SAFE_OFFSET_KEY, DEFAULT_READER_TOP_SAFE_OFFSET, 0, 180);
+  return getSavedNumber(TOP_SAFE_OFFSET_KEY, DEFAULT_READER_TOP_SAFE_OFFSET, 0, MAX_READER_TOP_SAFE_OFFSET);
 }
 
 function updateReaderProgressBar() {
@@ -536,6 +537,46 @@ function getFollowSensitivity() {
 
 function getFollowSmoothnessFactor() {
   return getSavedNumber(FOLLOW_SMOOTHNESS_KEY, 45, 10, 100) / 100;
+}
+
+function clampNumber(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function getActiveSegmentScrollBounds(elements, fallbackEl) {
+  const candidates = (Array.isArray(elements) ? elements : []).filter(Boolean);
+  if (!candidates.length && fallbackEl) candidates.push(fallbackEl);
+  if (!candidates.length) return null;
+
+  let top = Number.POSITIVE_INFINITY;
+  let bottom = 0;
+  candidates.forEach((el) => {
+    const elTop = Number(el.offsetTop || 0);
+    top = Math.min(top, elTop);
+    bottom = Math.max(bottom, elTop + Number(el.offsetHeight || 0));
+  });
+  if (!Number.isFinite(top)) return null;
+  return {
+    top,
+    bottom,
+    height: Math.max(1, bottom - top),
+  };
+}
+
+function getReaderScrollTarget(wrap, activeEls, fallbackEl) {
+  const bounds = getActiveSegmentScrollBounds(activeEls, fallbackEl);
+  if (!bounds) return null;
+
+  const topSafeOffset = getReaderTopSafeOffset();
+  const viewportHeight = Math.max(80, Number(wrap.clientHeight || 0));
+  const bottomLookahead = clampNumber(Math.round(viewportHeight * 0.22), 56, 180);
+  const readableHeight = Math.max(80, viewportHeight - topSafeOffset - bottomLookahead);
+  const leadSpace = bounds.height >= readableHeight
+    ? 0
+    : clampNumber(Math.round(readableHeight * 0.18), 18, Math.max(18, readableHeight - bounds.height));
+  const maxScrollTop = Math.max(0, Number(wrap.scrollHeight || 0) - viewportHeight);
+
+  return clampNumber(bounds.top - topSafeOffset - leadSpace, 0, maxScrollTop);
 }
 
 function getHighlightIntensity() {
@@ -1247,12 +1288,8 @@ function updateSegmentHighlight(force = false) {
   if (!enableHighlight) activeEls.forEach((el) => el.classList.remove("active"));
   if (autoScroll && paragraphEl) {
     const sensitivity = getFollowSensitivity();
-    const topSafeOffset = getReaderTopSafeOffset();
-    const visibleHeight = Math.max(80, wrap.clientHeight - topSafeOffset);
-    const targetTop = Math.max(
-      0,
-      activeEl.offsetTop - topSafeOffset - (visibleHeight - activeEl.offsetHeight) / 2
-    );
+    const targetTop = getReaderScrollTarget(wrap, activeEls, activeEl);
+    if (targetTop == null) return;
     const diff = Math.abs(wrap.scrollTop - targetTop);
     if (force || diff > sensitivity) {
       targetReaderScrollTop = targetTop;
@@ -1438,7 +1475,7 @@ function bindEvents() {
     }
   });
   document.getElementById("refreshLiveEndingAudioBtn")?.addEventListener("click", async () => {
-    const data = await getData();
+    const data = await getData({ include: ["settings"] });
     window.__liveReaderSettings = data.settings || {};
     syncLiveEndingAudioState();
     toast("直播结束语列表已刷新");
@@ -1544,7 +1581,7 @@ async function init() {
   applyControlsCollapsedState();
   applyPlaylistCollapsedState();
   updateInstallButtonVisibility();
-  const data = await getData();
+  const data = await getData({ include: ["novels", "settings"] });
   window.__liveReaderSettings = data.settings || {};
   allNovels = data.novels || [];
   activeNovel = getNovelByQueryOrActive();

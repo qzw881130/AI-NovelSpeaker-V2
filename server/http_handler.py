@@ -666,17 +666,34 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if route == "/api/bootstrap":
-            conn = db_conn()
-            sync_system_prompt_from_file(conn)
-            sync_system_workflow_from_file(conn)
-            conn.commit()
-            data = {
-                "novels": fetch_novels(conn),
-                "prompts": fetch_prompts(conn),
-                "workflows": fetch_workflows(conn),
-                "settings": fetch_settings(conn),
-                "jsonTasks": fetch_json_tasks(conn),
+            query = parse_qs(parsed.query or "")
+            include_raw = str((query.get("include") or [""])[0] or "").strip()
+            requested = {
+                item.strip()
+                for item in include_raw.split(",")
+                if item.strip()
             }
+            allowed = {"novels", "novelsFull", "prompts", "workflows", "settings", "jsonTasks"}
+            sections = requested & allowed if requested else allowed
+            conn = db_conn()
+            if "prompts" in sections:
+                sync_system_prompt_from_file(conn)
+            if "workflows" in sections:
+                sync_system_workflow_from_file(conn)
+            conn.commit()
+            data = {}
+            if "novelsFull" in sections:
+                data["novels"] = fetch_novels(conn)
+            elif "novels" in sections:
+                data["novels"] = fetch_novels_light(conn)
+            if "prompts" in sections:
+                data["prompts"] = fetch_prompts(conn)
+            if "workflows" in sections:
+                data["workflows"] = fetch_workflows(conn)
+            if "settings" in sections:
+                data["settings"] = fetch_settings(conn)
+            if "jsonTasks" in sections:
+                data["jsonTasks"] = fetch_json_tasks(conn)
             conn.close()
             self.send_json(data)
             return
@@ -2775,7 +2792,6 @@ class Handler(BaseHTTPRequestHandler):
         m_prompt = re.match(r"^/api/prompts/(\d+)$", route)
         if m_prompt:
             prompt_id = int(m_prompt.group(1))
-            body = self.read_json()
             conn = db_conn()
             row = conn.execute(
                 "SELECT prompt_type FROM json_prompts WHERE id=?", (prompt_id,)

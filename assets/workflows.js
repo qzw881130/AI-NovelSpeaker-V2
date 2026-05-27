@@ -343,7 +343,7 @@ function bindEvents() {
 async function init() {
   renderNav();
   bindEvents();
-  currentData = await getData();
+  currentData = await getData({ include: ["workflows"] });
   render();
   localizeDocumentText(document);
 }
