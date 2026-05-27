@@ -23,6 +23,7 @@ const selectedRows = new Map();
 let selectedRoleName = "";
 let roleFilterKeyword = "";
 let roleFilterDropdownShouldStayOpen = false;
+let dragSelectState = null;
 
 function getNovelByQueryOrActive() {
   const url = new URL(window.location.href);
@@ -232,6 +233,47 @@ function syncSelectAllCheckbox() {
   checkbox.indeterminate = selectedCount > 0 && selectedCount < selectableItems.length;
 }
 
+function getItemByRowKey(key) {
+  return getFilteredItems().find((item) => rowKey(item) === String(key || "")) || null;
+}
+
+function isInteractiveTarget(target) {
+  return Boolean(target?.closest?.("button,a,input,select,textarea,audio,video,label"));
+}
+
+function setRowSelected(item, selected) {
+  if (!item || getLineAudioViewState(item).disabled) return;
+  const key = rowKey(item);
+  if (selected) selectedRows.set(key, item);
+  else selectedRows.delete(key);
+  const row = Array.from(document.querySelectorAll(".batch-role-line-row"))
+    .find((entry) => String(entry.dataset.rowKey || "") === key);
+  if (row) {
+    row.classList.toggle("is-selected", selectedRows.has(key));
+    const checkbox = row.querySelector(".batch-role-line-check");
+    if (checkbox) checkbox.checked = selectedRows.has(key);
+  }
+}
+
+function updateSelectionState() {
+  renderSummary();
+  syncSelectAllCheckbox();
+}
+
+function applyDragSelection(row) {
+  if (!dragSelectState || !row) return;
+  const item = getItemByRowKey(row.dataset.rowKey);
+  if (!item || getLineAudioViewState(item).disabled) return;
+  setRowSelected(item, dragSelectState.selecting);
+  updateSelectionState();
+}
+
+function stopDragSelection() {
+  if (!dragSelectState) return;
+  dragSelectState = null;
+  document.body.classList.remove("is-batch-role-drag-selecting");
+}
+
 function renderTable() {
   const body = document.getElementById("batchRoleLinesTableBody");
   if (!body) return;
@@ -254,7 +296,7 @@ function renderTable() {
     const checked = selectedRows.has(key) ? " checked" : "";
     const selectable = !view.disabled;
     return `
-      <tr>
+      <tr class="batch-role-line-row${selectedRows.has(key) ? " is-selected" : ""}${selectable ? "" : " is-disabled"}" data-row-key="${escapeHtml(key)}">
         <td><input class="batch-role-line-check" data-row-key="${escapeHtml(key)}" type="checkbox"${checked}${selectable ? "" : " disabled"} /></td>
         <td>${String((currentPage - 1) * PAGE_SIZE + index + 1).padStart(3, "0")}</td>
         <td>第${Number(item.chapterNum || 0)}回 ${escapeHtml(item.chapterTitle || "")}</td>
@@ -275,8 +317,23 @@ function renderTable() {
       if (!item) return;
       if (el.checked) selectedRows.set(rowKey(item), item);
       else selectedRows.delete(rowKey(item));
+      el.closest(".batch-role-line-row")?.classList.toggle("is-selected", selectedRows.has(rowKey(item)));
       renderSummary();
       syncSelectAllCheckbox();
+    });
+  });
+  body.querySelectorAll(".batch-role-line-row").forEach((row) => {
+    row.addEventListener("mousedown", (event) => {
+      if (event.button !== 0 || isInteractiveTarget(event.target)) return;
+      const item = getItemByRowKey(row.dataset.rowKey);
+      if (!item || getLineAudioViewState(item).disabled) return;
+      event.preventDefault();
+      dragSelectState = { selecting: !selectedRows.has(rowKey(item)) };
+      document.body.classList.add("is-batch-role-drag-selecting");
+      applyDragSelection(row);
+    });
+    row.addEventListener("mouseenter", () => {
+      applyDragSelection(row);
     });
   });
   body.querySelectorAll(".batch-role-line-generate-btn").forEach((el) => {
@@ -551,6 +608,8 @@ function bindEvents() {
       closeRoleFilterDropdown();
     }
   });
+  document.addEventListener("mouseup", stopDragSelection);
+  window.addEventListener("blur", stopDragSelection);
 }
 
 async function init() {

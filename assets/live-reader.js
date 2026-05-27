@@ -563,7 +563,30 @@ function getActiveSegmentScrollBounds(elements, fallbackEl) {
   };
 }
 
-function getReaderScrollTarget(wrap, activeEls, fallbackEl) {
+function getSegmentLineScrollBounds(wrap, elements, fallbackEl, progress) {
+  const candidates = (Array.isArray(elements) ? elements : []).filter(Boolean);
+  if (!candidates.length && fallbackEl) candidates.push(fallbackEl);
+  if (!wrap || !candidates.length) return null;
+
+  const wrapRect = wrap.getBoundingClientRect();
+  const rects = [];
+  candidates.forEach((el) => {
+    Array.from(el.getClientRects()).forEach((rect) => {
+      if (rect.width <= 0 || rect.height <= 0) return;
+      rects.push({
+        top: rect.top - wrapRect.top + wrap.scrollTop,
+        bottom: rect.bottom - wrapRect.top + wrap.scrollTop,
+        height: rect.height,
+      });
+    });
+  });
+  if (!rects.length) return null;
+  rects.sort((a, b) => a.top - b.top || a.bottom - b.bottom);
+  const safeProgress = clampNumber(Number(progress || 0), 0, 1);
+  return rects[Math.min(rects.length - 1, Math.floor(safeProgress * rects.length))] || null;
+}
+
+function getReaderScrollTarget(wrap, activeEls, fallbackEl, progress = 0) {
   const bounds = getActiveSegmentScrollBounds(activeEls, fallbackEl);
   if (!bounds) return null;
 
@@ -575,6 +598,14 @@ function getReaderScrollTarget(wrap, activeEls, fallbackEl) {
     ? 0
     : clampNumber(Math.round(readableHeight * 0.18), 18, Math.max(18, readableHeight - bounds.height));
   const maxScrollTop = Math.max(0, Number(wrap.scrollHeight || 0) - viewportHeight);
+
+  if (bounds.height > readableHeight * 0.8) {
+    const lineBounds = getSegmentLineScrollBounds(wrap, activeEls, fallbackEl, progress);
+    if (lineBounds) {
+      const lineLeadSpace = clampNumber(Math.round(readableHeight * 0.24), 24, 140);
+      return clampNumber(lineBounds.top - topSafeOffset - lineLeadSpace, 0, maxScrollTop);
+    }
+  }
 
   return clampNumber(bounds.top - topSafeOffset - leadSpace, 0, maxScrollTop);
 }
@@ -1151,6 +1182,32 @@ function getActiveAsrSegmentIndex(currentTime) {
   return -1;
 }
 
+function getSegmentPlaybackProgress(segment, currentTime, duration) {
+  if (!segment) return 0;
+  if (currentAsrMode) {
+    const start = Number(segment.startTime || 0);
+    const end = Math.max(start + 0.1, Number(segment.endTime || start));
+    return clampNumber((Number(currentTime || 0) - start) / (end - start), 0, 1);
+  }
+  const startRatio = Number(segment.startRatio || 0);
+  const endRatio = Math.max(startRatio + 0.001, Number(segment.endRatio || startRatio));
+  const ratio = Number.isFinite(duration) && duration > 0 ? Number(currentTime || 0) / duration : startRatio;
+  return clampNumber((ratio - startRatio) / (endRatio - startRatio), 0, 1);
+}
+
+function updateReaderAutoScroll(wrap, activeEls, activeEl, force, progress) {
+  const autoScroll = document.getElementById("liveReaderAutoScroll")?.checked;
+  if (!autoScroll || !wrap || !activeEl) return;
+  const targetTop = getReaderScrollTarget(wrap, activeEls, activeEl, progress);
+  if (targetTop == null) return;
+  const sensitivity = getFollowSensitivity();
+  const diff = Math.abs(wrap.scrollTop - targetTop);
+  if (force || diff > sensitivity) {
+    targetReaderScrollTop = targetTop;
+    runReaderScrollAnimation();
+  }
+}
+
 function renderReadingContentFromPayload(payload) {
   const contentEl = document.getElementById("liveReaderContent");
   if (!contentEl) return;
@@ -1244,6 +1301,10 @@ function updateSegmentHighlight(force = false) {
     if (currentAsrMode && currentSegment) {
       setMatchStatus(currentSegment.matched ? `匹配: ${formatMatchStrategy(currentSegment.matchStrategy || "exact")}` : "匹配: 未命中，沿用上一句");
     }
+    const activeEls = segmentElementMap.get(activeSegmentIndex) || Array.from(wrap.querySelectorAll(`[data-segment-index="${activeSegmentIndex}"]`));
+    const activeEl = activeEls[0] || null;
+    const progress = getSegmentPlaybackProgress(currentSegment, player.currentTime, player.duration);
+    updateReaderAutoScroll(wrap, activeEls, activeEl, false, progress);
     return;
   }
 
@@ -1287,14 +1348,8 @@ function updateSegmentHighlight(force = false) {
   if (enableHighlight) activeEls.forEach((el) => el.classList.add("active"));
   if (!enableHighlight) activeEls.forEach((el) => el.classList.remove("active"));
   if (autoScroll && paragraphEl) {
-    const sensitivity = getFollowSensitivity();
-    const targetTop = getReaderScrollTarget(wrap, activeEls, activeEl);
-    if (targetTop == null) return;
-    const diff = Math.abs(wrap.scrollTop - targetTop);
-    if (force || diff > sensitivity) {
-      targetReaderScrollTop = targetTop;
-      runReaderScrollAnimation();
-    }
+    const progress = getSegmentPlaybackProgress(currentSegment, player.currentTime, player.duration);
+    updateReaderAutoScroll(wrap, activeEls, activeEl, force, progress);
   }
 }
 

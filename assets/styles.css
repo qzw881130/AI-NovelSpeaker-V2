@@ -2880,6 +2880,27 @@ body.is-drag-selecting .audio-asr-row {
   vertical-align: top;
 }
 
+.batch-role-line-row {
+  transition: background-color 0.12s ease;
+}
+
+.batch-role-line-row:not(.is-disabled) {
+  cursor: default;
+}
+
+.batch-role-line-row.is-selected td {
+  background: rgb(164 91 42 / 0.08);
+}
+
+.batch-role-line-row:not(.is-disabled):hover td {
+  background: rgb(164 91 42 / 0.05);
+}
+
+body.is-batch-role-drag-selecting,
+body.is-batch-role-drag-selecting .batch-role-lines-table {
+  user-select: none;
+}
+
 .batch-role-lines-table td:first-child,
 .batch-role-lines-table th:first-child {
   width: 44px;
