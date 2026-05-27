@@ -3069,6 +3069,23 @@ body.is-batch-role-drag-selecting .batch-role-lines-table {
   min-width: 100%;
 }
 
+.novel-download-row:not(.is-disabled) {
+  cursor: default;
+}
+
+.novel-download-row.is-selected td {
+  background: rgb(164 91 42 / 0.08);
+}
+
+.novel-download-row:hover td {
+  background: rgb(164 91 42 / 0.05);
+}
+
+body.is-novel-download-drag-selecting,
+body.is-novel-download-drag-selecting .novel-download-table {
+  user-select: none;
+}
+
 .novel-download-table-wrap {
   max-height: calc(100vh - 280px);
   overflow-y: auto;

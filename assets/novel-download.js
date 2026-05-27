@@ -5,6 +5,7 @@ let allNovels = [];
 let activeNovel = null;
 let chapterItems = [];
 const selectedChapterNums = new Set();
+let dragSelectState = null;
 const sortState = {
   field: "",
   direction: "none",
@@ -166,6 +167,36 @@ function toggleChapterSelection(chapterNum, checked) {
   updateSelectionControls();
 }
 
+function isInteractiveTarget(target) {
+  return Boolean(target?.closest?.("a,button,input,select,textarea,label,audio,video"));
+}
+
+function setChapterSelected(chapterNum, selected) {
+  const safeChapterNum = Number(chapterNum || 0);
+  if (!safeChapterNum) return;
+  if (selected) selectedChapterNums.add(safeChapterNum);
+  else selectedChapterNums.delete(safeChapterNum);
+  const row = Array.from(document.querySelectorAll(".novel-download-row"))
+    .find((entry) => Number(entry.dataset.chapterNum || 0) === safeChapterNum);
+  if (row) {
+    row.classList.toggle("is-selected", selectedChapterNums.has(safeChapterNum));
+    const checkbox = row.querySelector(".novel-download-item-check");
+    if (checkbox) checkbox.checked = selectedChapterNums.has(safeChapterNum);
+  }
+}
+
+function applyDragSelection(row) {
+  if (!dragSelectState || !row) return;
+  setChapterSelected(row.dataset.chapterNum, dragSelectState.selecting);
+  updateSelectionControls();
+}
+
+function stopDragSelection() {
+  if (!dragSelectState) return;
+  dragSelectState = null;
+  document.body.classList.remove("is-novel-download-drag-selecting");
+}
+
 function clearSelection() {
   selectedChapterNums.clear();
   updateSelectionControls();
@@ -196,11 +227,14 @@ function renderTable() {
       selectedChapterNums.delete(chapterNum);
     }
   });
-  tbody.innerHTML = rows.map((item) => `
-    <tr>
+  tbody.innerHTML = rows.map((item) => {
+    const chapterNum = Number(item.chapterNum || 0);
+    const selected = selectedChapterNums.has(chapterNum);
+    return `
+    <tr class="novel-download-row${selected ? " is-selected" : ""}" data-chapter-num="${chapterNum}">
       <td>
         <label class="novel-download-checkbox-cell" aria-label="选择第 ${String(item.chapterNum).padStart(3, "0")} 回">
-          <input class="novel-download-item-check" type="checkbox" data-chapter-num="${Number(item.chapterNum || 0)}" ${selectedChapterNums.has(Number(item.chapterNum || 0)) ? "checked" : ""} />
+          <input class="novel-download-item-check" type="checkbox" data-chapter-num="${chapterNum}" ${selected ? "checked" : ""} />
         </label>
       </td>
       <td>${String(item.chapterNum).padStart(3, "0")}</td>
@@ -215,7 +249,8 @@ function renderTable() {
         item.hasNonVerAudio ? `<a class="ghost-btn btn-sm" href="${item.nonVerDownloadUrl}">下载无版权</a>` : ''
       ].filter(Boolean).join(' ')}</td>
     </tr>
-  `).join("");
+  `;
+  }).join("");
   updateSortIcons();
   updateSelectionControls();
 }
@@ -269,7 +304,27 @@ function bindEvents() {
     const checkbox = event.target.closest(".novel-download-item-check");
     if (!checkbox) return;
     toggleChapterSelection(checkbox.dataset.chapterNum, checkbox.checked);
+    checkbox.closest(".novel-download-row")?.classList.toggle("is-selected", checkbox.checked);
   });
+  document.getElementById("novelDownloadTableBody").addEventListener("mousedown", (event) => {
+    if (event.button !== 0 || isInteractiveTarget(event.target)) return;
+    const row = event.target.closest(".novel-download-row");
+    if (!row) return;
+    const chapterNum = Number(row.dataset.chapterNum || 0);
+    if (!chapterNum) return;
+    event.preventDefault();
+    dragSelectState = { selecting: !selectedChapterNums.has(chapterNum) };
+    document.body.classList.add("is-novel-download-drag-selecting");
+    applyDragSelection(row);
+  });
+  document.getElementById("novelDownloadTableBody").addEventListener("mouseover", (event) => {
+    if (!dragSelectState) return;
+    const row = event.target.closest(".novel-download-row");
+    if (!row) return;
+    applyDragSelection(row);
+  });
+  document.addEventListener("mouseup", stopDragSelection);
+  window.addEventListener("blur", stopDragSelection);
   document.getElementById("batchMergeAudioBtn").addEventListener("click", async () => {
     if (!activeNovel) return;
     const selectedItems = getSelectedChapterItems();
