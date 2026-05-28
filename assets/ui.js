@@ -178,6 +178,12 @@ function renderNav() {
         <div>
           <h2>${t("donate.title")}</h2>
           <p>${t("donate.description")}</p>
+          <div class="donate-contact">
+            <strong>${t("donate.contact")}</strong>
+            <span>WX: qianzhiwei5921</span>
+            <span>QQ: 380659419</span>
+            <span>Telegram: @qianzhiwei</span>
+          </div>
         </div>
         <button class="ghost-btn btn-sm" id="donateDialogCloseBtn" type="button">${t("common.close")}</button>
       </div>

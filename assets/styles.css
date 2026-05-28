@@ -246,6 +246,23 @@ p {
   line-height: 1.6;
 }
 
+.donate-contact {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-top: 12px;
+  color: #6a4a31;
+  font-size: 14px;
+}
+
+.donate-contact span {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 9px;
+  background: rgba(255, 255, 255, 0.58);
+}
+
 .donate-qr-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
