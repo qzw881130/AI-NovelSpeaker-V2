@@ -13,6 +13,14 @@
 - B站：https://www.bilibili.com/video/BV136AKzcE2c
 - YouTube：https://youtu.be/pVB0qMpFdqg
 
+## 打賞支持
+
+如果這個專案幫到了你，歡迎打賞支持持續開發。
+
+| 支付寶 | 微信支付 |
+| --- | --- |
+| <img src="docs/alipay.jpg" alt="Alipay" width="220" /> | <img src="docs/wechat-pay.jpg" alt="WeChat Pay" width="220" /> |
+
 ## 功能概覽
 
 - 小說管理：建立/編輯/刪除小說、專案統計、自動刷新、打包下載真實 ZIP、支援小說級提示詞與工作流綁定，並可刷新與快取小說總音訊時長

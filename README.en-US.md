@@ -13,6 +13,14 @@ Multi-novel management and audio generation toolkit (SQLite + local file storage
 - Bilibili: https://www.bilibili.com/video/BV136AKzcE2c
 - YouTube: https://youtu.be/pVB0qMpFdqg
 
+## Donate
+
+If this project helps you, donations are welcome to support continued development.
+
+| Alipay | WeChat Pay |
+| --- | --- |
+| <img src="docs/alipay.jpg" alt="Alipay" width="220" /> | <img src="docs/wechat-pay.jpg" alt="WeChat Pay" width="220" /> |
+
 ## Features
 
 - Novel management: create/edit/delete novels, project stats, auto refresh, real ZIP bundle export, novel-level prompt/workflow binding, and cached total audio duration refresh

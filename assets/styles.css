@@ -106,6 +106,15 @@ p {
   margin-right: 0;
 }
 
+.app-shell.nav-collapsed .nav-donate-button {
+  justify-content: center;
+  padding: 10px 4px;
+}
+
+.app-shell.nav-collapsed .nav-donate-button .nav-label {
+  display: none;
+}
+
 .hidden {
   display: none !important;
 }
@@ -145,6 +154,32 @@ p {
   background: rgba(255, 255, 255, 0.58);
 }
 
+.nav-donate-button {
+  margin-top: auto;
+  border: 1px solid #e1c7ac;
+  border-radius: 14px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.64);
+  color: #6a4a31;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font: inherit;
+  text-align: left;
+  transition: 0.2s ease;
+}
+
+.nav-donate-button:hover {
+  color: var(--primary);
+  border-color: #d9a276;
+  background: #fff8ef;
+}
+
+.nav-donate-button + .nav-community-box {
+  margin-top: 0;
+}
+
 .nav-community-title {
   font-size: 13px;
   color: var(--muted);
@@ -176,6 +211,75 @@ p {
   color: var(--primary);
   border-color: #d9b898;
   background: #fff8ef;
+}
+
+.donate-dialog {
+  width: min(720px, calc(100vw - 32px));
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 22px;
+  background: var(--panel-strong);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+.donate-dialog::backdrop {
+  background: rgba(43, 34, 24, 0.38);
+  backdrop-filter: blur(3px);
+}
+
+.donate-dialog-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.donate-dialog-head h2 {
+  font-size: 24px;
+  margin-bottom: 6px;
+}
+
+.donate-dialog-head p {
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.donate-qr-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.donate-qr-grid figure {
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.58);
+  text-align: center;
+}
+
+.donate-qr-grid img {
+  width: 100%;
+  max-width: 260px;
+  border-radius: 12px;
+}
+
+.donate-qr-grid figcaption {
+  margin-top: 10px;
+  font-weight: 700;
+}
+
+@media (max-width: 680px) {
+  .donate-qr-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .donate-dialog-head {
+    flex-direction: column;
+  }
 }
 
 .nav-external-icon {

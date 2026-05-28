@@ -36,6 +36,7 @@ const NAV_ICONS = {
   liveReader: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4.5h8a3 3 0 0 1 3 3v11a1 1 0 0 1-1.5.86A5.4 5.4 0 0 0 13 18.5H7.5A2.5 2.5 0 0 0 5 21V6.5a2 2 0 0 1 2-2Z"/><path d="M9 9.5h4"/><path d="M9 13h6"/><path d="M18.5 9.5 21 11l-2.5 1.5Z"/></svg>`,
   audioAsr: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 7.5h15"/><path d="M4.5 12h11"/><path d="M4.5 16.5h8"/><path d="M18 8.5v7"/><path d="m15.5 13 2.5 2.5 2.5-2.5"/></svg>`,
   nsfwReview: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 20 6.5v5.7c0 4.2-2.7 7.9-8 9.8-5.3-1.9-8-5.6-8-9.8V6.5l8-3Z"/><path d="M9 12h6"/><path d="M12 9v6"/></svg>`,
+  donate: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-4.4-9.1-8.2C1.1 9.5 3.1 6 6.7 6c2 0 3.4 1.1 4.3 2.3C11.9 7.1 13.3 6 15.3 6c3.6 0 5.6 3.5 3.8 6.8C17 16.6 12 21 12 21Z"/><path d="M12 10.5v5"/><path d="M9.7 12.7h4.6"/></svg>`,
 };
 
 const NAV_EXTERNALS = [
@@ -163,17 +164,55 @@ function renderNav() {
     </div>
     <button class="nav-toggle" id="navToggle" title="${collapsed ? "展开菜单" : "收起菜单"}">◀</button>
     ${links}
+    <button class="nav-donate-button" id="navDonateBtn" type="button" title="${t("nav.donate")}" aria-label="${t("nav.donate")}">
+      <i class="nav-icon" aria-hidden="true">${NAV_ICONS.donate}</i>
+      <span class="nav-label">${t("nav.donate")}</span>
+    </button>
     <div class="nav-community-box" title="QQ交流群 ${QQ_GROUP_NUMBER}">
       <div class="nav-community-title">QQ交流群</div>
       <div class="nav-community-number">${QQ_GROUP_NUMBER}</div>
     </div>
     <div class="nav-external-row">${externals}</div>
+    <dialog class="donate-dialog" id="donateDialog">
+      <div class="donate-dialog-head">
+        <div>
+          <h2>${t("donate.title")}</h2>
+          <p>${t("donate.description")}</p>
+        </div>
+        <button class="ghost-btn btn-sm" id="donateDialogCloseBtn" type="button">${t("common.close")}</button>
+      </div>
+      <div class="donate-qr-grid">
+        <figure>
+          <img src="./docs/alipay.jpg" alt="${t("donate.alipay")}" />
+          <figcaption>${t("donate.alipay")}</figcaption>
+        </figure>
+        <figure>
+          <img src="./docs/wechat-pay.jpg" alt="${t("donate.wechat")}" />
+          <figcaption>${t("donate.wechat")}</figcaption>
+        </figure>
+      </div>
+    </dialog>
   `;
 
   // Bind toggle event
   const toggleBtn = document.getElementById("navToggle");
   if (toggleBtn) {
     toggleBtn.addEventListener("click", toggleNav);
+  }
+
+  const donateBtn = document.getElementById("navDonateBtn");
+  const donateDialog = document.getElementById("donateDialog");
+  const donateCloseBtn = document.getElementById("donateDialogCloseBtn");
+  if (donateBtn && donateDialog) {
+    donateBtn.addEventListener("click", () => donateDialog.showModal());
+  }
+  if (donateCloseBtn && donateDialog) {
+    donateCloseBtn.addEventListener("click", () => donateDialog.close());
+  }
+  if (donateDialog) {
+    donateDialog.addEventListener("click", (event) => {
+      if (event.target === donateDialog) donateDialog.close();
+    });
   }
 
   // Apply initial collapsed state

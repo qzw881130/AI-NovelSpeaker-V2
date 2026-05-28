@@ -19,6 +19,14 @@
 
 <img src="docs/qq-group.jpg" alt="AI-NovelSpeaker QQ群" width="300" />
 
+## 打赏支持
+
+如果这个项目帮到了你，欢迎打赏支持继续开发。
+
+| 支付宝 | 微信支付 |
+| --- | --- |
+| <img src="docs/alipay.jpg" alt="Alipay" width="220" /> | <img src="docs/wechat-pay.jpg" alt="WeChat Pay" width="220" /> |
+
 ## 功能概览
 
 - 小说管理：创建/编辑/删除小说，项目统计，自动刷新，打包下载真实 ZIP，支持小说级提示词与工作流绑定，可刷新并缓存小说总音频时长

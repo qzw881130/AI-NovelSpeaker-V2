@@ -13,6 +13,14 @@
 - Bilibili: https://www.bilibili.com/video/BV136AKzcE2c
 - YouTube: https://youtu.be/pVB0qMpFdqg
 
+## 후원
+
+이 프로젝트가 도움이 되었다면 지속적인 개발을 위해 후원을 환영합니다.
+
+| Alipay | WeChat Pay |
+| --- | --- |
+| <img src="docs/alipay.jpg" alt="Alipay" width="220" /> | <img src="docs/wechat-pay.jpg" alt="WeChat Pay" width="220" /> |
+
 ## 주요 기능
 
 - 소설 관리: 소설 생성/편집/삭제, 프로젝트 통계, 자동 새로고침, ZIP 번들 다운로드, 소설 단위 프롬프트/워크플로 연결, 총 오디오 길이 갱신 및 캐시

@@ -13,6 +13,14 @@
 - Bilibili：https://www.bilibili.com/video/BV136AKzcE2c
 - YouTube：https://youtu.be/pVB0qMpFdqg
 
+## 開発支援
+
+このプロジェクトがお役に立った場合は、継続開発への支援を歓迎します。
+
+| Alipay | WeChat Pay |
+| --- | --- |
+| <img src="docs/alipay.jpg" alt="Alipay" width="220" /> | <img src="docs/wechat-pay.jpg" alt="WeChat Pay" width="220" /> |
+
 ## 機能
 
 - 小説管理：小説の作成/編集/削除、プロジェクト統計、自動更新、ZIP バンドル出力、小説単位のプロンプト/ワークフロー紐付け、総音声長の更新とキャッシュ
