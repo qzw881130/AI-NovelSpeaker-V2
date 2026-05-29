@@ -1057,13 +1057,15 @@ const STATIC_TEXT_MAP = {
   "台词预览页点击“生成音频 / 批量生成所有”时，将按这里的设置进入台词队列。": { "en-US": "When you click \"Generate Audio / Generate All\" in line preview, tasks will enter the queue with these settings.", "zh-TW": "在台詞預覽頁點擊「生成音訊 / 批量生成所有」時，將按這裡的設定進入台詞佇列。", "ja-JP": "台詞プレビューで「音声生成 / すべて一括生成」を押すと、ここでの設定でキューに入ります。", "ko-KR": "대사 미리보기에서 \"오디오 생성 / 전체 일괄 생성\"을 누르면 여기 설정으로 큐에 들어갑니다." },
   "本地 Ollama": { "en-US": "Local Ollama", "zh-TW": "本地 Ollama", "ja-JP": "ローカル Ollama", "ko-KR": "로컬 Ollama" },
   "本地 Ollama 可留空": { "en-US": "Can be left blank for local Ollama", "zh-TW": "本地 Ollama 可留空", "ja-JP": "ローカル Ollama では空欄可", "ko-KR": "로컬 Ollama는 비워둘 수 있습니다" },
+  "本地LLama": { "en-US": "Local LLama", "zh-TW": "本地LLama", "ja-JP": "ローカル LLama", "ko-KR": "로컬 LLama" },
+  "本地模型可留空": { "en-US": "Can be left blank for local models", "zh-TW": "本地模型可留空", "ja-JP": "ローカルモデルでは空欄可", "ko-KR": "로컬 모델은 비워둘 수 있습니다" },
   不限制: { "en-US": "Unlimited", "zh-TW": "不限制", "ja-JP": "制限なし", "ko-KR": "제한 없음" },
   "3500 [最保险]": { "en-US": "3500 [Safest]", "zh-TW": "3500 [最保險]", "ja-JP": "3500 [最も安全]", "ko-KR": "3500 [가장 안전]" },
   "7000 [grok模型支持]": { "en-US": "7000 [Grok Supported]", "zh-TW": "7000 [grok模型支援]", "ja-JP": "7000 [Grok 対応]", "ko-KR": "7000 [Grok 지원]" },
   "8000": { "en-US": "8000", "zh-TW": "8000", "ja-JP": "8000", "ko-KR": "8000" },
   "9000": { "en-US": "9000", "zh-TW": "9000", "ja-JP": "9000", "ko-KR": "9000" },
   "10000": { "en-US": "10000", "zh-TW": "10000", "ja-JP": "10000", "ko-KR": "10000" },
-  "支持 Grok / DeepSeek / 千问 / Gemini / OpenAI / 本地 Ollama / 自定义 API。": { "en-US": "Supports Grok / DeepSeek / Qwen / Gemini / OpenAI / Local Ollama / Custom API.", "zh-TW": "支援 Grok / DeepSeek / 千問 / Gemini / OpenAI / 本地 Ollama / 自訂 API。", "ja-JP": "Grok / DeepSeek / Qwen / Gemini / OpenAI / ローカル Ollama / Custom API に対応。", "ko-KR": "Grok / DeepSeek / Qwen / Gemini / OpenAI / 로컬 Ollama / Custom API 지원." },
+  "支持 Grok / DeepSeek / 千问 / Gemini / OpenAI / 本地 Ollama / 本地LLama / 自定义 API。": { "en-US": "Supports Grok / DeepSeek / Qwen / Gemini / OpenAI / Local Ollama / Local LLama / Custom API.", "zh-TW": "支援 Grok / DeepSeek / 千問 / Gemini / OpenAI / 本地 Ollama / 本地LLama / 自訂 API。", "ja-JP": "Grok / DeepSeek / Qwen / Gemini / OpenAI / ローカル Ollama / ローカル LLama / Custom API に対応。", "ko-KR": "Grok / DeepSeek / Qwen / Gemini / OpenAI / 로컬 Ollama / 로컬 LLama / Custom API 지원." },
   自定义API: { "en-US": "Custom API", "zh-TW": "自訂API", "ja-JP": "Custom API", "ko-KR": "Custom API" },
   系统连接: { "en-US": "System Connection", "zh-TW": "系統連接", "ja-JP": "システム接続", "ko-KR": "시스템 연결" }
 };

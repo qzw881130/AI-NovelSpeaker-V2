@@ -38,12 +38,13 @@
                 <option value="gemini">Gemini</option>
                 <option value="openai">OpenAI</option>
                 <option value="ollama">本地 Ollama</option>
+                <option value="local_llama">本地LLama</option>
                 <option value="custom">自定义API</option>
               </select>
             </label>
             <label>API Base URL<input id="llmBase" /></label>
             <label>模型名称<input id="llmModel" /></label>
-            <label id="llmKeyWrap">API Key<input id="llmKey" type="password" /><span id="llmKeyHint" class="caption hidden">本地 Ollama 可留空</span></label>
+            <label id="llmKeyWrap">API Key<input id="llmKey" type="password" /><span id="llmKeyHint" class="caption hidden">本地模型可留空</span></label>
             <label>Temperature<input id="llmTemperature" type="number" min="0" max="2" step="0.1" /></label>
             <label>Max Tokens<input id="llmTokens" type="number" min="128" step="1" /></label>
             <label id="llmNumCtxWrap">
@@ -51,6 +52,7 @@
               <select id="llmNumCtx">
                 <option value="32768">32K</option>
                 <option value="65536">64K</option>
+                <option value="84000">84K</option>
                 <option value="98304">96K</option>
                 <option value="131072">128K</option>
               </select>
@@ -111,7 +113,7 @@
             <button class="ghost-btn" id="testLlmBtn" type="button">测试 LLM</button>
             <span id="testLlmResult" class="test-result">未测试</span>
           </div>
-          <p class="caption">支持 Grok / DeepSeek / 千问 / Gemini / OpenAI / 本地 Ollama / 自定义 API。</p>
+          <p class="caption">支持 Grok / DeepSeek / 千问 / Gemini / OpenAI / 本地 Ollama / 本地LLama / 自定义 API。</p>
         </section>
 
         <section class="panel form-panel">

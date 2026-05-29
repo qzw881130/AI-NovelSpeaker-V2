@@ -1637,6 +1637,17 @@ def resolve_audio_file(chapter_row: sqlite3.Row) -> Path | None:
     return None
 
 
+def should_bypass_proxy_for_url(url: str) -> bool:
+    parsed_url = urlparse(url)
+    host = str(parsed_url.hostname or "").strip().lower()
+    if host in {"localhost", "127.0.0.1", "::1"}:
+        return True
+    try:
+        return ipaddress.ip_address(host).is_private
+    except ValueError:
+        return host.endswith(".local")
+
+
 def http_json_request(
     method: str,
     url: str,
@@ -1657,22 +1668,13 @@ def http_json_request(
         req_headers.setdefault("Content-Type", "application/json")
 
     req = request.Request(url, method=method.upper(), headers=req_headers, data=data)
-    parsed_url = urlparse(url)
-    host = str(parsed_url.hostname or "").strip().lower()
-    bypass_env_proxy = False
-    if host in {"localhost", "127.0.0.1", "::1"}:
-        bypass_env_proxy = True
-    else:
-        try:
-            bypass_env_proxy = ipaddress.ip_address(host).is_private
-        except ValueError:
-            bypass_env_proxy = host.endswith(".local")
+    bypass_proxy = should_bypass_proxy_for_url(url)
 
-    if proxy_url:
+    if proxy_url and not bypass_proxy:
         opener = request.build_opener(
             request.ProxyHandler({"http": proxy_url, "https": proxy_url})
         )
-    elif bypass_env_proxy:
+    elif bypass_proxy:
         opener = request.build_opener(request.ProxyHandler({}))
     else:
         opener = request.build_opener()
@@ -1771,7 +1773,7 @@ def test_llm_endpoint(
         return False, "API Base URL 不能为空"
     if not model:
         return False, "模型名称不能为空"
-    if provider not in {"custom", "ollama"} and not api_key:
+    if provider not in {"custom", "ollama", "local_llama"} and not api_key:
         return False, "API Key 不能为空"
 
     url = f"{base_url.rstrip('/')}/chat/completions"

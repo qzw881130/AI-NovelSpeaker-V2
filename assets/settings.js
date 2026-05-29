@@ -9,6 +9,13 @@ const providerDefaults = {
   gemini: { baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", model: "gemini-2.0-flash" },
   openai: { baseUrl: "https://api.openai.com/v1", model: "gpt-4.1-mini" },
   ollama: { baseUrl: "http://127.0.0.1:11434/v1", model: "qwen2.5:7b" },
+  local_llama: {
+    baseUrl: "http://192.168.50.1:12080/v1",
+    model: "gemma-31b",
+    temperature: 0.1,
+    maxTokens: 84000,
+    numCtx: 84000,
+  },
   custom: { baseUrl: "", model: "" },
 };
 
@@ -17,7 +24,7 @@ const PROVIDER_MAX_TOKENS = {
 };
 
 const BATCH_CHAR_OPTIONS = new Set([0, 3500, 4000, 5000, 6000, 7000, 8000, 9000, 10000]);
-const NUM_CTX_OPTIONS = new Set([32768, 65536, 98304, 131072]);
+const NUM_CTX_OPTIONS = new Set([32768, 65536, 84000, 98304, 131072]);
 const KEEP_ALIVE_OPTIONS = new Set(["5m", "15m", "30m", "1h", "6h", "24h"]);
 const BATCH_TIMEOUT_OPTIONS = new Set([5, 10, 15, 20, 30, 40]);
 const UI_LANGUAGE_OPTIONS = new Set(["zh-CN", "zh-TW", "en-US", "ja-JP", "ko-KR"]);
@@ -319,7 +326,9 @@ function syncLineAudioQueueModeVisibility() {
 function syncOllamaFieldVisibility() {
   const provider = String(document.getElementById("llmProvider")?.value || "").trim();
   const isOllama = provider === "ollama";
-  document.getElementById("llmNumCtxWrap")?.classList.toggle("hidden", !isOllama);
+  const isLocalLlama = provider === "local_llama";
+  const isLocalNoKey = isOllama || isLocalLlama;
+  document.getElementById("llmNumCtxWrap")?.classList.toggle("hidden", !(isOllama || isLocalLlama));
   document.getElementById("llmKeepAliveWrap")?.classList.toggle("hidden", !isOllama);
   document.getElementById("llmUnloadAfterCallWrap")?.classList.toggle("hidden", !isOllama);
   document.getElementById("llmThinkWrap")?.classList.toggle("hidden", !isOllama);
@@ -327,13 +336,13 @@ function syncOllamaFieldVisibility() {
   const keyHint = document.getElementById("llmKeyHint");
   const thinkInput = document.getElementById("llmThink");
   if (keyInput) {
-    keyInput.disabled = isOllama;
-    keyInput.placeholder = isOllama ? "本地 Ollama 可留空" : "";
+    keyInput.disabled = isLocalNoKey;
+    keyInput.placeholder = isLocalNoKey ? "本地模型可留空" : "";
   }
   if (thinkInput) {
     thinkInput.disabled = !isOllama;
   }
-  keyHint?.classList.toggle("hidden", !isOllama);
+  keyHint?.classList.toggle("hidden", !isLocalNoKey);
 }
 
 function normalizeProviderMaxTokens(provider, value) {
@@ -466,10 +475,16 @@ function bindEvents() {
     const next = providerDefaults[event.target.value];
     document.getElementById("llmBase").value = next.baseUrl;
     document.getElementById("llmModel").value = next.model;
+    if (next.temperature != null) {
+      document.getElementById("llmTemperature").value = next.temperature;
+    }
     document.getElementById("llmTokens").value = normalizeProviderMaxTokens(
       event.target.value,
-      document.getElementById("llmTokens").value
+      next.maxTokens ?? document.getElementById("llmTokens").value
     );
+    if (next.numCtx != null) {
+      document.getElementById("llmNumCtx").value = String(next.numCtx);
+    }
     syncOllamaFieldVisibility();
     markLlmDirty();
   });
