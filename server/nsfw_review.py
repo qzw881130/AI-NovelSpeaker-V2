@@ -9,6 +9,7 @@ from typing import Any
 from .app_context import db_conn
 from .services import (
     LlmRequestTimeoutError,
+    clear_local_llama_context,
     extract_chat_content,
     fetch_settings,
     http_json_request,
@@ -94,6 +95,8 @@ def _call_llm_nsfw_review(
         "temperature": temperature,
         "max_tokens": max_tokens,
     }
+    if provider == "local_llama":
+        payload["chat_template_kwargs"] = {"enable_thinking": think}
     request_timeout = float(max(60, batch_timeout_minutes * 60))
     url = f"{base_url.rstrip('/')}/chat/completions"
     if provider == "ollama":
@@ -131,6 +134,15 @@ def _call_llm_nsfw_review(
                     model=model,
                     proxy_url=proxy_url,
                     timeout=30.0,
+                )
+            except Exception:
+                pass
+        if provider == "local_llama" and unload_after_call:
+            try:
+                clear_local_llama_context(
+                    base_url=base_url,
+                    proxy_url=proxy_url,
+                    timeout=10.0,
                 )
             except Exception:
                 pass

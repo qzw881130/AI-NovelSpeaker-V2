@@ -328,10 +328,15 @@ function syncOllamaFieldVisibility() {
   const isOllama = provider === "ollama";
   const isLocalLlama = provider === "local_llama";
   const isLocalNoKey = isOllama || isLocalLlama;
+  const supportsThink = isOllama || isLocalLlama;
   document.getElementById("llmNumCtxWrap")?.classList.toggle("hidden", !(isOllama || isLocalLlama));
   document.getElementById("llmKeepAliveWrap")?.classList.toggle("hidden", !isOllama);
-  document.getElementById("llmUnloadAfterCallWrap")?.classList.toggle("hidden", !isOllama);
-  document.getElementById("llmThinkWrap")?.classList.toggle("hidden", !isOllama);
+  document.getElementById("llmUnloadAfterCallWrap")?.classList.toggle("hidden", !(isOllama || isLocalLlama));
+  document.getElementById("llmThinkWrap")?.classList.toggle("hidden", !supportsThink);
+  const unloadLabel = document.getElementById("llmUnloadAfterCallLabel");
+  if (unloadLabel) {
+    unloadLabel.textContent = isLocalLlama ? "调用后清空上下文" : "调用后卸载模型，清空上下文";
+  }
   const keyInput = document.getElementById("llmKey");
   const keyHint = document.getElementById("llmKeyHint");
   const thinkInput = document.getElementById("llmThink");
@@ -340,7 +345,7 @@ function syncOllamaFieldVisibility() {
     keyInput.placeholder = isLocalNoKey ? "本地模型可留空" : "";
   }
   if (thinkInput) {
-    thinkInput.disabled = !isOllama;
+    thinkInput.disabled = !supportsThink;
   }
   keyHint?.classList.toggle("hidden", !isLocalNoKey);
 }

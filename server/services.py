@@ -1789,6 +1789,8 @@ def test_llm_endpoint(
         "max_tokens": 8,
         "temperature": 0,
     }
+    if provider == "local_llama":
+        payload["chat_template_kwargs"] = {"enable_thinking": bool(think)}
     if provider == "ollama":
         url = build_ollama_chat_url(base_url)
         request_keep_alive = normalize_ollama_keep_alive(keep_alive)
@@ -1827,6 +1829,15 @@ def test_llm_endpoint(
                     model=model,
                     proxy_url=proxy_url,
                     timeout=15.0,
+                )
+            except Exception:
+                pass
+        if provider == "local_llama" and unload_after_call:
+            try:
+                clear_local_llama_context(
+                    base_url=base_url,
+                    proxy_url=proxy_url,
+                    timeout=10.0,
                 )
             except Exception:
                 pass
@@ -1931,6 +1942,44 @@ def unload_ollama_model(
         timeout=timeout,
         proxy_url=proxy_url,
     )
+
+
+def build_local_llama_slots_url(base_url: str) -> str:
+    base = str(base_url or "").rstrip("/")
+    if base.endswith("/v1"):
+        base = base[:-3]
+    return f"{base}/slots"
+
+
+def clear_local_llama_context(
+    *, base_url: str, proxy_url: str = "", timeout: float = 10.0
+) -> None:
+    if not str(base_url or "").strip():
+        return
+    slots_url = build_local_llama_slots_url(base_url)
+    code, body = http_json_request("GET", slots_url, timeout=timeout, proxy_url=proxy_url)
+    if not (200 <= code < 300):
+        return
+    try:
+        slots = json.loads(body or "[]")
+    except Exception:
+        return
+    if not isinstance(slots, list):
+        return
+    for slot in slots:
+        if not isinstance(slot, dict):
+            continue
+        slot_id = slot.get("id")
+        if slot_id is None:
+            continue
+        code, _ = http_json_request(
+            "POST",
+            f"{slots_url}/{slot_id}?action=erase",
+            timeout=timeout,
+            proxy_url=proxy_url,
+        )
+        if code == 501:
+            return
 
 
 def parse_model_json(raw: str) -> dict:
@@ -2138,6 +2187,8 @@ def call_llm_json_parse(
         "temperature": temperature,
         "max_tokens": max_tokens,
     }
+    if provider == "local_llama":
+        payload["chat_template_kwargs"] = {"enable_thinking": think}
     request_timeout = float(max(60, batch_timeout_minutes * 60))
     url = f"{base_url.rstrip('/')}/chat/completions"
     if provider == "ollama":
@@ -2175,6 +2226,15 @@ def call_llm_json_parse(
                     model=model,
                     proxy_url=proxy_url,
                     timeout=30.0,
+                )
+            except Exception:
+                pass
+        if provider == "local_llama" and unload_after_call:
+            try:
+                clear_local_llama_context(
+                    base_url=base_url,
+                    proxy_url=proxy_url,
+                    timeout=10.0,
                 )
             except Exception:
                 pass
