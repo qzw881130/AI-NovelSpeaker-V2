@@ -2970,7 +2970,7 @@ menu {
 .live-reader-illustration-box {
   display: grid;
   gap: 8px;
-  margin: 16px auto 0;
+  margin: 1px auto 0;
   padding: 0;
   box-sizing: border-box;
 }
