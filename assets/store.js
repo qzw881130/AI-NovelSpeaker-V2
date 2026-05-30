@@ -323,6 +323,14 @@ async function deletePrompt(id) {
   return refreshCache({ include: ["prompts"] });
 }
 
+async function savePromptSettings(id, settings) {
+  await api(`/api/prompts/${Number(id)}/settings`, {
+    method: "PUT",
+    body: JSON.stringify(settings || { enabled: false }),
+  });
+  return refreshCache({ include: ["prompts"] });
+}
+
 async function saveWorkflow(input, id) {
   const payload = {
     name: String(input.name || "").trim(),
@@ -399,6 +407,17 @@ async function restartNsfwReviewWorker() {
   });
 }
 
+async function fetchIllustrationWorkerStatus() {
+  return api("/api/illustration-worker/status");
+}
+
+async function restartIllustrationWorker() {
+  return api("/api/illustration-worker/restart", {
+    method: "POST",
+    body: "{}",
+  });
+}
+
 async function searchNovelText(novelId, searchText) {
   return api(`/api/novels/${Number(novelId)}/text-fix/search`, {
     method: "POST",
@@ -442,6 +461,11 @@ async function fetchNovelAudioAsrChapters(novelId) {
 
 async function fetchNovelNsfwReviewChapters(novelId) {
   const data = await api(`/api/novels/${Number(novelId)}/nsfw-review-chapters`);
+  return data.chapters || [];
+}
+
+async function fetchNovelIllustrationChapters(novelId) {
+  const data = await api(`/api/novels/${Number(novelId)}/illustration-chapters`);
   return data.chapters || [];
 }
 
@@ -577,6 +601,42 @@ async function enqueueBatchNsfwReview(novelId, chapterNums = []) {
   return api(`/api/novels/${Number(novelId)}/nsfw-review/enqueue-batch`, {
     method: "POST",
     body: JSON.stringify({ chapterNums }),
+  });
+}
+
+async function enqueueChapterIllustration(novelId, chapterNum, stage, options = {}) {
+  return api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/illustration/${String(stage)}/enqueue`, {
+    method: "POST",
+    body: JSON.stringify({ allowWaiting: Boolean(options.allowWaiting) }),
+  });
+}
+
+async function fetchChapterIllustrationPayload(novelId, chapterNum, stage, kind) {
+  return api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/illustration/${String(stage)}/${String(kind)}`, {
+    method: "POST",
+    body: "{}",
+  });
+}
+
+async function fetchChapterIllustrationImages(novelId, chapterNum) {
+  const data = await api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/illustration/images`, {
+    method: "POST",
+    body: "{}",
+  });
+  return data.images || [];
+}
+
+async function enqueueIllustrationImage(imageId) {
+  return api(`/api/illustration-images/${Number(imageId)}/enqueue`, {
+    method: "POST",
+    body: "{}",
+  });
+}
+
+async function enqueueAllIllustrationImages(novelId, chapterNum) {
+  return api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/illustration/images/enqueue-all`, {
+    method: "POST",
+    body: "{}",
   });
 }
 
@@ -782,6 +842,7 @@ export {
   fetchNovelDownloadChapters,
   fetchNovelAudioAsrChapters,
   fetchNovelNsfwReviewChapters,
+  fetchNovelIllustrationChapters,
   getActiveNovelId,
   getCachedData,
   getData,
@@ -798,6 +859,11 @@ export {
   enqueueBatchAudioAsr,
   enqueueChapterNsfwReview,
   enqueueBatchNsfwReview,
+  enqueueChapterIllustration,
+  fetchChapterIllustrationPayload,
+  fetchChapterIllustrationImages,
+  enqueueIllustrationImage,
+  enqueueAllIllustrationImages,
   fetchChapterAsrFile,
   createChapter,
   updateChapter,
@@ -810,11 +876,14 @@ export {
   createRoleVoiceBundle,
   deleteNovelBundleFile,
   savePrompt,
+  savePromptSettings,
   saveSettings,
   saveWorkflow,
   restartAudioAsrWorker,
   restartLineAudioWorker,
   restartNsfwReviewWorker,
+  restartIllustrationWorker,
+  fetchIllustrationWorkerStatus,
   restartTaskWorker,
   setActiveNovelId,
   clearWorkflowLogs,

@@ -50,6 +50,10 @@
                 <input id="liveReaderHighlight" type="checkbox" checked />
                 <span>逐段高亮</span>
               </label>
+              <label class="inline-check">
+                <input id="liveReaderIllustrations" type="checkbox" />
+                <span>开启插画</span>
+              </label>
             </div>
             <label class="live-reader-slider-control">
               正文宽度
@@ -149,6 +153,15 @@
             </div>
             <div class="live-reader-reader-wrap">
               <article id="liveReaderContent" class="live-reader-content">请先选择章回。</article>
+            </div>
+            <div id="liveReaderIllustrationBox" class="live-reader-illustration-box hidden">
+              <div id="liveReaderIllustrationMeta" class="meta">插画未开启</div>
+              <div class="live-reader-illustration-stage">
+                <img id="liveReaderIllustrationImage" alt="章节插画" />
+                <span id="liveReaderIllustrationIndex" class="live-reader-illustration-badge live-reader-illustration-index"></span>
+                <span id="liveReaderIllustrationTime" class="live-reader-illustration-badge live-reader-illustration-time"></span>
+                <span id="liveReaderIllustrationTitle" class="live-reader-illustration-badge live-reader-illustration-title"></span>
+              </div>
             </div>
           </section>
         </section>

@@ -7,6 +7,7 @@ from .app_context import DB_PATH, db_conn
 from .http_handler import Handler
 from .services import (
     ensure_audio_asr_worker,
+    ensure_illustration_worker,
     ensure_line_audio_worker,
     ensure_nsfw_review_worker,
     ensure_task_worker,
@@ -29,6 +30,7 @@ def main() -> None:
     ensure_line_audio_worker()
     ensure_audio_asr_worker()
     ensure_nsfw_review_worker()
+    ensure_illustration_worker()
 
     host = str(os.getenv("NOVELSPEAKER_HOST", "0.0.0.0") or "0.0.0.0")
     try:

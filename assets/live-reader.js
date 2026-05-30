@@ -1,4 +1,4 @@
-import { fetchChapterAsrFile, fetchChapterDetail, fetchNovelChapters, getActiveNovelId, getData, setActiveNovelId } from "./store.js";
+import { fetchChapterAsrFile, fetchChapterDetail, fetchChapterIllustrationImages, fetchNovelChapters, getActiveNovelId, getData, setActiveNovelId } from "./store.js";
 import { renderNav, showPageError, toast } from "./ui.js";
 import { localizeDocumentText, translateText } from "./i18n.js";
 
@@ -8,6 +8,7 @@ const FONT_SIZE_KEY = "ai_novel_live_reader_font_size";
 const AUTO_NEXT_KEY = "ai_novel_live_reader_auto_next";
 const AUTO_SCROLL_KEY = "ai_novel_live_reader_auto_scroll";
 const HIGHLIGHT_KEY = "ai_novel_live_reader_highlight";
+const ILLUSTRATIONS_KEY = "ai_novel_live_reader_illustrations";
 const HIGHLIGHT_INTENSITY_KEY = "ai_novel_live_reader_highlight_intensity";
 const FOLLOW_SENSITIVITY_KEY = "ai_novel_live_reader_follow_sensitivity";
 const FOLLOW_SMOOTHNESS_KEY = "ai_novel_live_reader_follow_smoothness";
@@ -111,6 +112,10 @@ let lastTimeUpdateAt = 0;
 let chapterLoadToken = 0;
 let activeAudioLoadTrace = null;
 let lastWarmupKey = "";
+let liveIllustrationItems = [];
+let activeIllustrationIndex = -1;
+let pendingIllustrationIndex = -1;
+let liveIllustrationLoadToken = 0;
 const preloadedAudioMap = new Map();
 const TIMEUPDATE_MIN_INTERVAL_MS = 120;
 const CHAPTER_RENDER_CACHE_LIMIT = 8;
@@ -460,6 +465,7 @@ function applyReaderSettings() {
   const theme = getReaderTheme();
   const content = document.getElementById("liveReaderContent");
   const progressTrack = document.getElementById("liveReaderProgressTrack");
+  const illustrationBox = document.getElementById("liveReaderIllustrationBox");
   const wrap = document.querySelector(".live-reader-reader-wrap");
   const themeSelect = document.getElementById("liveReaderThemeSelect");
   const themeValue = document.getElementById("liveReaderThemeValue");
@@ -472,6 +478,10 @@ function applyReaderSettings() {
   if (progressTrack) {
     progressTrack.style.width = `${width}px`;
     progressTrack.style.maxWidth = `${width}px`;
+  }
+  if (illustrationBox) {
+    illustrationBox.style.width = `${width + 36}px`;
+    illustrationBox.style.maxWidth = "100%";
   }
   if (wrap) {
     wrap.style.height = `${height}px`;
@@ -507,6 +517,7 @@ function applyReaderSettings() {
   document.getElementById("liveReaderAutoNext").checked = getSavedBool(AUTO_NEXT_KEY, true);
   document.getElementById("liveReaderAutoScroll").checked = getSavedBool(AUTO_SCROLL_KEY, true);
   document.getElementById("liveReaderHighlight").checked = getSavedBool(HIGHLIGHT_KEY, true);
+  document.getElementById("liveReaderIllustrations").checked = getSavedBool(ILLUSTRATIONS_KEY, false);
   document.documentElement.style.setProperty("--live-highlight-alpha", String(highlightIntensity));
   document.documentElement.style.setProperty("--live-paragraph-alpha", String(Math.max(0, highlightIntensity * 0.45)));
   document.documentElement.style.setProperty("--live-reader-bg", theme.background);
@@ -515,6 +526,123 @@ function applyReaderSettings() {
   document.documentElement.style.setProperty("--live-highlight-text-color", theme.highlightText);
   document.documentElement.style.setProperty("--live-progress-fill", theme.progressFill);
   document.documentElement.style.setProperty("--live-progress-track", theme.progressTrack);
+}
+
+function isIllustrationsEnabled() {
+  return Boolean(document.getElementById("liveReaderIllustrations")?.checked);
+}
+
+function formatIllustrationDuration(item) {
+  const duration = Number.isFinite(Number(item?.duration))
+    ? Number(item.duration)
+    : Number(item?.end || 0) - Number(item?.start || 0);
+  return `${Math.max(0, Math.round(duration))}s`;
+}
+
+function clearLiveIllustration(message = "暂无匹配插画") {
+  activeIllustrationIndex = -1;
+  pendingIllustrationIndex = -1;
+  liveIllustrationLoadToken += 1;
+  const box = document.getElementById("liveReaderIllustrationBox");
+  const meta = document.getElementById("liveReaderIllustrationMeta");
+  const img = document.getElementById("liveReaderIllustrationImage");
+  const indexEl = document.getElementById("liveReaderIllustrationIndex");
+  const timeEl = document.getElementById("liveReaderIllustrationTime");
+  const titleEl = document.getElementById("liveReaderIllustrationTitle");
+  if (!box || !meta || !img) return;
+  box.classList.remove("is-loading", "is-switching");
+  box.classList.add("is-empty");
+  if (!isIllustrationsEnabled()) {
+    box.classList.add("hidden");
+    img.removeAttribute("src");
+    if (indexEl) indexEl.textContent = "";
+    if (timeEl) timeEl.textContent = "";
+    if (titleEl) titleEl.textContent = "";
+    meta.textContent = "插画未开启";
+    return;
+  }
+  box.classList.remove("hidden");
+  img.removeAttribute("src");
+  if (indexEl) indexEl.textContent = "";
+  if (timeEl) timeEl.textContent = "";
+  if (titleEl) titleEl.textContent = "";
+  meta.textContent = message;
+}
+
+function updateLiveIllustration(force = false) {
+  if (!isIllustrationsEnabled()) {
+    clearLiveIllustration();
+    return;
+  }
+  const box = document.getElementById("liveReaderIllustrationBox");
+  const meta = document.getElementById("liveReaderIllustrationMeta");
+  const img = document.getElementById("liveReaderIllustrationImage");
+  const indexEl = document.getElementById("liveReaderIllustrationIndex");
+  const timeEl = document.getElementById("liveReaderIllustrationTime");
+  const titleEl = document.getElementById("liveReaderIllustrationTitle");
+  const player = document.getElementById("liveReaderAudioPlayer");
+  if (!box || !meta || !img || !player) return;
+  box.classList.remove("hidden");
+  if (!liveIllustrationItems.length) {
+    clearLiveIllustration("当前章回暂无插画");
+    return;
+  }
+  const currentTime = Number(player.currentTime || 0);
+  const nextIndex = liveIllustrationItems.findIndex((item) => currentTime >= Number(item.start || 0) && currentTime <= Number(item.end || 0));
+  if (nextIndex < 0) {
+    if (!img.getAttribute("src")) clearLiveIllustration("当前时间暂无匹配插画");
+    return;
+  }
+  if (!force && (nextIndex === activeIllustrationIndex || nextIndex === pendingIllustrationIndex)) return;
+  pendingIllustrationIndex = nextIndex;
+  const item = liveIllustrationItems[nextIndex];
+  const url = `${item.imageUrl}?v=${Date.now()}`;
+  const loadToken = ++liveIllustrationLoadToken;
+  box.classList.add("is-loading");
+  if (!img.getAttribute("src")) box.classList.add("is-empty");
+  const preloader = new Image();
+  preloader.onload = () => {
+    if (loadToken !== liveIllustrationLoadToken) return;
+    activeIllustrationIndex = nextIndex;
+    pendingIllustrationIndex = -1;
+    meta.textContent = "";
+    if (indexEl) indexEl.textContent = `#${item.index}`;
+    if (timeEl) timeEl.textContent = formatIllustrationDuration(item);
+    if (titleEl) titleEl.textContent = item.sceneTitle || "插画";
+    box.classList.remove("is-empty", "is-loading", "is-switching");
+    img.src = url;
+    void img.offsetWidth;
+    box.classList.add("is-switching");
+  };
+  preloader.onerror = () => {
+    if (loadToken !== liveIllustrationLoadToken) return;
+    pendingIllustrationIndex = -1;
+    box.classList.remove("is-loading");
+    if (!img.getAttribute("src")) clearLiveIllustration("插画图片加载失败");
+  };
+  preloader.src = url;
+}
+
+async function loadLiveIllustrations(chapterNum, loadToken) {
+  liveIllustrationItems = [];
+  activeIllustrationIndex = -1;
+  if (!isIllustrationsEnabled() || !activeNovel || !chapterNum) {
+    clearLiveIllustration();
+    return;
+  }
+  clearLiveIllustration("插画加载中...");
+  try {
+    const items = await fetchChapterIllustrationImages(activeNovel.id, chapterNum);
+    if (loadToken !== chapterLoadToken) return;
+    liveIllustrationItems = items
+      .filter((item) => item.imageUrl && Number.isFinite(Number(item.start)) && Number.isFinite(Number(item.end)))
+      .sort((a, b) => Number(a.start || 0) - Number(b.start || 0));
+    updateLiveIllustration(true);
+  } catch (err) {
+    if (loadToken !== chapterLoadToken) return;
+    liveIllustrationItems = [];
+    clearLiveIllustration(`插画加载失败：${err.message}`);
+  }
 }
 
 function getReaderTopSafeOffset() {
@@ -1286,6 +1414,7 @@ function updateSegmentHighlight(force = false) {
   const wrap = document.querySelector(".live-reader-reader-wrap");
   const enableHighlight = document.getElementById("liveReaderHighlight")?.checked;
   const autoScroll = document.getElementById("liveReaderAutoScroll")?.checked;
+  updateLiveIllustration(false);
   if (!player || !wrap || !readingSegments.length) return;
   if (!Number.isFinite(player.duration) || player.duration <= 0) return;
   let nextIndex = -1;
@@ -1392,6 +1521,9 @@ async function loadChapter(chapterNum, options = {}) {
   const detail = await fetchChapterDetail(activeNovel.id, chapterNum);
   if (loadToken !== chapterLoadToken) return;
   activeChapterDetail = detail;
+  liveIllustrationItems = [];
+  activeIllustrationIndex = -1;
+  clearLiveIllustration();
   document.getElementById("liveReaderChapterTitle").textContent = detail.title;
   document.getElementById("liveReaderChapterMeta").textContent = `${detail.novelName} · 章节 ${detail.chapterNum} · 字数 ${detail.wordCount || 0}`;
   document.getElementById("liveReaderMatchStatus").textContent = "匹配: 初始化中";
@@ -1423,6 +1555,7 @@ async function loadChapter(chapterNum, options = {}) {
   updatePlaylistActiveState();
   updateNavButtons();
   scheduleUpcomingAudioWarmup(chapterNum);
+  loadLiveIllustrations(chapterNum, loadToken);
 
   const basePayload = await buildRenderedChapterPayload(String(detail.content || "").trim(), "");
   if (loadToken !== chapterLoadToken) return;
@@ -1594,6 +1727,14 @@ function bindEvents() {
       clearSegmentHighlight();
     }
   });
+  document.getElementById("liveReaderIllustrations")?.addEventListener("change", async (event) => {
+    saveBool(ILLUSTRATIONS_KEY, Boolean(event.target.checked));
+    if (event.target.checked && activeChapterNum) {
+      await loadLiveIllustrations(activeChapterNum, chapterLoadToken);
+    } else {
+      clearLiveIllustration();
+    }
+  });
   document.getElementById("liveReaderInstallBtn")?.addEventListener("click", async () => {
     await installStandaloneApp();
   });
@@ -1604,6 +1745,7 @@ function bindEvents() {
     });
   }
   player?.addEventListener("timeupdate", scheduleTimeUpdate);
+  player?.addEventListener("timeupdate", () => updateLiveIllustration(false));
   player?.addEventListener("timeupdate", updateReaderProgressBar);
   player?.addEventListener("loadedmetadata", updateReaderProgressBar);
   player?.addEventListener("play", () => {

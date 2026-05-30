@@ -40,6 +40,30 @@ SYSTEM_PROMPTS = [
         "default_content": "请审查小说章回文本中的NSFW内容，并按JSON格式返回违规类型与原文句子。",
         "legacy_names": [],
     },
+    {
+        "file": PROMPTS_DIR / "illustration_scene_system_prompt.txt",
+        "name": "插画-scene提示词",
+        "description": "系统内置，适用于插画时间线scene.json生成",
+        "category": "illustration_scene",
+        "default_content": "请根据小说章节内容与ASR时间轴输出插画时间线scene.json。",
+        "legacy_names": [],
+    },
+    {
+        "file": PROMPTS_DIR / "illustration_shot_system_prompt.txt",
+        "name": "插画-shot提示词",
+        "description": "系统内置，适用于插画镜头方案shot.json生成",
+        "category": "illustration_shot",
+        "default_content": "请根据scene.json输出插画镜头方案shot.json。",
+        "legacy_names": [],
+    },
+    {
+        "file": PROMPTS_DIR / "illustration_prompt_system_prompt.txt",
+        "name": "插画-prompt提示词",
+        "description": "系统内置，适用于AI绘画prompt.json生成",
+        "category": "illustration_prompt",
+        "default_content": "请根据scene.json与shot.json输出AI绘画prompt.json。",
+        "legacy_names": [],
+    },
 ]
 
 # 系统工作流定义
@@ -128,6 +152,21 @@ SYSTEM_WORKFLOWS = [
             },
         },
     },
+    {
+        "file": WORKFLOWS_DIR / "illustration_z_image_turbo_workflow.json",
+        "name": "生成插画",
+        "description": "系统内置，使用 z-image-turbo 生成小说插画",
+        "workflow_type": "illustration",
+        "workflow_log_enabled": 0,
+        "workflow_io_config": {
+            "inputs": {
+                "promptText": {"nodeId": "12"},
+                "width": {"nodeId": "13"},
+                "height": {"nodeId": "14"},
+            },
+            "outputs": {"imageFile": {"nodeId": "7"}},
+        },
+    },
 ]
 
 
@@ -186,6 +225,10 @@ def migrate_json_prompts_table(conn: sqlite3.Connection) -> None:
         )
         conn.execute(
             "UPDATE json_prompts SET prompt_category='nsfw_review' WHERE name LIKE '%NSFW%审查提示词%' OR description LIKE '%NSFW%审查%'"
+        )
+    if "llm_config_json" not in column_names:
+        conn.execute(
+            "ALTER TABLE json_prompts ADD COLUMN llm_config_json TEXT NOT NULL DEFAULT '{}'"
         )
 
 
@@ -361,6 +404,72 @@ def migrate_chapter_nsfw_tasks_table(conn: sqlite3.Connection) -> None:
     )
 
 
+def migrate_chapter_illustration_tasks_table(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS chapter_illustration_tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            novel_id INTEGER NOT NULL,
+            chapter_id INTEGER NOT NULL,
+            chapter_num INTEGER NOT NULL,
+            chapter_title TEXT NOT NULL DEFAULT '',
+            stage TEXT NOT NULL,
+            prompt_id INTEGER,
+            status TEXT NOT NULL DEFAULT 'pending',
+            progress INTEGER NOT NULL DEFAULT 0,
+            model_name TEXT NOT NULL DEFAULT '',
+            think_enabled INTEGER NOT NULL DEFAULT 1,
+            input_text TEXT NOT NULL DEFAULT '',
+            output_text TEXT NOT NULL DEFAULT '',
+            result_json_text TEXT NOT NULL DEFAULT '',
+            error_message TEXT NOT NULL DEFAULT '',
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            started_at DATETIME,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(novel_id, chapter_id, stage),
+            FOREIGN KEY(novel_id) REFERENCES novels(id) ON DELETE CASCADE,
+            FOREIGN KEY(chapter_id) REFERENCES chapters(id) ON DELETE CASCADE,
+            FOREIGN KEY(prompt_id) REFERENCES json_prompts(id) ON DELETE SET NULL
+        )
+        """
+    )
+
+
+def migrate_chapter_illustration_images_table(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS chapter_illustration_images (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            novel_id INTEGER NOT NULL,
+            chapter_id INTEGER NOT NULL,
+            chapter_num INTEGER NOT NULL,
+            item_index INTEGER NOT NULL,
+            scene_title TEXT NOT NULL DEFAULT '',
+            cn_summary TEXT NOT NULL DEFAULT '',
+            character_names TEXT NOT NULL DEFAULT '',
+            suggested_size TEXT NOT NULL DEFAULT '',
+            prompt_text TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'idle',
+            progress INTEGER NOT NULL DEFAULT 0,
+            image_file_path TEXT NOT NULL DEFAULT '',
+            error_message TEXT NOT NULL DEFAULT '',
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            started_at DATETIME,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(novel_id, chapter_id, item_index),
+            FOREIGN KEY(novel_id) REFERENCES novels(id) ON DELETE CASCADE,
+            FOREIGN KEY(chapter_id) REFERENCES chapters(id) ON DELETE CASCADE
+        )
+        """
+    )
+    columns = conn.execute("PRAGMA table_info(chapter_illustration_images)").fetchall()
+    column_names = [col[1] for col in columns]
+    if "character_names" not in column_names:
+        conn.execute("ALTER TABLE chapter_illustration_images ADD COLUMN character_names TEXT NOT NULL DEFAULT ''")
+    if "suggested_size" not in column_names:
+        conn.execute("ALTER TABLE chapter_illustration_images ADD COLUMN suggested_size TEXT NOT NULL DEFAULT ''")
+
+
 def db_conn() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH, timeout=12.0)
     conn.row_factory = sqlite3.Row
@@ -390,6 +499,8 @@ def db_conn() -> sqlite3.Connection:
     migrate_task_batches_table(conn)
     migrate_chapter_asr_tasks_table(conn)
     migrate_chapter_nsfw_tasks_table(conn)
+    migrate_chapter_illustration_tasks_table(conn)
+    migrate_chapter_illustration_images_table(conn)
     migrate_workflow_io_config_column(conn)
     migrate_workflow_logs_table(conn)
     return conn

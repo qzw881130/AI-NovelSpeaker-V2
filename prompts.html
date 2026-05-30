@@ -26,6 +26,9 @@
           <div class="asset-tabs">
             <button class="ghost-btn active" data-prompt-tab="json_parse" type="button">JSON 解析提示词</button>
             <button class="ghost-btn" data-prompt-tab="nsfw_review" type="button">NSFW 审查提示词</button>
+            <button class="ghost-btn" data-prompt-tab="illustration_scene" type="button">插画-scene提示词</button>
+            <button class="ghost-btn" data-prompt-tab="illustration_shot" type="button">插画-shot提示词</button>
+            <button class="ghost-btn" data-prompt-tab="illustration_prompt" type="button">插画-prompt提示词</button>
           </div>
           <div id="promptList" class="asset-list"></div>
         </section>
@@ -41,15 +44,98 @@
             <select name="category">
               <option value="json_parse">JSON 解析提示词</option>
               <option value="nsfw_review">NSFW 审查提示词</option>
+              <option value="illustration_scene">插画-scene提示词</option>
+              <option value="illustration_shot">插画-shot提示词</option>
+              <option value="illustration_prompt">插画-prompt提示词</option>
             </select>
           </label>
           <label class="full">描述<input name="description" /></label>
-          <label class="full">内容<textarea name="content" rows="8" required></textarea></label>
+          <label class="full">内容<textarea name="content" class="prompt-content-textarea" rows="14" required></textarea></label>
         </div>
         <p id="promptCharCount" class="caption">提示词字数: 0</p>
         <menu>
           <button class="ghost-btn" id="promptCancelBtn" type="button">取消</button>
           <button class="primary-btn" id="promptSaveBtn" type="submit">保存</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <dialog id="promptSettingsModal" class="modal modal-large">
+      <form id="promptSettingsForm" method="dialog">
+        <h3 id="promptSettingsTitle">提示词设置</h3>
+        <label class="checkbox-inline prompt-settings-toggle">
+          <input id="promptLlmEnabled" type="checkbox" />
+          <span>自定义配置</span>
+        </label>
+        <fieldset id="promptLlmFields" class="form-grid prompt-llm-fieldset">
+          <label>LLM提供商
+            <select id="promptLlmProvider">
+              <option value="grok">Grok</option>
+              <option value="deepseek">DeepSeek</option>
+              <option value="qwen">通义千问</option>
+              <option value="gemini">Gemini</option>
+              <option value="openai">OpenAI</option>
+              <option value="ollama">Ollama</option>
+              <option value="local_llama">本地LLama</option>
+              <option value="custom">自定义</option>
+            </select>
+          </label>
+          <label>模型名称<input id="promptLlmModel" /></label>
+          <label class="full">Base URL<input id="promptLlmBase" /></label>
+          <label class="full">API Key<input id="promptLlmKey" type="password" autocomplete="off" /></label>
+          <label>Temperature<input id="promptLlmTemperature" type="number" min="0" max="1" step="0.01" /></label>
+          <label>Top-P<input id="promptLlmTopP" type="number" min="0" max="1" step="0.01" /></label>
+          <label>Max Tokens<input id="promptLlmTokens" type="number" min="1" step="1" /></label>
+          <label id="promptLlmNumCtxWrap">Context
+            <select id="promptLlmNumCtx">
+              <option value="32768">32768</option>
+              <option value="65536">65536</option>
+              <option value="84000">84000</option>
+              <option value="98304">98304</option>
+              <option value="131072">131072</option>
+            </select>
+          </label>
+          <label id="promptLlmKeepAliveWrap">Keep Alive
+            <select id="promptLlmKeepAlive">
+              <option value="5m">5m</option>
+              <option value="15m">15m</option>
+              <option value="30m">30m</option>
+              <option value="1h">1h</option>
+              <option value="6h">6h</option>
+              <option value="24h">24h</option>
+            </select>
+          </label>
+          <label>批次超时
+            <select id="promptLlmBatchTimeout">
+              <option value="5">5分钟</option>
+              <option value="10">10分钟</option>
+              <option value="15">15分钟</option>
+              <option value="20">20分钟</option>
+              <option value="30">30分钟</option>
+              <option value="40">40分钟</option>
+            </select>
+          </label>
+          <label>批次字数
+            <select id="promptLlmBatchChars">
+              <option value="0">不拆分</option>
+              <option value="3500">3500</option>
+              <option value="4000">4000</option>
+              <option value="5000">5000</option>
+              <option value="6000">6000</option>
+              <option value="7000">7000</option>
+              <option value="8000">8000</option>
+              <option value="9000">9000</option>
+              <option value="10000">10000</option>
+            </select>
+          </label>
+          <label id="promptLlmThinkWrap" class="checkbox-inline"><input id="promptLlmThink" type="checkbox" /> Think</label>
+          <label id="promptLlmUnloadAfterCallWrap" class="checkbox-inline"><input id="promptLlmUnloadAfterCall" type="checkbox" /> 调用后清空上下文</label>
+        </fieldset>
+        <p id="promptLlmTestResult" class="caption">未测试</p>
+        <menu>
+          <button class="ghost-btn" id="promptLlmTestBtn" type="button">测试LLM</button>
+          <button class="ghost-btn" id="promptSettingsCancelBtn" type="button">取消</button>
+          <button class="primary-btn" type="submit">保存</button>
         </menu>
       </form>
     </dialog>

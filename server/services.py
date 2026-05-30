@@ -68,6 +68,12 @@ NSFW_REVIEW_WORKER_HEARTBEAT_TS = 0.0
 NSFW_REVIEW_WORKER_LAST_PROGRESS_TS = 0.0
 NSFW_REVIEW_WORKER_GENERATION = 0
 NSFW_REVIEW_WORKER_STALE_SECONDS = 90.0
+ILLUSTRATION_WORKER_THREAD: threading.Thread | None = None
+ILLUSTRATION_WORKER_STOP = threading.Event()
+ILLUSTRATION_WORKER_HEARTBEAT_TS = 0.0
+ILLUSTRATION_WORKER_LAST_PROGRESS_TS = 0.0
+ILLUSTRATION_WORKER_GENERATION = 0
+ILLUSTRATION_WORKER_STALE_SECONDS = 90.0
 DURATION_CACHE_LOCK = threading.Lock()
 DURATION_CACHE_PENDING: set[int] = set()
 JSON_LLM_THROTTLE_LOCK = threading.Lock()
@@ -140,6 +146,14 @@ def touch_nsfw_review_worker_heartbeat(*, made_progress: bool = False) -> None:
     NSFW_REVIEW_WORKER_HEARTBEAT_TS = now
     if made_progress:
         NSFW_REVIEW_WORKER_LAST_PROGRESS_TS = now
+
+
+def touch_illustration_worker_heartbeat(*, made_progress: bool = False) -> None:
+    global ILLUSTRATION_WORKER_HEARTBEAT_TS, ILLUSTRATION_WORKER_LAST_PROGRESS_TS
+    now = time.time()
+    ILLUSTRATION_WORKER_HEARTBEAT_TS = now
+    if made_progress:
+        ILLUSTRATION_WORKER_LAST_PROGRESS_TS = now
 
 
 def probe_audio_duration_seconds(file_path: Path) -> float:
@@ -344,11 +358,19 @@ def validate_english_dir(value: str) -> bool:
 def fetch_prompts(conn: sqlite3.Connection) -> list[dict]:
     rows = conn.execute(
         """
-        SELECT id,name,prompt_type,prompt_category,description,content,created_at,updated_at
+        SELECT id,name,prompt_type,prompt_category,description,content,llm_config_json,created_at,updated_at
         FROM json_prompts
         ORDER BY CASE WHEN prompt_type='system' THEN 0 ELSE 1 END, id DESC
         """
     ).fetchall()
+
+    def parse_llm_settings(raw: str) -> dict:
+        try:
+            parsed = json.loads(str(raw or "{}") or "{}")
+            return parsed if isinstance(parsed, dict) else {}
+        except Exception:
+            return {}
+
     return [
         {
             "id": int(r["id"]),
@@ -357,11 +379,80 @@ def fetch_prompts(conn: sqlite3.Connection) -> list[dict]:
             "name": str(r["name"]),
             "description": str(r["description"] or ""),
             "content": str(r["content"]),
+            "llmSettings": parse_llm_settings(str(r["llm_config_json"] or "{}")),
             "createdAt": str(r["created_at"]),
             "updatedAt": str(r["updated_at"]),
         }
         for r in rows
     ]
+
+
+def normalize_prompt_llm_settings(raw) -> dict:
+    if not isinstance(raw, dict):
+        return {"enabled": False}
+    enabled = bool(raw.get("enabled", False))
+    llm = raw.get("llm") if isinstance(raw.get("llm"), dict) else {}
+    provider = str(llm.get("provider") or "").strip()
+    max_tokens = normalize_llm_max_tokens(provider, llm.get("maxTokens") or 8192)
+    try:
+        temperature = float(llm.get("temperature") if llm.get("temperature") not in (None, "") else 0.3)
+    except (TypeError, ValueError):
+        temperature = 0.3
+    try:
+        top_p = float(llm.get("topP") if llm.get("topP") not in (None, "") else 0.85)
+    except (TypeError, ValueError):
+        top_p = 0.85
+    normalized = {
+        "enabled": enabled,
+        "llm": {
+            "provider": provider,
+            "baseUrl": str(llm.get("baseUrl") or "").strip(),
+            "model": str(llm.get("model") or "").strip(),
+            "apiKey": str(llm.get("apiKey") or "").strip(),
+            "temperature": temperature,
+            "topP": top_p,
+            "maxTokens": max_tokens,
+            "numCtx": int(llm.get("numCtx") or 65536),
+            "keepAlive": str(llm.get("keepAlive") or "30m").strip() or "30m",
+            "unloadAfterCall": bool(llm.get("unloadAfterCall", False)),
+            "batchTimeoutMinutes": int(llm.get("batchTimeoutMinutes") or 15),
+            "think": bool(llm.get("think", True)),
+            "batchMaxChars": int(llm.get("batchMaxChars") if llm.get("batchMaxChars") not in (None, "") else 3500),
+        },
+    }
+    if normalized["llm"]["numCtx"] not in {32768, 65536, 84000, 98304, 131072}:
+        normalized["llm"]["numCtx"] = 65536
+    if normalized["llm"]["topP"] < 0 or normalized["llm"]["topP"] > 1:
+        normalized["llm"]["topP"] = 0.85
+    if normalized["llm"]["keepAlive"] not in {"5m", "15m", "30m", "1h", "6h", "24h"}:
+        normalized["llm"]["keepAlive"] = "30m"
+    if normalized["llm"]["batchTimeoutMinutes"] not in {5, 10, 15, 20, 30, 40}:
+        normalized["llm"]["batchTimeoutMinutes"] = 15
+    if normalized["llm"]["batchMaxChars"] not in {0, 3500, 4000, 5000, 6000, 7000, 8000, 9000, 10000}:
+        normalized["llm"]["batchMaxChars"] = 3500
+    return normalized
+
+
+def apply_prompt_llm_settings(base_llm: dict, raw_settings) -> dict:
+    settings = normalize_prompt_llm_settings(raw_settings)
+    if not settings.get("enabled"):
+        return dict(base_llm or {})
+    override = settings.get("llm") if isinstance(settings.get("llm"), dict) else {}
+    return {**(base_llm or {}), **override}
+
+
+def load_prompt_llm_settings(conn: sqlite3.Connection, prompt_id: int) -> dict:
+    row = conn.execute(
+        "SELECT llm_config_json FROM json_prompts WHERE id=?",
+        (int(prompt_id),),
+    ).fetchone()
+    if not row:
+        return {"enabled": False}
+    try:
+        parsed = json.loads(str(row["llm_config_json"] or "{}") or "{}")
+    except Exception:
+        parsed = {}
+    return normalize_prompt_llm_settings(parsed)
 
 
 def load_system_prompt_content() -> str:
@@ -2144,6 +2235,7 @@ def call_llm_json_parse(
     model = str(llm.get("model") or "").strip()
     api_key = str(llm.get("apiKey") or "").strip()
     temperature = float(llm.get("temperature") or 0.3)
+    top_p = float(llm.get("topP") if llm.get("topP") not in (None, "") else 0.85)
     max_tokens = normalize_llm_max_tokens(provider, llm.get("maxTokens") or 8192)
     num_ctx = int(llm.get("numCtx") or 65536)
     keep_alive = str(llm.get("keepAlive") or "30m").strip() or "30m"
@@ -2185,6 +2277,7 @@ def call_llm_json_parse(
         ],
         "stream": False,
         "temperature": temperature,
+        "top_p": top_p,
         "max_tokens": max_tokens,
     }
     if provider == "local_llama":
@@ -2206,6 +2299,7 @@ def call_llm_json_parse(
             "options": {
                 "num_ctx": num_ctx,
                 "temperature": temperature,
+                "top_p": top_p,
                 "num_predict": max_tokens,
             },
         }
@@ -2263,6 +2357,95 @@ def call_llm_json_parse(
             raise LlmRateLimitError(friendly)
         raise RuntimeError(message)
 
+    parsed_body = json.loads(body or "{}")
+    if not isinstance(parsed_body, dict):
+        raise RuntimeError("LLM response is not object")
+    content = extract_chat_content(parsed_body)
+    if not content:
+        raise RuntimeError("LLM response content is empty")
+    return content
+
+
+def call_llm_prompt_json(
+    *,
+    llm: dict,
+    proxy_url: str,
+    system_prompt: str,
+    user_prompt: str,
+) -> str:
+    base_url = str(llm.get("baseUrl") or "").strip()
+    provider = str(llm.get("provider") or "").strip()
+    model = str(llm.get("model") or "").strip()
+    api_key = str(llm.get("apiKey") or "").strip()
+    temperature = float(llm.get("temperature") or 0.3)
+    top_p = float(llm.get("topP") if llm.get("topP") not in (None, "") else 0.85)
+    max_tokens = normalize_llm_max_tokens(provider, llm.get("maxTokens") or 8192)
+    num_ctx = int(llm.get("numCtx") or 65536)
+    keep_alive = str(llm.get("keepAlive") or "30m").strip() or "30m"
+    unload_after_call = bool(llm.get("unloadAfterCall", False))
+    batch_timeout_minutes = int(llm.get("batchTimeoutMinutes") or 15)
+    think = bool(llm.get("think", True))
+    if not base_url:
+        raise RuntimeError("LLM baseUrl is empty")
+    if not model:
+        raise RuntimeError("LLM model is empty")
+    headers = {}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "stream": False,
+        "temperature": temperature,
+        "top_p": top_p,
+        "max_tokens": max_tokens,
+    }
+    if provider == "local_llama":
+        payload["chat_template_kwargs"] = {"enable_thinking": think}
+    url = f"{base_url.rstrip('/')}/chat/completions"
+    if provider == "ollama":
+        url = build_ollama_chat_url(base_url)
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            "stream": False,
+            "think": think,
+            "keep_alive": normalize_ollama_keep_alive(keep_alive),
+            "options": {
+                "num_ctx": num_ctx,
+                "temperature": temperature,
+                "top_p": top_p,
+                "num_predict": max_tokens,
+            },
+        }
+    try:
+        code, body = http_json_request(
+            "POST",
+            url,
+            payload=payload,
+            headers=headers,
+            timeout=float(max(60, batch_timeout_minutes * 60)),
+            proxy_url=proxy_url,
+        )
+    finally:
+        if provider == "ollama" and unload_after_call:
+            try:
+                unload_ollama_model(base_url=base_url, model=model, proxy_url=proxy_url, timeout=30.0)
+            except Exception:
+                pass
+        if provider == "local_llama" and unload_after_call:
+            try:
+                clear_local_llama_context(base_url=base_url, proxy_url=proxy_url, timeout=10.0)
+            except Exception:
+                pass
+    if not (200 <= code < 300):
+        raise RuntimeError(f"LLM request failed (HTTP {code})")
     parsed_body = json.loads(body or "{}")
     if not isinstance(parsed_body, dict):
         raise RuntimeError("LLM response is not object")
@@ -2426,7 +2609,7 @@ def process_json_task(task_id: int) -> None:
             raise RuntimeError("prompt content is empty")
 
         settings = fetch_settings(conn)
-        llm = settings.get("llm") or {}
+        llm = apply_prompt_llm_settings(settings.get("llm") or {}, load_prompt_llm_settings(conn, prompt_id))
         proxy_url = str(settings.get("proxyUrl") or "")
         model_name = str(llm.get("model") or "")
         think_enabled = 1 if bool(llm.get("think", True)) else 0
@@ -2682,7 +2865,7 @@ def _load_json_task_context(task_id: int) -> dict:
         raise RuntimeError("prompt content is empty")
 
     settings = fetch_settings(conn)
-    llm = settings.get("llm") or {}
+    llm = apply_prompt_llm_settings(settings.get("llm") or {}, load_prompt_llm_settings(conn, prompt_id))
     proxy_url = str(settings.get("proxyUrl") or "")
     model_name = str(llm.get("model") or "")
     think_enabled = bool(llm.get("think", True))
@@ -3322,6 +3505,21 @@ def nsfw_review_worker_loop() -> None:
         NSFW_REVIEW_WORKER_STOP.wait(1.0 if has_nsfw_review_work else 3.0)
 
 
+def illustration_worker_loop() -> None:
+    from .illustration import run_illustration_queue_once
+
+    generation = ILLUSTRATION_WORKER_GENERATION
+    while not ILLUSTRATION_WORKER_STOP.is_set() and generation == ILLUSTRATION_WORKER_GENERATION:
+        touch_illustration_worker_heartbeat()
+        has_illustration_work = False
+        try:
+            has_illustration_work = run_illustration_queue_once()
+        except Exception as exc:
+            print(f"[illustration-worker] queue error: {exc}")
+        touch_illustration_worker_heartbeat(made_progress=has_illustration_work)
+        ILLUSTRATION_WORKER_STOP.wait(1.0 if has_illustration_work else 3.0)
+
+
 def ensure_line_audio_worker() -> None:
     global LINE_AUDIO_WORKER_THREAD, LINE_AUDIO_WORKER_GENERATION, LINE_AUDIO_WORKER_HEARTBEAT_TS
     now = time.time()
@@ -3371,6 +3569,23 @@ def ensure_nsfw_review_worker() -> None:
     NSFW_REVIEW_WORKER_GENERATION += 1
     NSFW_REVIEW_WORKER_THREAD = threading.Thread(target=nsfw_review_worker_loop, daemon=True)
     NSFW_REVIEW_WORKER_THREAD.start()
+
+
+def ensure_illustration_worker() -> None:
+    global ILLUSTRATION_WORKER_THREAD, ILLUSTRATION_WORKER_GENERATION, ILLUSTRATION_WORKER_HEARTBEAT_TS
+    now = time.time()
+    if ILLUSTRATION_WORKER_THREAD and ILLUSTRATION_WORKER_THREAD.is_alive():
+        if ILLUSTRATION_WORKER_HEARTBEAT_TS > 0 and now - ILLUSTRATION_WORKER_HEARTBEAT_TS > ILLUSTRATION_WORKER_STALE_SECONDS:
+            print("[illustration-worker] heartbeat stale, restarting worker")
+            ILLUSTRATION_WORKER_GENERATION += 1
+            ILLUSTRATION_WORKER_STOP.clear()
+            ILLUSTRATION_WORKER_THREAD = threading.Thread(target=illustration_worker_loop, daemon=True)
+            ILLUSTRATION_WORKER_THREAD.start()
+        return
+    ILLUSTRATION_WORKER_STOP.clear()
+    ILLUSTRATION_WORKER_GENERATION += 1
+    ILLUSTRATION_WORKER_THREAD = threading.Thread(target=illustration_worker_loop, daemon=True)
+    ILLUSTRATION_WORKER_THREAD.start()
 
 
 def ensure_task_worker() -> None:
@@ -3434,6 +3649,17 @@ def restart_nsfw_review_worker() -> None:
     NSFW_REVIEW_WORKER_THREAD.start()
 
 
+def restart_illustration_worker() -> None:
+    global ILLUSTRATION_WORKER_THREAD, ILLUSTRATION_WORKER_GENERATION, ILLUSTRATION_WORKER_HEARTBEAT_TS, ILLUSTRATION_WORKER_LAST_PROGRESS_TS
+    ILLUSTRATION_WORKER_STOP.set()
+    ILLUSTRATION_WORKER_GENERATION += 1
+    ILLUSTRATION_WORKER_STOP.clear()
+    ILLUSTRATION_WORKER_HEARTBEAT_TS = 0.0
+    ILLUSTRATION_WORKER_LAST_PROGRESS_TS = 0.0
+    ILLUSTRATION_WORKER_THREAD = threading.Thread(target=illustration_worker_loop, daemon=True)
+    ILLUSTRATION_WORKER_THREAD.start()
+
+
 def get_task_worker_status() -> dict:
     now = time.time()
     heartbeat_age = max(0.0, now - TASK_WORKER_HEARTBEAT_TS) if TASK_WORKER_HEARTBEAT_TS > 0 else -1.0
@@ -3491,6 +3717,21 @@ def get_nsfw_review_worker_status() -> dict:
         "heartbeatAgeSeconds": round(heartbeat_age, 1) if heartbeat_age >= 0 else None,
         "progressAgeSeconds": round(progress_age, 1) if progress_age >= 0 else None,
         "generation": NSFW_REVIEW_WORKER_GENERATION,
+    }
+
+
+def get_illustration_worker_status() -> dict:
+    now = time.time()
+    heartbeat_age = max(0.0, now - ILLUSTRATION_WORKER_HEARTBEAT_TS) if ILLUSTRATION_WORKER_HEARTBEAT_TS > 0 else -1.0
+    progress_age = max(0.0, now - ILLUSTRATION_WORKER_LAST_PROGRESS_TS) if ILLUSTRATION_WORKER_LAST_PROGRESS_TS > 0 else -1.0
+    state = "stopped"
+    if ILLUSTRATION_WORKER_THREAD and ILLUSTRATION_WORKER_THREAD.is_alive():
+        state = "stale" if (ILLUSTRATION_WORKER_HEARTBEAT_TS > 0 and heartbeat_age > ILLUSTRATION_WORKER_STALE_SECONDS) else "running"
+    return {
+        "state": state,
+        "heartbeatAgeSeconds": round(heartbeat_age, 1) if heartbeat_age >= 0 else None,
+        "progressAgeSeconds": round(progress_age, 1) if progress_age >= 0 else None,
+        "generation": ILLUSTRATION_WORKER_GENERATION,
     }
 
 

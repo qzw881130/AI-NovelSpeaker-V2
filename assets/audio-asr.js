@@ -19,6 +19,29 @@ const selectedChapterNums = new Set();
 let autoRefreshTimer = 0;
 let isDragSelecting = false;
 
+function copyText(text) {
+  const value = String(text || "");
+  if (!value.trim() || value === "加载中...") {
+    toast("暂无可复制内容");
+    return Promise.resolve();
+  }
+  if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+    return navigator.clipboard.writeText(value).then(() => toast("ASR内容已复制"));
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = value;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  document.execCommand("copy");
+  document.body.removeChild(textarea);
+  toast("ASR内容已复制");
+  return Promise.resolve();
+}
+
 function isForceExtractEnabled() {
   return Boolean(document.getElementById("audioAsrForceExtract")?.checked);
 }
@@ -183,9 +206,11 @@ async function openAsrView(item) {
   const dialog = document.getElementById("audioAsrViewDialog");
   const titleEl = document.getElementById("audioAsrViewTitle");
   const contentEl = document.getElementById("audioAsrViewContent");
+  const copyBtn = document.getElementById("audioAsrCopyBtn");
   if (!dialog || !titleEl || !contentEl) return;
   titleEl.textContent = `查看ASR · 第${String(item.chapterNum).padStart(3, "0")}回 ${item.title || ""}`;
   contentEl.textContent = "加载中...";
+  if (copyBtn) copyBtn.disabled = true;
   dialog.showModal();
   try {
     const res = await fetch(item.downloadUrl, { cache: "no-store" });
@@ -193,8 +218,10 @@ async function openAsrView(item) {
       throw new Error(`HTTP ${res.status}`);
     }
     contentEl.textContent = await res.text();
+    if (copyBtn) copyBtn.disabled = false;
   } catch (err) {
     contentEl.textContent = `加载失败：${err.message}`;
+    if (copyBtn) copyBtn.disabled = true;
   }
 }
 
@@ -362,6 +389,11 @@ function bindEvents() {
   document.getElementById("audioAsrBatchAllBtn").addEventListener("click", async () => {
     const all = chapterItems.filter((item) => item.hasAudio).map((item) => Number(item.chapterNum || 0));
     await enqueueBatch(all);
+  });
+  document.getElementById("audioAsrCopyBtn")?.addEventListener("click", () => {
+    copyText(document.getElementById("audioAsrViewContent")?.textContent || "").catch((err) => {
+      toast(`复制失败：${err.message}`);
+    });
   });
   document.addEventListener("pointerup", () => {
     isDragSelecting = false;

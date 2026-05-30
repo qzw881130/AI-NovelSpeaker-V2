@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>生成插画 - AI NovelSpeaker V2</title>
+    <link rel="stylesheet" href="./assets/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="main-nav" id="mainNav"></aside>
+      <main class="page">
+        <header class="page-header">
+          <div>
+            <p class="eyebrow">插画解析</p>
+            <h1 id="illustrationPageTitle">生成插画</h1>
+            <p id="illustrationPageMeta" class="meta">加载中...</p>
+          </div>
+          <div class="header-actions">
+            <select id="illustrationNovelSelect"></select>
+            <button class="ghost-btn" id="refreshIllustrationBtn" type="button">刷新</button>
+            <button class="ghost-btn" id="restartIllustrationWorkerBtn" type="button">重启Worker</button>
+            <a id="illustrationChaptersLink" class="ghost-btn" href="./chapters.html">章节管理</a>
+          </div>
+        </header>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>章回插画解析</h2>
+              <p id="illustrationSummary" class="meta">-</p>
+            </div>
+            <span id="illustrationWorkerStatus" class="chip">Worker: -</span>
+          </div>
+          <div class="illustration-batch-toolbar">
+            <label class="checkbox-inline">
+              <input id="illustrationSelectAll" type="checkbox" />
+              <span>全选</span>
+            </label>
+            <span id="illustrationSelectionCount" class="meta">已选 0 回</span>
+            <button id="batchIllustrationSceneBtn" class="ghost-btn" type="button" disabled>解析Scene</button>
+            <button id="batchIllustrationShotBtn" class="ghost-btn" type="button" disabled>解析Shot</button>
+            <button id="batchIllustrationPromptBtn" class="ghost-btn" type="button" disabled>解析Prompt</button>
+            <button id="batchIllustrationAllStagesBtn" class="ghost-btn" type="button" disabled>一键解析Scene+Shot+Prompt</button>
+            <button id="batchIllustrationImagesBtn" class="primary-btn" type="button" disabled>生成插图</button>
+          </div>
+          <div class="roles-table-wrap novel-download-table-wrap illustration-table-wrap">
+            <table class="roles-table novel-download-table illustration-table">
+              <thead>
+                <tr>
+                  <th class="select-col">选择</th>
+                  <th>编号</th>
+                  <th>章回标题</th>
+                  <th>字数</th>
+                  <th>Scene</th>
+                  <th>Shot</th>
+                  <th>Prompt</th>
+                </tr>
+              </thead>
+              <tbody id="illustrationTableBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="illustrationPayloadDialog" class="modal modal-large">
+      <form method="dialog">
+        <div class="dialog-header">
+          <h3 id="illustrationPayloadTitle">查看内容</h3>
+          <button id="illustrationPayloadCopyBtn" class="dialog-copy-btn icon-btn" type="button" aria-label="复制内容" title="复制内容">
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+              <path d="M8 7a3 3 0 0 1 3-3h6a3 3 0 0 1 3 3v6a3 3 0 0 1-3 3h-1v1a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3v-6a3 3 0 0 1 3-3h1V7Zm2 1h3a3 3 0 0 1 3 3v3h1a1 1 0 0 0 1-1V7a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v1Zm-3 2a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-6a1 1 0 0 0-1-1H7Z" fill="currentColor" />
+            </svg>
+          </button>
+          <button class="dialog-close-btn" type="submit" aria-label="关闭">×</button>
+        </div>
+        <pre id="illustrationPayloadContent" class="dialog-code-block">加载中...</pre>
+      </form>
+    </dialog>
+
+    <dialog id="illustrationImagesDialog" class="modal modal-large illustration-images-modal">
+      <form method="dialog">
+        <div class="dialog-header">
+          <h3 id="illustrationImagesTitle">插图生成</h3>
+          <div class="illustration-images-actions">
+            <label class="illustration-refresh-control"><span>自动刷新</span>
+              <select id="illustrationImagesRefreshInterval">
+                <option value="0">不刷新</option>
+                <option value="5">5秒</option>
+                <option value="10">10秒</option>
+                <option value="20">20秒</option>
+                <option value="30">30秒</option>
+                <option value="60">60秒</option>
+              </select>
+            </label>
+            <button id="generateAllIllustrationImagesBtn" class="primary-btn" type="button">一键生成全部</button>
+          </div>
+          <button class="dialog-close-btn" type="submit" aria-label="关闭">×</button>
+        </div>
+        <div id="illustrationImagesList" class="illustration-images-grid"></div>
+      </form>
+    </dialog>
+
+    <dialog id="illustrationImagePreviewDialog" class="modal modal-large">
+      <form method="dialog">
+        <div class="dialog-header">
+          <h3 id="illustrationPreviewTitle">预览插图</h3>
+          <button class="dialog-close-btn" type="submit" aria-label="关闭">×</button>
+        </div>
+        <div class="illustration-preview-meta">
+          <p class="caption">提示：按键盘 ← / → 可切换上一张 / 下一张</p>
+          <p id="illustrationPreviewSummary" class="meta"></p>
+          <p id="illustrationPreviewCharacters" class="meta"></p>
+          <p id="illustrationPreviewTime" class="meta"></p>
+          <p id="illustrationPreviewSize" class="meta"></p>
+          <pre id="illustrationPreviewPrompt" class="illustration-preview-prompt"></pre>
+        </div>
+        <div class="illustration-preview-stage">
+          <button id="illustrationPreviewPrevBtn" class="illustration-preview-nav" type="button" aria-label="上一张" title="上一张">‹</button>
+          <img id="illustrationImagePreview" class="illustration-preview-image" alt="插图预览" />
+          <button id="illustrationPreviewNextBtn" class="illustration-preview-nav" type="button" aria-label="下一张" title="下一张">›</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div id="toast" class="toast"></div>
+    <script type="module" src="./assets/illustration.js"></script>
+  </body>
+</html>

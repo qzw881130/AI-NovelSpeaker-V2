@@ -38,6 +38,14 @@ const WORKFLOW_IO_FIELDS = {
       { key: "endTimesOutput", label: "结束时间" },
     ],
   },
+  illustration: {
+    inputs: [
+      { key: "promptText", label: "插画提示词" },
+      { key: "width", label: "图片宽度" },
+      { key: "height", label: "图片高度" },
+    ],
+    outputs: [{ key: "imageFile", label: "生成的插画文件" }],
+  },
 };
 
 function orderedWorkflows() {
@@ -56,6 +64,7 @@ const WORKFLOW_TYPE_LABELS = {
   audio_asr: "提取音频ASR",
   line_audio: "生成台词音频",
   voice_sample: "生成示例音频",
+  illustration: "生成插画",
 };
 
 function getWorkflowTypeLabel(type) {

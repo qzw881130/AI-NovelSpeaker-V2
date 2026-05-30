@@ -45,6 +45,15 @@ from .nsfw_review import (
     enqueue_chapter_nsfw_review_task,
     list_nsfw_review_chapters,
 )
+from .illustration import (
+    enqueue_illustration_task,
+    enqueue_all_illustration_images,
+    enqueue_illustration_image,
+    get_illustration_task_payload,
+    list_illustration_images,
+    list_illustration_chapters,
+    sync_prompt_images,
+)
 
 
 def _resolve_storage_path(raw_path: str) -> Path | None:
@@ -894,6 +903,13 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"chapters": list_nsfw_review_chapters(novel_id)})
             return
 
+        m_illustration_chapters = re.match(r"^/api/novels/(\d+)/illustration-chapters$", route)
+        if m_illustration_chapters:
+            ensure_illustration_worker()
+            novel_id = int(m_illustration_chapters.group(1))
+            self.send_json({"chapters": list_illustration_chapters(novel_id)})
+            return
+
         m_audio_file = re.match(r"^/api/novels/(\d+)/chapters/(\d+)/audio-file$", route)
         if m_audio_file:
             novel_id = int(m_audio_file.group(1))
@@ -1021,6 +1037,23 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
 
+        m_illustration_image_file = re.match(r"^/api/illustration-images/(\d+)/file$", route)
+        if m_illustration_image_file:
+            image_id = int(m_illustration_image_file.group(1))
+            conn = db_conn()
+            row = conn.execute(
+                "SELECT image_file_path FROM chapter_illustration_images WHERE id=?",
+                (image_id,),
+            ).fetchone()
+            conn.close()
+            rel = str(row["image_file_path"] or "").strip() if row else ""
+            path = (ROOT_DIR / rel).resolve() if rel else None
+            if not path or not path.exists() or not path.is_file():
+                self.send_json({"error": "image not found"}, 404)
+                return
+            self.send_file_response(path, self._guess_media_type(path), cache_control="no-store")
+            return
+
         m_chapter = re.match(r"^/api/novels/(\d+)/chapters/(\d+)$", route)
         if m_chapter:
             novel_id = int(m_chapter.group(1))
@@ -1135,6 +1168,10 @@ class Handler(BaseHTTPRequestHandler):
 
         if route == "/api/nsfw-review-worker/status":
             self.send_json(get_nsfw_review_worker_status())
+            return
+
+        if route == "/api/illustration-worker/status":
+            self.send_json(get_illustration_worker_status())
             return
 
         if route == "/api/settings":
@@ -2060,6 +2097,11 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"status": "ok"})
             return
 
+        if route == "/api/illustration-worker/restart":
+            restart_illustration_worker()
+            self.send_json({"status": "ok"})
+            return
+
         if route == "/api/prompts":
             body = self.read_json()
             conn = db_conn()
@@ -2089,7 +2131,7 @@ class Handler(BaseHTTPRequestHandler):
             prompt_id = int(m_copy_prompt.group(1))
             conn = db_conn()
             src = conn.execute(
-                "SELECT name,content,prompt_category FROM json_prompts WHERE id=?", (prompt_id,)
+                "SELECT name,content,prompt_category,llm_config_json FROM json_prompts WHERE id=?", (prompt_id,)
             ).fetchone()
             if not src:
                 conn.close()
@@ -2099,12 +2141,13 @@ class Handler(BaseHTTPRequestHandler):
                 src_name = str(src["name"])
                 new_name = next_prompt_copy_name(conn, src_name)
                 conn.execute(
-                    "INSERT INTO json_prompts (name,prompt_type,prompt_category,description,content) VALUES (?, 'user', ?, ?, ?)",
+                    "INSERT INTO json_prompts (name,prompt_type,prompt_category,description,content,llm_config_json) VALUES (?, 'user', ?, ?, ?, ?)",
                     (
                         new_name,
                         str(src["prompt_category"] or "json_parse"),
                         f"基于 {src_name} 复制",
                         str(src["content"]),
+                        str(src["llm_config_json"] or "{}"),
                     ),
                 )
                 conn.commit()
@@ -2132,6 +2175,7 @@ class Handler(BaseHTTPRequestHandler):
                     "line_audio",
                     "voice_transcribe",
                     "audio_asr",
+                    "illustration",
                 }:
                     conn.close()
                     self.send_json({"error": "invalid workflowType"}, 400)
@@ -2461,6 +2505,105 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": msg}, 409)
                 return
             self.send_json({"status": str((data or {}).get("action") or "queued"), "message": msg, **(data or {})})
+            return
+
+        m_illustration_enqueue = re.match(
+            r"^/api/novels/(\d+)/chapters/(\d+)/illustration/(scene|shot|prompt)/enqueue$", route
+        )
+        if m_illustration_enqueue:
+            ensure_illustration_worker()
+            novel_id = int(m_illustration_enqueue.group(1))
+            chapter_num = int(m_illustration_enqueue.group(2))
+            stage = str(m_illustration_enqueue.group(3))
+            conn = db_conn()
+            chapter_row = conn.execute(
+                "SELECT id FROM chapters WHERE novel_id=? AND chapter_num=?",
+                (novel_id, chapter_num),
+            ).fetchone()
+            conn.close()
+            if not chapter_row:
+                self.send_json({"error": "chapter not found"}, 404)
+                return
+            payload = self.read_json()
+            ok, msg = enqueue_illustration_task(novel_id, int(chapter_row["id"]), stage, allow_waiting=bool(payload.get("allowWaiting")))
+            if not ok:
+                self.send_json({"error": msg}, 409)
+                return
+            self.send_json({"status": "queued"})
+            return
+
+        m_illustration_view = re.match(
+            r"^/api/novels/(\d+)/chapters/(\d+)/illustration/(scene|shot|prompt)/(input|output)$", route
+        )
+        if m_illustration_view:
+            novel_id = int(m_illustration_view.group(1))
+            chapter_num = int(m_illustration_view.group(2))
+            stage = str(m_illustration_view.group(3))
+            kind = str(m_illustration_view.group(4))
+            conn = db_conn()
+            chapter_row = conn.execute(
+                "SELECT id FROM chapters WHERE novel_id=? AND chapter_num=?",
+                (novel_id, chapter_num),
+            ).fetchone()
+            conn.close()
+            if not chapter_row:
+                self.send_json({"error": "chapter not found"}, 404)
+                return
+            payload = get_illustration_task_payload(novel_id, int(chapter_row["id"]), stage)
+            self.send_json({
+                "stage": stage,
+                "kind": kind,
+                "text": payload["inputText"] if kind == "input" else (payload["resultJsonText"] or payload["outputText"]),
+                **payload,
+            })
+            return
+
+        m_illustration_images = re.match(
+            r"^/api/novels/(\d+)/chapters/(\d+)/illustration/images$", route
+        )
+        if m_illustration_images:
+            novel_id = int(m_illustration_images.group(1))
+            chapter_num = int(m_illustration_images.group(2))
+            conn = db_conn()
+            chapter_row = conn.execute(
+                "SELECT id FROM chapters WHERE novel_id=? AND chapter_num=?",
+                (novel_id, chapter_num),
+            ).fetchone()
+            conn.close()
+            if not chapter_row:
+                self.send_json({"error": "chapter not found"}, 404)
+                return
+            self.send_json({"images": sync_prompt_images(novel_id, int(chapter_row["id"]))})
+            return
+
+        m_illustration_image_enqueue = re.match(r"^/api/illustration-images/(\d+)/enqueue$", route)
+        if m_illustration_image_enqueue:
+            ensure_illustration_worker()
+            image_id = int(m_illustration_image_enqueue.group(1))
+            ok, msg = enqueue_illustration_image(image_id)
+            if not ok:
+                self.send_json({"error": msg}, 409)
+                return
+            self.send_json({"status": "queued"})
+            return
+
+        m_illustration_images_enqueue_all = re.match(
+            r"^/api/novels/(\d+)/chapters/(\d+)/illustration/images/enqueue-all$", route
+        )
+        if m_illustration_images_enqueue_all:
+            ensure_illustration_worker()
+            novel_id = int(m_illustration_images_enqueue_all.group(1))
+            chapter_num = int(m_illustration_images_enqueue_all.group(2))
+            conn = db_conn()
+            chapter_row = conn.execute(
+                "SELECT id FROM chapters WHERE novel_id=? AND chapter_num=?",
+                (novel_id, chapter_num),
+            ).fetchone()
+            conn.close()
+            if not chapter_row:
+                self.send_json({"error": "chapter not found"}, 404)
+                return
+            self.send_json({"status": "queued", **enqueue_all_illustration_images(novel_id, int(chapter_row["id"]))})
             return
 
         m_audio_asr_cancel = re.match(
@@ -2841,6 +2984,28 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"status": "ok"})
             return
 
+        m_prompt_settings = re.match(r"^/api/prompts/(\d+)/settings$", route)
+        if m_prompt_settings:
+            prompt_id = int(m_prompt_settings.group(1))
+            conn = db_conn()
+            row = conn.execute(
+                "SELECT id FROM json_prompts WHERE id=?", (prompt_id,)
+            ).fetchone()
+            if not row:
+                conn.close()
+                self.send_json({"error": "prompt not found"}, 404)
+                return
+            from .services import normalize_prompt_llm_settings
+            settings = normalize_prompt_llm_settings(body)
+            conn.execute(
+                "UPDATE json_prompts SET llm_config_json=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                (json.dumps(settings, ensure_ascii=False), prompt_id),
+            )
+            conn.commit()
+            conn.close()
+            self.send_json({"status": "ok"})
+            return
+
         m_workflow = re.match(r"^/api/workflows/(\d+)$", route)
         if m_workflow:
             workflow_id = int(m_workflow.group(1))
@@ -2869,6 +3034,7 @@ class Handler(BaseHTTPRequestHandler):
                 "line_audio",
                 "voice_transcribe",
                 "audio_asr",
+                "illustration",
             }:
                 conn.close()
                 self.send_json({"error": "invalid workflowType"}, 400)

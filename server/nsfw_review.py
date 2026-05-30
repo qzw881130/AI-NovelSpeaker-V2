@@ -9,12 +9,14 @@ from typing import Any
 from .app_context import db_conn
 from .services import (
     LlmRequestTimeoutError,
+    apply_prompt_llm_settings,
     clear_local_llama_context,
     extract_chat_content,
     fetch_settings,
     http_json_request,
     normalize_ollama_keep_alive,
     normalize_llm_max_tokens,
+    load_prompt_llm_settings,
     parse_model_json,
     read_chapter_text,
     split_text_batches,
@@ -55,6 +57,7 @@ def _call_llm_nsfw_review(
     model = str(llm.get("model") or "").strip()
     api_key = str(llm.get("apiKey") or "").strip()
     temperature = float(llm.get("temperature") or 0.1)
+    top_p = float(llm.get("topP") if llm.get("topP") not in (None, "") else 0.85)
     max_tokens = normalize_llm_max_tokens(provider, llm.get("maxTokens") or 8192)
     num_ctx = int(llm.get("numCtx") or 65536)
     keep_alive = str(llm.get("keepAlive") or "30m").strip() or "30m"
@@ -93,6 +96,7 @@ def _call_llm_nsfw_review(
         ],
         "stream": False,
         "temperature": temperature,
+        "top_p": top_p,
         "max_tokens": max_tokens,
     }
     if provider == "local_llama":
@@ -114,6 +118,7 @@ def _call_llm_nsfw_review(
             "options": {
                 "num_ctx": num_ctx,
                 "temperature": temperature,
+                "top_p": top_p,
                 "num_predict": max_tokens,
             },
         }
@@ -393,7 +398,7 @@ def process_chapter_nsfw_review_task(task_id: int) -> None:
             raise RuntimeError("nsfw review prompt content is empty")
 
         settings = fetch_settings(conn)
-        llm = settings.get("llm") or {}
+        llm = apply_prompt_llm_settings(settings.get("llm") or {}, load_prompt_llm_settings(conn, prompt_id))
         proxy_url = str(settings.get("proxyUrl") or "")
         model_name = str(llm.get("model") or "")
         think_enabled = 1 if bool(llm.get("think", True)) else 0

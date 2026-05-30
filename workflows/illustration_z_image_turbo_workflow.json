@@ -1,0 +1,190 @@
+{
+  "1": {
+    "inputs": {
+      "clip_name": "qwen_3_4b.safetensors",
+      "type": "lumina2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "#1 Load CLIP"
+    }
+  },
+  "2": {
+    "inputs": {
+      "unet_name": "z_image_turbo_bf16.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "#2 Load Diffusion Model"
+    }
+  },
+  "3": {
+    "inputs": {
+      "width": [
+        "13",
+        0
+      ],
+      "height": [
+        "14",
+        0
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptySD3LatentImage",
+    "_meta": {
+      "title": "#3 EmptySD3LatentImage"
+    }
+  },
+  "4": {
+    "inputs": {
+      "shift": 3,
+      "model": [
+        "2",
+        0
+      ]
+    },
+    "class_type": "ModelSamplingAuraFlow",
+    "_meta": {
+      "title": "#4 ModelSamplingAuraFlow"
+    }
+  },
+  "5": {
+    "inputs": {
+      "samples": [
+        "8",
+        0
+      ],
+      "vae": [
+        "6",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "#5 VAE Decode"
+    }
+  },
+  "6": {
+    "inputs": {
+      "vae_name": "ae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "#6 Load VAE"
+    }
+  },
+  "7": {
+    "inputs": {
+      "filename_prefix": "z-image",
+      "images": [
+        "5",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "#7 Save Image"
+    }
+  },
+  "8": {
+    "inputs": {
+      "seed": 880187718602416,
+      "steps": 6,
+      "cfg": 1,
+      "sampler_name": "res_multistep",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": [
+        "4",
+        0
+      ],
+      "positive": [
+        "10",
+        0
+      ],
+      "negative": [
+        "11",
+        0
+      ],
+      "latent_image": [
+        "3",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "#8 KSampler"
+    }
+  },
+  "9": {
+    "inputs": {
+      "purge_cache": true,
+      "purge_models": true,
+      "anything": [
+        "5",
+        0
+      ]
+    },
+    "class_type": "LayerUtility: PurgeVRAM",
+    "_meta": {
+      "title": "#9 LayerUtility: Purge VRAM"
+    }
+  },
+  "10": {
+    "inputs": {
+      "text": [
+        "12",
+        0
+      ],
+      "clip": [
+        "1",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "#10 CLIP Text Encode (Prompt)"
+    }
+  },
+  "11": {
+    "inputs": {
+      "conditioning": [
+        "10",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "#11 ConditioningZeroOut"
+    }
+  },
+  "12": {
+    "inputs": {
+      "value": "Hongloumeng classical gongbi illustration style,\n\nexactly 4 human characters,\n\nJia Baoyu,\nyoung noble boy,\n\nthree concerned maids,\n\nQin Keqing,\n\nQing dynasty bedroom,\n\nBaoyu waking in panic,\nmaids comforting him,\nQin Keqing standing in doorway,\n\nforeground silk quilt,\nmidground Baoyu and maids,\nbackground Qin Keqing,\n\nmedium shot,\neye level,\ncentral composition,\n\nwarm candlelight,\nreturn to reality,\nmasterpiece"
+    },
+    "class_type": "PrimitiveStringMultiline",
+    "_meta": {
+      "title": "#12 Prompt"
+    }
+  },
+  "13": {
+    "inputs": {
+      "Number": "1536"
+    },
+    "class_type": "Int",
+    "_meta": {
+      "title": "#13 Width"
+    }
+  },
+  "14": {
+    "inputs": {
+      "value": 864
+    },
+    "class_type": "easy int",
+    "_meta": {
+      "title": "#14 Height"
+    }
+  }
+}

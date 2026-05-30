@@ -55,6 +55,7 @@ DDL_STATEMENTS = [
         prompt_category TEXT NOT NULL DEFAULT 'json_parse',
         description TEXT NOT NULL DEFAULT '',
         content TEXT NOT NULL,
+        llm_config_json TEXT NOT NULL DEFAULT '{}',
         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
@@ -198,6 +199,56 @@ DDL_STATEMENTS = [
         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY(task_id) REFERENCES json_tasks(id) ON DELETE CASCADE
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS chapter_illustration_tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        novel_id INTEGER NOT NULL,
+        chapter_id INTEGER NOT NULL,
+        chapter_num INTEGER NOT NULL,
+        chapter_title TEXT NOT NULL DEFAULT '',
+        stage TEXT NOT NULL,
+        prompt_id INTEGER,
+        status TEXT NOT NULL DEFAULT 'pending',
+        progress INTEGER NOT NULL DEFAULT 0,
+        model_name TEXT NOT NULL DEFAULT '',
+        think_enabled INTEGER NOT NULL DEFAULT 1,
+        input_text TEXT NOT NULL DEFAULT '',
+        output_text TEXT NOT NULL DEFAULT '',
+        result_json_text TEXT NOT NULL DEFAULT '',
+        error_message TEXT NOT NULL DEFAULT '',
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        started_at DATETIME,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(novel_id, chapter_id, stage),
+        FOREIGN KEY(novel_id) REFERENCES novels(id) ON DELETE CASCADE,
+        FOREIGN KEY(chapter_id) REFERENCES chapters(id) ON DELETE CASCADE,
+        FOREIGN KEY(prompt_id) REFERENCES json_prompts(id) ON DELETE SET NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS chapter_illustration_images (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        novel_id INTEGER NOT NULL,
+        chapter_id INTEGER NOT NULL,
+        chapter_num INTEGER NOT NULL,
+        item_index INTEGER NOT NULL,
+        scene_title TEXT NOT NULL DEFAULT '',
+        cn_summary TEXT NOT NULL DEFAULT '',
+        character_names TEXT NOT NULL DEFAULT '',
+        suggested_size TEXT NOT NULL DEFAULT '',
+        prompt_text TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'idle',
+        progress INTEGER NOT NULL DEFAULT 0,
+        image_file_path TEXT NOT NULL DEFAULT '',
+        error_message TEXT NOT NULL DEFAULT '',
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        started_at DATETIME,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(novel_id, chapter_id, item_index),
+        FOREIGN KEY(novel_id) REFERENCES novels(id) ON DELETE CASCADE,
+        FOREIGN KEY(chapter_id) REFERENCES chapters(id) ON DELETE CASCADE
     )
     """,
     """
