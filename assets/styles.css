@@ -3008,13 +3008,8 @@ menu {
   backdrop-filter: blur(8px);
 }
 
-.live-reader-illustration-index {
-  top: 0;
-  left: 0;
-}
-
 .live-reader-illustration-time {
-  top: 0;
+  bottom: 0;
   right: 0;
 }
 

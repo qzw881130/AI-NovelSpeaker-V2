@@ -532,11 +532,13 @@ function isIllustrationsEnabled() {
   return Boolean(document.getElementById("liveReaderIllustrations")?.checked);
 }
 
-function formatIllustrationDuration(item) {
+function formatIllustrationRemaining(item, currentTime) {
+  const end = Number(item?.end);
   const duration = Number.isFinite(Number(item?.duration))
     ? Number(item.duration)
     : Number(item?.end || 0) - Number(item?.start || 0);
-  return `${Math.max(0, Math.round(duration))}s`;
+  const remaining = Number.isFinite(end) ? end - Number(currentTime || 0) : duration;
+  return String(Math.max(0, Math.ceil(remaining)));
 }
 
 function clearLiveIllustration(message = "暂无匹配插画") {
@@ -546,7 +548,6 @@ function clearLiveIllustration(message = "暂无匹配插画") {
   const box = document.getElementById("liveReaderIllustrationBox");
   const meta = document.getElementById("liveReaderIllustrationMeta");
   const img = document.getElementById("liveReaderIllustrationImage");
-  const indexEl = document.getElementById("liveReaderIllustrationIndex");
   const timeEl = document.getElementById("liveReaderIllustrationTime");
   const titleEl = document.getElementById("liveReaderIllustrationTitle");
   if (!box || !meta || !img) return;
@@ -555,7 +556,6 @@ function clearLiveIllustration(message = "暂无匹配插画") {
   if (!isIllustrationsEnabled()) {
     box.classList.add("hidden");
     img.removeAttribute("src");
-    if (indexEl) indexEl.textContent = "";
     if (timeEl) timeEl.textContent = "";
     if (titleEl) titleEl.textContent = "";
     meta.textContent = "插画未开启";
@@ -563,7 +563,6 @@ function clearLiveIllustration(message = "暂无匹配插画") {
   }
   box.classList.remove("hidden");
   img.removeAttribute("src");
-  if (indexEl) indexEl.textContent = "";
   if (timeEl) timeEl.textContent = "";
   if (titleEl) titleEl.textContent = "";
   meta.textContent = message;
@@ -577,7 +576,6 @@ function updateLiveIllustration(force = false) {
   const box = document.getElementById("liveReaderIllustrationBox");
   const meta = document.getElementById("liveReaderIllustrationMeta");
   const img = document.getElementById("liveReaderIllustrationImage");
-  const indexEl = document.getElementById("liveReaderIllustrationIndex");
   const timeEl = document.getElementById("liveReaderIllustrationTime");
   const titleEl = document.getElementById("liveReaderIllustrationTitle");
   const player = document.getElementById("liveReaderAudioPlayer");
@@ -593,7 +591,10 @@ function updateLiveIllustration(force = false) {
     if (!img.getAttribute("src")) clearLiveIllustration("当前时间暂无匹配插画");
     return;
   }
-  if (!force && (nextIndex === activeIllustrationIndex || nextIndex === pendingIllustrationIndex)) return;
+  if (!force && (nextIndex === activeIllustrationIndex || nextIndex === pendingIllustrationIndex)) {
+    if (timeEl) timeEl.textContent = formatIllustrationRemaining(liveIllustrationItems[nextIndex], currentTime);
+    return;
+  }
   pendingIllustrationIndex = nextIndex;
   const item = liveIllustrationItems[nextIndex];
   const url = `${item.imageUrl}?v=${Date.now()}`;
@@ -606,9 +607,8 @@ function updateLiveIllustration(force = false) {
     activeIllustrationIndex = nextIndex;
     pendingIllustrationIndex = -1;
     meta.textContent = "";
-    if (indexEl) indexEl.textContent = `#${item.index}`;
-    if (timeEl) timeEl.textContent = formatIllustrationDuration(item);
-    if (titleEl) titleEl.textContent = item.sceneTitle || "插画";
+    if (timeEl) timeEl.textContent = formatIllustrationRemaining(item, Number(player.currentTime || currentTime));
+    if (titleEl) titleEl.textContent = `${item.index}. ${item.sceneTitle || "插画"}`;
     box.classList.remove("is-empty", "is-loading", "is-switching");
     img.src = url;
     void img.offsetWidth;

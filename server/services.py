@@ -392,8 +392,7 @@ def normalize_prompt_llm_settings(raw) -> dict:
         return {"enabled": False}
     enabled = bool(raw.get("enabled", False))
     llm = raw.get("llm") if isinstance(raw.get("llm"), dict) else {}
-    provider = str(llm.get("provider") or "").strip()
-    max_tokens = normalize_llm_max_tokens(provider, llm.get("maxTokens") or 8192)
+    max_tokens = int(llm.get("maxTokens") or 8192)
     try:
         temperature = float(llm.get("temperature") if llm.get("temperature") not in (None, "") else 0.3)
     except (TypeError, ValueError):
@@ -405,10 +404,6 @@ def normalize_prompt_llm_settings(raw) -> dict:
     normalized = {
         "enabled": enabled,
         "llm": {
-            "provider": provider,
-            "baseUrl": str(llm.get("baseUrl") or "").strip(),
-            "model": str(llm.get("model") or "").strip(),
-            "apiKey": str(llm.get("apiKey") or "").strip(),
             "temperature": temperature,
             "topP": top_p,
             "maxTokens": max_tokens,
@@ -438,7 +433,18 @@ def apply_prompt_llm_settings(base_llm: dict, raw_settings) -> dict:
     if not settings.get("enabled"):
         return dict(base_llm or {})
     override = settings.get("llm") if isinstance(settings.get("llm"), dict) else {}
-    return {**(base_llm or {}), **override}
+    allowed = {
+        "temperature",
+        "topP",
+        "maxTokens",
+        "numCtx",
+        "keepAlive",
+        "unloadAfterCall",
+        "batchTimeoutMinutes",
+        "think",
+        "batchMaxChars",
+    }
+    return {**(base_llm or {}), **{key: value for key, value in override.items() if key in allowed}}
 
 
 def load_prompt_llm_settings(conn: sqlite3.Connection, prompt_id: int) -> dict:

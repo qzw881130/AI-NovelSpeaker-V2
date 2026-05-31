@@ -68,21 +68,6 @@
           <span>自定义配置</span>
         </label>
         <fieldset id="promptLlmFields" class="form-grid prompt-llm-fieldset">
-          <label>LLM提供商
-            <select id="promptLlmProvider">
-              <option value="grok">Grok</option>
-              <option value="deepseek">DeepSeek</option>
-              <option value="qwen">通义千问</option>
-              <option value="gemini">Gemini</option>
-              <option value="openai">OpenAI</option>
-              <option value="ollama">Ollama</option>
-              <option value="local_llama">本地LLama</option>
-              <option value="custom">自定义</option>
-            </select>
-          </label>
-          <label>模型名称<input id="promptLlmModel" /></label>
-          <label class="full">Base URL<input id="promptLlmBase" /></label>
-          <label class="full">API Key<input id="promptLlmKey" type="password" autocomplete="off" /></label>
           <label>Temperature<input id="promptLlmTemperature" type="number" min="0" max="1" step="0.01" /></label>
           <label>Top-P<input id="promptLlmTopP" type="number" min="0" max="1" step="0.01" /></label>
           <label>Max Tokens<input id="promptLlmTokens" type="number" min="1" step="1" /></label>
@@ -131,9 +116,7 @@
           <label id="promptLlmThinkWrap" class="checkbox-inline"><input id="promptLlmThink" type="checkbox" /> Think</label>
           <label id="promptLlmUnloadAfterCallWrap" class="checkbox-inline"><input id="promptLlmUnloadAfterCall" type="checkbox" /> 调用后清空上下文</label>
         </fieldset>
-        <p id="promptLlmTestResult" class="caption">未测试</p>
         <menu>
-          <button class="ghost-btn" id="promptLlmTestBtn" type="button">测试LLM</button>
           <button class="ghost-btn" id="promptSettingsCancelBtn" type="button">取消</button>
           <button class="primary-btn" type="submit">保存</button>
         </menu>
