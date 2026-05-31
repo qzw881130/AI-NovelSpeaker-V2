@@ -152,8 +152,6 @@ def _scene_timecode_to_seconds(value) -> float:
     number = int(float(raw))
     minutes = number // 100
     seconds = number % 100
-    if seconds >= 60:
-        raise ValueError("invalid timecode seconds")
     return float(minutes * 60 + seconds)
 
 
@@ -486,18 +484,6 @@ def process_illustration_task(task_id: int) -> None:
             "UPDATE chapter_illustration_tasks SET status='completed',progress=100,output_text=?,result_json_text=?,error_message='',updated_at=CURRENT_TIMESTAMP WHERE id=?",
             (raw, result_json, task_id),
         )
-        if stage == "scene":
-            conn.execute(
-                "UPDATE chapter_illustration_tasks SET status='idle',progress=0,input_text='',output_text='',result_json_text='',error_message='',updated_at=CURRENT_TIMESTAMP WHERE novel_id=? AND chapter_id=? AND stage IN ('shot','prompt')",
-                (int(row["novel_id"]), int(row["chapter_id"])),
-            )
-            conn.execute("DELETE FROM chapter_illustration_images WHERE novel_id=? AND chapter_id=?", (int(row["novel_id"]), int(row["chapter_id"])))
-        elif stage == "shot":
-            conn.execute(
-                "UPDATE chapter_illustration_tasks SET status='idle',progress=0,input_text='',output_text='',result_json_text='',error_message='',updated_at=CURRENT_TIMESTAMP WHERE novel_id=? AND chapter_id=? AND stage='prompt'",
-                (int(row["novel_id"]), int(row["chapter_id"])),
-            )
-            conn.execute("DELETE FROM chapter_illustration_images WHERE novel_id=? AND chapter_id=?", (int(row["novel_id"]), int(row["chapter_id"])))
         conn.commit()
         conn.close()
     except Exception as exc:

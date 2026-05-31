@@ -320,7 +320,7 @@ function imageTimeLabel(item) {
   const start = Number(item?.start);
   const end = Number(item?.end);
   const duration = Number(item?.duration);
-  if (!Number.isFinite(start) || !Number.isFinite(end)) return "";
+  if (item?.start == null || item?.end == null || !Number.isFinite(start) || !Number.isFinite(end)) return "";
   const safeDuration = Number.isFinite(duration) ? duration : Math.max(0, end - start);
   return `时间：${formatTimeSeconds(start)} - ${formatTimeSeconds(end)} · 持续 ${formatTimeSeconds(safeDuration)}`;
 }
@@ -362,9 +362,9 @@ function renderImages(items) {
           <span class="${statusClass(item.status)}" title="${escapeHtml(item.errorMessage || "")}">${statusLabel(item.status)}${item.progress ? ` ${item.progress}%` : ""}</span>
         </div>
         <p class="meta illustration-size-meta" data-size-id="${item.id}">尺寸：${escapeHtml(item.suggestedSize || "待读取")} · 比例：-</p>
-        ${imageTimeLabel(item) ? `<p class="meta">${escapeHtml(imageTimeLabel(item))}</p>` : ""}
-        ${item.characterNames ? `<p class="meta">人物：${escapeHtml(item.characterNames)}</p>` : ""}
-        <p class="meta">${escapeHtml(item.cnSummary || "-")}</p>
+        ${imageTimeLabel(item) ? `<p class="meta illustration-time-meta">${escapeHtml(imageTimeLabel(item))}</p>` : ""}
+        <p class="meta">人物：${escapeHtml(item.characterNames || "")}</p>
+        <p class="meta illustration-summary-meta">${escapeHtml(item.cnSummary || "-")}</p>
         <div class="card-actions">
           <button class="ghost-btn btn-sm illustration-generate-image-btn" type="button" data-image-id="${item.id}" ${busy ? "disabled" : ""}>${hasImage ? "重新生成" : "生成"}</button>
         </div>
@@ -388,16 +388,18 @@ function openPreviewAt(index) {
   const dialog = document.getElementById("illustrationImagePreviewDialog");
   const prevBtn = document.getElementById("illustrationPreviewPrevBtn");
   const nextBtn = document.getElementById("illustrationPreviewNextBtn");
+  const footerMeta = document.getElementById("illustrationPreviewFooterMeta");
+  const positionText = `${currentPreviewIndex + 1}/${total}`;
+  const timeText = imageTimeLabel(item);
   prevBtn.disabled = total <= 1;
   nextBtn.disabled = total <= 1;
   document.getElementById("illustrationPreviewTitle").textContent = `#${item.index} ${item.sceneTitle || "预览插图"}`;
   document.getElementById("illustrationPreviewSummary").textContent = item.cnSummary || "";
   document.getElementById("illustrationPreviewCharacters").textContent = item.characterNames ? `人物：${item.characterNames}` : "";
-  document.getElementById("illustrationPreviewTime").textContent = imageTimeLabel(item);
   document.getElementById("illustrationPreviewPrompt").textContent = item.promptText ? `提示词：${item.promptText}` : "";
-  document.getElementById("illustrationPreviewSize").textContent = item.suggestedSize ? `建议尺寸：${item.suggestedSize} · ${currentPreviewIndex + 1}/${total}` : `${currentPreviewIndex + 1}/${total}`;
+  footerMeta.textContent = [timeText, item.suggestedSize ? `建议尺寸：${item.suggestedSize}` : "", positionText].filter(Boolean).join(" · ");
   img.onload = () => {
-    document.getElementById("illustrationPreviewSize").textContent = `尺寸：${img.naturalWidth}x${img.naturalHeight} · 比例：${ratioLabel(img.naturalWidth, img.naturalHeight)} · ${currentPreviewIndex + 1}/${total}`;
+    footerMeta.textContent = [timeText, `尺寸：${img.naturalWidth}x${img.naturalHeight}`, `比例：${ratioLabel(img.naturalWidth, img.naturalHeight)}`, positionText].filter(Boolean).join(" · ");
   };
   img.src = `${item.imageUrl}?v=${Date.now()}`;
   if (!dialog.open) dialog.showModal();

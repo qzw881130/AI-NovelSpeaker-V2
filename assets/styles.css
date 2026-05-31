@@ -3698,6 +3698,10 @@ body.is-illustration-drag-selecting {
   flex: 1 1 auto;
 }
 
+.illustration-images-modal {
+  width: min(94vw, 1240px);
+}
+
 .illustration-images-actions {
   display: inline-flex;
   align-items: center;
@@ -3730,7 +3734,7 @@ body.is-illustration-drag-selecting {
 
 .illustration-images-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
   gap: 14px;
   max-height: 72vh;
   overflow: auto;
@@ -3741,6 +3745,18 @@ body.is-illustration-drag-selecting {
   border-radius: 14px;
   padding: 12px;
   background: #fffdf8;
+}
+
+.illustration-summary-meta {
+  height: 3em;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.illustration-time-meta {
+  white-space: nowrap;
 }
 
 .illustration-image-slot {
@@ -3771,6 +3787,25 @@ body.is-illustration-drag-selecting {
   display: grid;
   gap: 4px;
   margin: 0 0 10px;
+}
+
+.illustration-preview-header {
+  display: flex;
+  align-items: baseline;
+  gap: 18px;
+  padding-right: 52px;
+}
+
+.illustration-preview-header h3 {
+  flex: 0 0 auto;
+}
+
+.illustration-preview-header .caption {
+  margin: 0;
+  flex: 1 1 auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .illustration-preview-prompt {
@@ -3817,6 +3852,13 @@ body.is-illustration-drag-selecting {
   max-height: 78vh;
   background: #111;
   border-radius: 12px;
+}
+
+.illustration-preview-footer-meta {
+  margin: 8px 58px 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .dialog-code-block {

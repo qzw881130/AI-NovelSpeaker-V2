@@ -104,16 +104,14 @@
 
     <dialog id="illustrationImagePreviewDialog" class="modal modal-large">
       <form method="dialog">
-        <div class="dialog-header">
+        <div class="dialog-header illustration-preview-header">
           <h3 id="illustrationPreviewTitle">预览插图</h3>
+          <p class="caption">提示：按键盘 ← / → 可切换上一张 / 下一张</p>
           <button class="dialog-close-btn" type="submit" aria-label="关闭">×</button>
         </div>
         <div class="illustration-preview-meta">
-          <p class="caption">提示：按键盘 ← / → 可切换上一张 / 下一张</p>
           <p id="illustrationPreviewSummary" class="meta"></p>
           <p id="illustrationPreviewCharacters" class="meta"></p>
-          <p id="illustrationPreviewTime" class="meta"></p>
-          <p id="illustrationPreviewSize" class="meta"></p>
           <pre id="illustrationPreviewPrompt" class="illustration-preview-prompt"></pre>
         </div>
         <div class="illustration-preview-stage">
@@ -121,6 +119,7 @@
           <img id="illustrationImagePreview" class="illustration-preview-image" alt="插图预览" />
           <button id="illustrationPreviewNextBtn" class="illustration-preview-nav" type="button" aria-label="下一张" title="下一张">›</button>
         </div>
+        <p id="illustrationPreviewFooterMeta" class="meta illustration-preview-footer-meta"></p>
       </form>
     </dialog>
 
