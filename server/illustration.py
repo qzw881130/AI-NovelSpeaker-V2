@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import random
+import shutil
+import subprocess
 import time
 from pathlib import Path
 
@@ -155,6 +157,89 @@ def _scene_timecode_to_seconds(value) -> float:
     return float(minutes * 60 + seconds)
 
 
+def _safe_unlink_under_root(path: Path) -> None:
+    try:
+        resolved = path.resolve()
+        if resolved.is_file() and resolved.is_relative_to(ROOT_DIR.resolve()):
+            resolved.unlink()
+    except Exception:
+        pass
+
+
+def _delete_illustration_image_files(conn, novel_id: int, chapter_id: int) -> None:
+    rows = conn.execute(
+        "SELECT image_file_path FROM chapter_illustration_images WHERE novel_id=? AND chapter_id=?",
+        (novel_id, chapter_id),
+    ).fetchall()
+    touched_dirs: set[Path] = set()
+    for row in rows:
+        rel = str(row["image_file_path"] or "").strip()
+        if not rel:
+            continue
+        path = ROOT_DIR / rel
+        touched_dirs.add(path.parent)
+        _safe_unlink_under_root(path)
+    chapter = conn.execute(
+        """
+        SELECT n.english_dir, c.chapter_num
+        FROM chapters c
+        JOIN novels n ON n.id=c.novel_id
+        WHERE c.id=? AND c.novel_id=?
+        """,
+        (chapter_id, novel_id),
+    ).fetchone()
+    if chapter:
+        chapter_dir = ROOT_DIR / "novel" / str(chapter["english_dir"] or "") / "illustrations" / f"{int(chapter['chapter_num'] or 0):03d}"
+        if chapter_dir.exists() and chapter_dir.is_dir():
+            touched_dirs.add(chapter_dir)
+            for child in chapter_dir.iterdir():
+                if child.is_file() and child.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}:
+                    _safe_unlink_under_root(child)
+    for directory in touched_dirs:
+        try:
+            resolved = directory.resolve()
+            if resolved.is_dir() and resolved.is_relative_to(ROOT_DIR.resolve()) and not any(resolved.iterdir()):
+                resolved.rmdir()
+        except Exception:
+            pass
+
+
+def _write_optimized_illustration_image(data: bytes, source_filename: str, out_dir: Path, item_index: int) -> Path:
+    ext = Path(source_filename).suffix or ".png"
+    fallback_path = out_dir / f"{item_index:02d}{ext}"
+    cwebp = shutil.which("cwebp")
+    if not cwebp:
+        fallback_path.write_bytes(data)
+        return fallback_path
+
+    temp_path = out_dir / f"{item_index:02d}.source{ext}"
+    webp_path = out_dir / f"{item_index:02d}.webp"
+    temp_path.write_bytes(data)
+    try:
+        result = subprocess.run(
+            [cwebp, "-quiet", "-q", "86", "-m", "6", str(temp_path), "-o", str(webp_path)],
+            check=False,
+            capture_output=True,
+            timeout=60,
+        )
+        if result.returncode == 0 and webp_path.exists() and webp_path.stat().st_size > 0 and webp_path.stat().st_size < len(data):
+            return webp_path
+        fallback_path.write_bytes(data)
+        try:
+            webp_path.unlink()
+        except Exception:
+            pass
+        return fallback_path
+    except Exception:
+        fallback_path.write_bytes(data)
+        return fallback_path
+    finally:
+        try:
+            temp_path.unlink()
+        except Exception:
+            pass
+
+
 def _extract_image_output(history: dict, prompt_id: str) -> tuple[str, str, str] | None:
     job = history.get(prompt_id) if isinstance(history, dict) else None
     if job is None and isinstance(history, dict) and history:
@@ -274,14 +359,17 @@ def enqueue_illustration_task(novel_id: int, chapter_id: int, stage: str, allow_
             "UPDATE chapter_illustration_tasks SET status='idle',progress=0,input_text='',output_text='',result_json_text='',error_message='',updated_at=CURRENT_TIMESTAMP WHERE novel_id=? AND chapter_id=? AND stage IN ('shot','prompt')",
             (novel_id, chapter_id),
         )
+        _delete_illustration_image_files(conn, novel_id, chapter_id)
         conn.execute("DELETE FROM chapter_illustration_images WHERE novel_id=? AND chapter_id=?", (novel_id, chapter_id))
     elif stage == "shot":
         conn.execute(
             "UPDATE chapter_illustration_tasks SET status='idle',progress=0,input_text='',output_text='',result_json_text='',error_message='',updated_at=CURRENT_TIMESTAMP WHERE novel_id=? AND chapter_id=? AND stage='prompt'",
             (novel_id, chapter_id),
         )
+        _delete_illustration_image_files(conn, novel_id, chapter_id)
         conn.execute("DELETE FROM chapter_illustration_images WHERE novel_id=? AND chapter_id=?", (novel_id, chapter_id))
     elif stage == "prompt":
+        _delete_illustration_image_files(conn, novel_id, chapter_id)
         conn.execute("DELETE FROM chapter_illustration_images WHERE novel_id=? AND chapter_id=?", (novel_id, chapter_id))
     conn.execute(
         """
@@ -556,9 +644,12 @@ def process_illustration_image(image_id: int) -> None:
         data = comfy_download_file(comfy_url=comfy_url, filename=filename, subfolder=subfolder, file_type=file_type)
         out_dir = ROOT_DIR / "novel" / str(row["english_dir"] or "") / "illustrations" / f"{int(row['chapter_num']):03d}"
         out_dir.mkdir(parents=True, exist_ok=True)
-        ext = Path(filename).suffix or ".png"
-        out_path = out_dir / f"{int(row['item_index']):02d}{ext}"
-        out_path.write_bytes(data)
+        out_path = _write_optimized_illustration_image(data, filename, out_dir, int(row["item_index"]))
+        old_rel = str(row["image_file_path"] or "").strip()
+        if old_rel:
+            old_path = ROOT_DIR / old_rel
+            if old_path != out_path:
+                _safe_unlink_under_root(old_path)
         rel = db_rel_path(out_path.relative_to(ROOT_DIR))
         conn = db_conn()
         conn.execute(
