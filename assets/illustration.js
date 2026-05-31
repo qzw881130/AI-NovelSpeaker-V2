@@ -129,21 +129,34 @@ function renderStageCell(item, stage) {
         <button class="ghost-btn btn-sm illustration-run-btn" type="button" data-stage="${stage}" data-chapter-num="${chapterNum}" ${disabled ? "disabled" : ""}>解析插画${STAGE_LABELS[stage].toLowerCase()}</button>
         <button class="ghost-btn btn-sm illustration-view-btn" type="button" data-kind="input" data-stage="${stage}" data-chapter-num="${chapterNum}">输入</button>
         <button class="ghost-btn btn-sm illustration-view-btn" type="button" data-kind="output" data-stage="${stage}" data-chapter-num="${chapterNum}">输出</button>
-        ${stage === "prompt" && data.status === "completed" ? `<button class="ghost-btn btn-sm illustration-images-btn" type="button" data-chapter-num="${chapterNum}">插图</button>` : ""}
+        ${stage === "prompt" && data.status === "completed" ? renderImagesButton(item, chapterNum) : ""}
       </div>
     </div>
+  `;
+}
+
+function renderImagesButton(item, chapterNum) {
+  const missing = Number(item.images?.missing || 0);
+  const expected = Number(item.images?.expected || 0);
+  const generated = Number(item.images?.generated || 0);
+  const title = missing > 0 ? `插图未生成 ${missing} 张（${generated}/${expected}）` : "插图";
+  return `
+    <button class="ghost-btn btn-sm illustration-images-btn ${missing > 0 ? "has-missing-images" : ""}" type="button" data-chapter-num="${chapterNum}" title="${escapeHtml(title)}">
+      插图
+      ${missing > 0 ? '<span class="illustration-alert-dot" aria-hidden="true">!</span>' : ""}
+    </button>
   `;
 }
 
 function renderTable() {
   const tbody = document.getElementById("illustrationTableBody");
   if (!activeNovel) {
-    tbody.innerHTML = '<tr><td colspan="7" class="empty-text">未找到小说</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" class="empty-text">未找到小说</td></tr>';
     updateSelectionUi();
     return;
   }
   if (!chapterItems.length) {
-    tbody.innerHTML = '<tr><td colspan="7" class="empty-text">暂无章回数据</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" class="empty-text">暂无章回数据</td></tr>';
     updateSelectionUi();
     return;
   }
@@ -156,6 +169,7 @@ function renderTable() {
       <td class="select-col"><input class="illustration-row-select" type="checkbox" data-chapter-num="${Number(item.chapterNum || 0)}" ${selectedChapterNums.has(Number(item.chapterNum || 0)) ? "checked" : ""} /></td>
       <td>第 ${String(item.chapterNum || 0).padStart(3, "0")} 回</td>
       <td>${escapeHtml(item.title || "")}</td>
+      <td>${formatTimeSeconds(item.audioDurationSeconds || 0)}</td>
       <td>${Number(item.wordCount || 0).toLocaleString()}</td>
       <td>${renderStageCell(item, "scene")}</td>
       <td>${renderStageCell(item, "shot")}</td>
@@ -445,7 +459,10 @@ function initImagesRefreshControl() {
 
 async function openImagesModal(chapterNum) {
   activeImagesChapterNum = Number(chapterNum || 0);
-  document.getElementById("illustrationImagesTitle").textContent = `插图生成 · 第${String(activeImagesChapterNum).padStart(3, "0")}回`;
+  const chapter = chapterItems.find((item) => Number(item.chapterNum || 0) === activeImagesChapterNum);
+  const duration = Number(chapter?.audioDurationSeconds || 0);
+  const durationText = duration > 0 ? ` · 音频时长 ${formatTimeSeconds(duration)}` : "";
+  document.getElementById("illustrationImagesTitle").textContent = `插图生成 · 第${String(activeImagesChapterNum).padStart(3, "0")}回${durationText}`;
   document.getElementById("illustrationImagesList").innerHTML = '<p class="empty-text">加载中...</p>';
   document.getElementById("illustrationImagesDialog").showModal();
   applyImagesAutoRefresh();

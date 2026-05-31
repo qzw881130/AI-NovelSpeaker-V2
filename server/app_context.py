@@ -15,6 +15,51 @@ SYSTEM_PROMPT_NAME = "系统提示词"
 SYSTEM_PROMPT_DESC = "系统内置"
 DEFAULT_SYSTEM_PROMPT_CONTENT = "请将章回文本拆分为 role_list 与 juben 的 JSON 结构。"
 
+ILLUSTRATION_PROMPT_LLM_DEFAULTS = {
+    "illustration_scene": {
+        "enabled": True,
+        "llm": {
+            "temperature": 0.2,
+            "topP": 0.85,
+            "maxTokens": 84000,
+            "numCtx": 84000,
+            "keepAlive": "30m",
+            "unloadAfterCall": False,
+            "batchTimeoutMinutes": 15,
+            "think": True,
+            "batchMaxChars": 0,
+        },
+    },
+    "illustration_shot": {
+        "enabled": True,
+        "llm": {
+            "temperature": 0.3,
+            "topP": 0.85,
+            "maxTokens": 84000,
+            "numCtx": 84000,
+            "keepAlive": "30m",
+            "unloadAfterCall": False,
+            "batchTimeoutMinutes": 15,
+            "think": False,
+            "batchMaxChars": 0,
+        },
+    },
+    "illustration_prompt": {
+        "enabled": True,
+        "llm": {
+            "temperature": 0.25,
+            "topP": 0.85,
+            "maxTokens": 84000,
+            "numCtx": 84000,
+            "keepAlive": "30m",
+            "unloadAfterCall": False,
+            "batchTimeoutMinutes": 15,
+            "think": False,
+            "batchMaxChars": 0,
+        },
+    },
+}
+
 SYSTEM_PROMPTS = [
     {
         "file": SYSTEM_PROMPT_FILE,
@@ -46,6 +91,7 @@ SYSTEM_PROMPTS = [
         "description": "系统内置，适用于插画时间线scene.json生成",
         "category": "illustration_scene",
         "default_content": "请根据小说章节内容与ASR时间轴输出插画时间线scene.json。",
+        "default_llm_settings": ILLUSTRATION_PROMPT_LLM_DEFAULTS["illustration_scene"],
         "legacy_names": [],
     },
     {
@@ -54,6 +100,7 @@ SYSTEM_PROMPTS = [
         "description": "系统内置，适用于插画镜头方案shot.json生成",
         "category": "illustration_shot",
         "default_content": "请根据scene.json输出插画镜头方案shot.json。",
+        "default_llm_settings": ILLUSTRATION_PROMPT_LLM_DEFAULTS["illustration_shot"],
         "legacy_names": [],
     },
     {
@@ -62,6 +109,7 @@ SYSTEM_PROMPTS = [
         "description": "系统内置，适用于AI绘画prompt.json生成",
         "category": "illustration_prompt",
         "default_content": "请根据scene.json与shot.json输出AI绘画prompt.json。",
+        "default_llm_settings": ILLUSTRATION_PROMPT_LLM_DEFAULTS["illustration_prompt"],
         "legacy_names": [],
     },
 ]

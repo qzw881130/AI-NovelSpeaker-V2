@@ -479,6 +479,17 @@ def load_system_prompt_content_from_file(file_path: Path, default_content: str) 
     return text or default_content
 
 
+def _should_apply_default_prompt_llm_settings(raw: str) -> bool:
+    try:
+        parsed = json.loads(str(raw or "{}") or "{}")
+    except Exception:
+        return True
+    if not isinstance(parsed, dict) or not parsed:
+        return True
+    llm = parsed.get("llm") if isinstance(parsed.get("llm"), dict) else {}
+    return any(key in llm for key in {"provider", "baseUrl", "model", "apiKey"})
+
+
 def sync_system_prompts_from_files(conn: sqlite3.Connection) -> None:
     for prompt in SYSTEM_PROMPTS:
         file_path = Path(prompt["file"])
@@ -486,6 +497,8 @@ def sync_system_prompts_from_files(conn: sqlite3.Connection) -> None:
         prompt_desc = str(prompt["description"])
         prompt_category = str(prompt.get("category") or "json_parse")
         default_content = str(prompt["default_content"])
+        default_llm_settings = prompt.get("default_llm_settings")
+        default_llm_json = json.dumps(default_llm_settings, ensure_ascii=False) if isinstance(default_llm_settings, dict) else None
         legacy_names = [str(name) for name in prompt.get("legacy_names", [])]
         content = load_system_prompt_content_from_file(file_path, default_content)
 
@@ -524,23 +537,51 @@ def sync_system_prompts_from_files(conn: sqlite3.Connection) -> None:
                     (prompt_name,),
                 ).fetchone()
 
-        conn.execute(
-            """
-            INSERT INTO json_prompts (name,prompt_type,prompt_category,description,content)
-            VALUES (?, 'system', ?, ?, ?)
-            ON CONFLICT(name) DO UPDATE SET
-                prompt_type='system',
-                prompt_category=excluded.prompt_category,
-                description=excluded.description,
-                content=excluded.content,
-                updated_at=CURRENT_TIMESTAMP
-            WHERE json_prompts.prompt_type<>'system'
-               OR json_prompts.prompt_category<>excluded.prompt_category
-               OR json_prompts.description<>excluded.description
-               OR json_prompts.content<>excluded.content
-            """,
-            (prompt_name, prompt_category, prompt_desc, content),
-        )
+        if default_llm_json is not None:
+            conn.execute(
+                """
+                INSERT INTO json_prompts (name,prompt_type,prompt_category,description,content,llm_config_json)
+                VALUES (?, 'system', ?, ?, ?, ?)
+                ON CONFLICT(name) DO UPDATE SET
+                    prompt_type='system',
+                    prompt_category=excluded.prompt_category,
+                    description=excluded.description,
+                    content=excluded.content,
+                    updated_at=CURRENT_TIMESTAMP
+                WHERE json_prompts.prompt_type<>'system'
+                   OR json_prompts.prompt_category<>excluded.prompt_category
+                   OR json_prompts.description<>excluded.description
+                   OR json_prompts.content<>excluded.content
+                """,
+                (prompt_name, prompt_category, prompt_desc, content, default_llm_json),
+            )
+            row = conn.execute(
+                "SELECT llm_config_json FROM json_prompts WHERE name=?",
+                (prompt_name,),
+            ).fetchone()
+            if row and _should_apply_default_prompt_llm_settings(str(row["llm_config_json"] or "")):
+                conn.execute(
+                    "UPDATE json_prompts SET llm_config_json=?,updated_at=CURRENT_TIMESTAMP WHERE name=?",
+                    (default_llm_json, prompt_name),
+                )
+        else:
+            conn.execute(
+                """
+                INSERT INTO json_prompts (name,prompt_type,prompt_category,description,content)
+                VALUES (?, 'system', ?, ?, ?)
+                ON CONFLICT(name) DO UPDATE SET
+                    prompt_type='system',
+                    prompt_category=excluded.prompt_category,
+                    description=excluded.description,
+                    content=excluded.content,
+                    updated_at=CURRENT_TIMESTAMP
+                WHERE json_prompts.prompt_type<>'system'
+                   OR json_prompts.prompt_category<>excluded.prompt_category
+                   OR json_prompts.description<>excluded.description
+                   OR json_prompts.content<>excluded.content
+                """,
+                (prompt_name, prompt_category, prompt_desc, content),
+            )
 
 
 def sync_system_prompt_from_file(conn: sqlite3.Connection) -> None:

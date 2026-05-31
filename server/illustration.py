@@ -151,10 +151,7 @@ def _scene_timecode_to_seconds(value) -> float:
     raw = str(value if value is not None else "").strip()
     if not raw:
         raise ValueError("empty timecode")
-    number = int(float(raw))
-    minutes = number // 100
-    seconds = number % 100
-    return float(minutes * 60 + seconds)
+    return float(raw)
 
 
 def _safe_unlink_under_root(path: Path) -> None:
@@ -283,38 +280,68 @@ def _apply_workflow_inputs(workflow: dict, prompt_text: str, width: int = 1536, 
     return patched
 
 
+def _count_prompt_image_items(result_json_text: str) -> int:
+    try:
+        parsed = _parse_json_any(str(result_json_text or ""))
+    except Exception:
+        return 0
+    prompts = parsed.get("prompts") if isinstance(parsed, dict) else parsed
+    return len(prompts) if isinstance(prompts, list) else 0
+
+
 def list_illustration_chapters(novel_id: int) -> list[dict]:
     conn = db_conn()
     rows = conn.execute(
         """
-        SELECT c.id, c.chapter_num, c.title, c.word_count,
+        SELECT c.id, c.chapter_num, c.title, c.word_count, c.audio_duration_seconds,
                s.status AS scene_status, s.progress AS scene_progress, s.error_message AS scene_error,
                h.status AS shot_status, h.progress AS shot_progress, h.error_message AS shot_error,
-               p.status AS prompt_status, p.progress AS prompt_progress, p.error_message AS prompt_error
+               p.status AS prompt_status, p.progress AS prompt_progress, p.error_message AS prompt_error,
+               p.result_json_text AS prompt_result_json,
+               COALESCE(img.image_total, 0) AS image_total,
+               COALESCE(img.image_generated, 0) AS image_generated
         FROM chapters c
         LEFT JOIN chapter_illustration_tasks s ON s.chapter_id=c.id AND s.stage='scene'
         LEFT JOIN chapter_illustration_tasks h ON h.chapter_id=c.id AND h.stage='shot'
         LEFT JOIN chapter_illustration_tasks p ON p.chapter_id=c.id AND p.stage='prompt'
+        LEFT JOIN (
+            SELECT chapter_id,
+                   COUNT(*) AS image_total,
+                   SUM(CASE WHEN status='completed' AND COALESCE(image_file_path, '')<>'' THEN 1 ELSE 0 END) AS image_generated
+            FROM chapter_illustration_images
+            WHERE novel_id=?
+            GROUP BY chapter_id
+        ) img ON img.chapter_id=c.id
         WHERE c.novel_id=?
         ORDER BY c.chapter_num ASC
         """,
-        (novel_id,),
+        (novel_id, novel_id),
     ).fetchall()
     conn.close()
-    return [
-        {
+    items = []
+    for r in rows:
+        prompt_count = _count_prompt_image_items(str(r["prompt_result_json"] or "")) if _status_value(r["prompt_status"]) == "completed" else 0
+        image_total = int(r["image_total"] or 0)
+        image_generated = int(r["image_generated"] or 0)
+        image_expected = max(prompt_count, image_total)
+        items.append({
             "chapterId": int(r["id"]),
             "chapterNum": int(r["chapter_num"] or 0),
             "title": str(r["title"] or ""),
             "wordCount": int(r["word_count"] or 0),
+            "audioDurationSeconds": float(r["audio_duration_seconds"] or 0),
+            "images": {
+                "expected": image_expected,
+                "generated": image_generated,
+                "missing": max(0, image_expected - image_generated),
+            },
             "stages": {
                 "scene": {"status": _status_value(r["scene_status"]), "progress": int(r["scene_progress"] or 0), "errorMessage": str(r["scene_error"] or "")},
                 "shot": {"status": _status_value(r["shot_status"]), "progress": int(r["shot_progress"] or 0), "errorMessage": str(r["shot_error"] or "")},
                 "prompt": {"status": _status_value(r["prompt_status"]), "progress": int(r["prompt_progress"] or 0), "errorMessage": str(r["prompt_error"] or "")},
             },
-        }
-        for r in rows
-    ]
+        })
+    return items
 
 
 def _stage_dependencies_ready(conn, novel_id: int, chapter_id: int, stage: str) -> bool:
