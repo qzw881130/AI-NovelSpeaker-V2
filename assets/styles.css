@@ -3703,6 +3703,55 @@ body.is-illustration-drag-selecting {
   box-shadow: 0 0 0 2px #fff8ef;
 }
 
+.payload-time-tooltip {
+  position: fixed;
+  z-index: 10000;
+  transform: translateX(-50%);
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #2b2218;
+  color: #fff8ef;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  pointer-events: none;
+  box-shadow: 0 10px 24px rgba(43, 34, 24, 0.22);
+}
+
+.payload-content-wrap {
+  position: relative;
+}
+
+.payload-content-wrap .dialog-code-block {
+  margin: 0;
+}
+
+.payload-scroll-bottom-btn {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 248, 239, 0.92);
+  color: var(--primary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 0 10px 24px rgba(80, 51, 25, 0.16);
+  transition: 0.18s ease;
+}
+
+.payload-scroll-bottom-btn:hover {
+  background: var(--primary);
+  color: var(--primary-ink);
+}
+
 .illustration-images-modal .dialog-header {
   display: flex;
   align-items: center;

@@ -411,8 +411,30 @@ async function fetchIllustrationWorkerStatus() {
   return api("/api/illustration-worker/status");
 }
 
+async function fetchIllustrationLlmWorkerStatus() {
+  return api("/api/illustration-llm-worker/status");
+}
+
+async function fetchIllustrationImageWorkerStatus() {
+  return api("/api/illustration-image-worker/status");
+}
+
 async function restartIllustrationWorker() {
   return api("/api/illustration-worker/restart", {
+    method: "POST",
+    body: "{}",
+  });
+}
+
+async function restartIllustrationLlmWorker() {
+  return api("/api/illustration-llm-worker/restart", {
+    method: "POST",
+    body: "{}",
+  });
+}
+
+async function restartIllustrationImageWorker() {
+  return api("/api/illustration-image-worker/restart", {
     method: "POST",
     body: "{}",
   });
@@ -883,7 +905,11 @@ export {
   restartLineAudioWorker,
   restartNsfwReviewWorker,
   restartIllustrationWorker,
+  restartIllustrationLlmWorker,
+  restartIllustrationImageWorker,
   fetchIllustrationWorkerStatus,
+  fetchIllustrationLlmWorkerStatus,
+  fetchIllustrationImageWorkerStatus,
   restartTaskWorker,
   setActiveNovelId,
   clearWorkflowLogs,

@@ -905,7 +905,7 @@ class Handler(BaseHTTPRequestHandler):
 
         m_illustration_chapters = re.match(r"^/api/novels/(\d+)/illustration-chapters$", route)
         if m_illustration_chapters:
-            ensure_illustration_worker()
+            ensure_illustration_workers()
             novel_id = int(m_illustration_chapters.group(1))
             self.send_json({"chapters": list_illustration_chapters(novel_id)})
             return
@@ -1171,7 +1171,15 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if route == "/api/illustration-worker/status":
+            self.send_json(get_illustration_workers_status())
+            return
+
+        if route == "/api/illustration-llm-worker/status":
             self.send_json(get_illustration_worker_status())
+            return
+
+        if route == "/api/illustration-image-worker/status":
+            self.send_json(get_illustration_image_worker_status())
             return
 
         if route == "/api/settings":
@@ -2098,7 +2106,17 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if route == "/api/illustration-worker/restart":
+            restart_illustration_workers()
+            self.send_json({"status": "ok"})
+            return
+
+        if route == "/api/illustration-llm-worker/restart":
             restart_illustration_worker()
+            self.send_json({"status": "ok"})
+            return
+
+        if route == "/api/illustration-image-worker/restart":
+            restart_illustration_image_worker()
             self.send_json({"status": "ok"})
             return
 
@@ -2578,7 +2596,7 @@ class Handler(BaseHTTPRequestHandler):
 
         m_illustration_image_enqueue = re.match(r"^/api/illustration-images/(\d+)/enqueue$", route)
         if m_illustration_image_enqueue:
-            ensure_illustration_worker()
+            ensure_illustration_image_worker()
             image_id = int(m_illustration_image_enqueue.group(1))
             ok, msg = enqueue_illustration_image(image_id)
             if not ok:
@@ -2591,7 +2609,7 @@ class Handler(BaseHTTPRequestHandler):
             r"^/api/novels/(\d+)/chapters/(\d+)/illustration/images/enqueue-all$", route
         )
         if m_illustration_images_enqueue_all:
-            ensure_illustration_worker()
+            ensure_illustration_image_worker()
             novel_id = int(m_illustration_images_enqueue_all.group(1))
             chapter_num = int(m_illustration_images_enqueue_all.group(2))
             conn = db_conn()

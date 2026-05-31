@@ -19,7 +19,8 @@
           <div class="header-actions">
             <select id="illustrationNovelSelect"></select>
             <button class="ghost-btn" id="refreshIllustrationBtn" type="button">刷新</button>
-            <button class="ghost-btn" id="restartIllustrationWorkerBtn" type="button">重启Worker</button>
+            <button class="ghost-btn" id="restartIllustrationLlmWorkerBtn" type="button">重启解析Worker</button>
+            <button class="ghost-btn" id="restartIllustrationImageWorkerBtn" type="button">重启生图Worker</button>
             <a id="illustrationChaptersLink" class="ghost-btn" href="./chapters.html">章节管理</a>
           </div>
         </header>
@@ -76,7 +77,10 @@
           </button>
           <button class="dialog-close-btn" type="submit" aria-label="关闭">×</button>
         </div>
-        <pre id="illustrationPayloadContent" class="dialog-code-block">加载中...</pre>
+        <div class="payload-content-wrap">
+          <pre id="illustrationPayloadContent" class="dialog-code-block">加载中...</pre>
+          <button id="payloadScrollBottomBtn" class="payload-scroll-bottom-btn" type="button" aria-label="跳到底部" title="跳到底部">↓</button>
+        </div>
       </form>
     </dialog>
 

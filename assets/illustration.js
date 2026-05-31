@@ -4,11 +4,14 @@ import {
   enqueueIllustrationImage,
   fetchChapterIllustrationImages,
   fetchChapterIllustrationPayload,
+  fetchIllustrationImageWorkerStatus,
+  fetchIllustrationLlmWorkerStatus,
   fetchIllustrationWorkerStatus,
   fetchNovelIllustrationChapters,
   getActiveNovelId,
   getData,
-  restartIllustrationWorker,
+  restartIllustrationImageWorker,
+  restartIllustrationLlmWorker,
   setActiveNovelId,
 } from "./store.js";
 import { renderNav, toast } from "./ui.js";
@@ -19,6 +22,7 @@ let chapterItems = [];
 let autoRefreshTimer = 0;
 let imagesRefreshTimer = 0;
 let activeImagesChapterNum = 0;
+let activePayloadKind = "";
 let currentPreviewItems = [];
 let currentPreviewIndex = -1;
 const selectedChapterNums = new Set();
@@ -270,19 +274,34 @@ async function enqueueSelectedAllStages() {
   await refreshPage();
 }
 
-function renderWorkerStatus(status) {
-  const el = document.getElementById("illustrationWorkerStatus");
+function workerStatusText(label, status) {
   const state = String(status?.state || "stopped");
   const mapping = { running: "运行中", stale: "心跳超时", stopped: "未运行" };
   const age = status?.heartbeatAgeSeconds != null ? ` · 心跳${status.heartbeatAgeSeconds}s` : "";
-  el.textContent = `Worker: ${mapping[state] || state}${age}`;
+  return `${label}: ${mapping[state] || state}${age}`;
+}
+
+function renderWorkerStatus(status) {
+  const el = document.getElementById("illustrationWorkerStatus");
+  const llmStatus = status?.llm || status;
+  const imageStatus = status?.image || { state: "stopped" };
+  el.textContent = `${workerStatusText("解析Worker", llmStatus)} · ${workerStatusText("生图Worker", imageStatus)}`;
 }
 
 async function refreshWorkerStatus() {
   try {
-    renderWorkerStatus(await fetchIllustrationWorkerStatus());
+    const status = await fetchIllustrationWorkerStatus();
+    if (status?.llm && status?.image) {
+      renderWorkerStatus(status);
+      return;
+    }
+    const [llm, image] = await Promise.all([
+      fetchIllustrationLlmWorkerStatus().catch(() => status),
+      fetchIllustrationImageWorkerStatus().catch(() => ({ state: "stopped" })),
+    ]);
+    renderWorkerStatus({ llm, image });
   } catch {
-    renderWorkerStatus({ state: "stopped" });
+    renderWorkerStatus({ llm: { state: "stopped" }, image: { state: "stopped" } });
   }
 }
 
@@ -330,6 +349,56 @@ function formatTimeSeconds(value) {
   return minutes ? `${minutes}分${String(seconds).padStart(2, "0")}秒` : `${seconds}秒`;
 }
 
+function formatSelectedSeconds(value) {
+  const total = Math.max(0, Math.round(Number(value || 0)));
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return `{${minutes}:${String(seconds).padStart(2, "0")}}`;
+}
+
+function hidePayloadTimeTooltip() {
+  document.getElementById("payloadTimeTooltip")?.remove();
+}
+
+function showPayloadTimeTooltip() {
+  if (activePayloadKind !== "output") {
+    hidePayloadTimeTooltip();
+    return;
+  }
+  const content = document.getElementById("illustrationPayloadContent");
+  const dialog = document.getElementById("illustrationPayloadDialog");
+  const selection = window.getSelection();
+  if (!content || !dialog?.open || !selection || selection.rangeCount === 0) {
+    hidePayloadTimeTooltip();
+    return;
+  }
+  const selectedText = String(selection.toString() || "").trim().replace(/[，,。；;：:]+$/g, "");
+  if (!/^\d+(?:\.\d+)?$/.test(selectedText)) {
+    hidePayloadTimeTooltip();
+    return;
+  }
+  const range = selection.getRangeAt(0);
+  if (!content.contains(range.commonAncestorContainer)) {
+    hidePayloadTimeTooltip();
+    return;
+  }
+  const rect = range.getBoundingClientRect();
+  if (!rect.width && !rect.height) {
+    hidePayloadTimeTooltip();
+    return;
+  }
+  let tooltip = document.getElementById("payloadTimeTooltip");
+  if (!tooltip) {
+    tooltip = document.createElement("div");
+    tooltip.id = "payloadTimeTooltip";
+    tooltip.className = "payload-time-tooltip";
+    dialog.appendChild(tooltip);
+  }
+  tooltip.textContent = formatSelectedSeconds(Number(selectedText));
+  tooltip.style.left = `${Math.min(window.innerWidth - 80, Math.max(8, rect.left + rect.width / 2))}px`;
+  tooltip.style.top = `${Math.max(8, rect.top - 34)}px`;
+}
+
 function imageTimeLabel(item) {
   const start = Number(item?.start);
   const end = Number(item?.end);
@@ -340,16 +409,22 @@ function imageTimeLabel(item) {
 }
 
 async function openPayload(chapterNum, stage, kind) {
+  activePayloadKind = kind;
+  hidePayloadTimeTooltip();
   const dialog = document.getElementById("illustrationPayloadDialog");
   const title = document.getElementById("illustrationPayloadTitle");
   const content = document.getElementById("illustrationPayloadContent");
-  title.textContent = `${STAGE_LABELS[stage]} ${kind === "input" ? "输入" : "输出"} · 第${String(chapterNum).padStart(3, "0")}回`;
+  const chapter = chapterItems.find((item) => Number(item.chapterNum || 0) === Number(chapterNum || 0));
+  const duration = Number(chapter?.audioDurationSeconds || 0);
+  const durationText = duration > 0 ? ` · 音频时长 ${formatTimeSeconds(duration)}` : "";
+  const titlePrefix = `${STAGE_LABELS[stage]} ${kind === "input" ? "输入" : "输出"} · 第${String(chapterNum).padStart(3, "0")}回${durationText}`;
+  title.textContent = titlePrefix;
   content.textContent = "加载中...";
   dialog.showModal();
   try {
     const payload = await fetchChapterIllustrationPayload(activeNovel.id, chapterNum, stage, kind);
     const raw = String(payload.text || "");
-    title.textContent = `${STAGE_LABELS[stage]} ${kind === "input" ? "输入" : "输出"} · 第${String(chapterNum).padStart(3, "0")}回 · 字数 ${raw.length.toLocaleString()}`;
+    title.textContent = `${titlePrefix} · 字数 ${raw.length.toLocaleString()}`;
     content.textContent = raw ? formatMaybeJson(raw) : "暂无内容";
   } catch (err) {
     content.textContent = `加载失败：${err.message}`;
@@ -480,9 +555,14 @@ function bindEvents() {
     await refreshPage();
     toast("插画解析列表已刷新");
   });
-  document.getElementById("restartIllustrationWorkerBtn").addEventListener("click", async () => {
-    await restartIllustrationWorker();
-    toast("插画Worker已重启");
+  document.getElementById("restartIllustrationLlmWorkerBtn").addEventListener("click", async () => {
+    await restartIllustrationLlmWorker();
+    toast("解析Worker已重启");
+    await refreshPage();
+  });
+  document.getElementById("restartIllustrationImageWorkerBtn").addEventListener("click", async () => {
+    await restartIllustrationImageWorker();
+    toast("生图Worker已重启");
     await refreshPage();
   });
   document.getElementById("illustrationSelectAll").addEventListener("change", (event) => {
@@ -542,6 +622,22 @@ function bindEvents() {
     copyText(document.getElementById("illustrationPayloadContent")?.textContent || "").catch((err) => {
       toast(`复制失败：${err.message}`);
     });
+  });
+  const payloadContent = document.getElementById("illustrationPayloadContent");
+  payloadContent.addEventListener("mouseup", () => window.setTimeout(showPayloadTimeTooltip, 0));
+  payloadContent.addEventListener("keyup", showPayloadTimeTooltip);
+  payloadContent.addEventListener("scroll", hidePayloadTimeTooltip);
+  document.getElementById("payloadScrollBottomBtn").addEventListener("click", () => {
+    payloadContent.scrollTo({ top: payloadContent.scrollHeight, behavior: "smooth" });
+  });
+  document.addEventListener("selectionchange", () => {
+    if (document.getElementById("illustrationPayloadDialog")?.open) {
+      window.setTimeout(showPayloadTimeTooltip, 0);
+    }
+  });
+  document.getElementById("illustrationPayloadDialog").addEventListener("close", () => {
+    activePayloadKind = "";
+    hidePayloadTimeTooltip();
   });
   document.getElementById("generateAllIllustrationImagesBtn").addEventListener("click", async () => {
     if (!activeImagesChapterNum) return;

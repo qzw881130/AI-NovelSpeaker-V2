@@ -705,7 +705,7 @@ def process_illustration_image(image_id: int) -> None:
         conn.close()
 
 
-def run_illustration_queue_once() -> bool:
+def run_illustration_image_queue_once() -> bool:
     conn = db_conn()
     image_running = conn.execute(
         "SELECT id FROM chapter_illustration_images WHERE status IN ('running','processing') ORDER BY id ASC LIMIT 1"
@@ -728,6 +728,12 @@ def run_illustration_queue_once() -> bool:
         conn.close()
         process_illustration_image(image_id)
         return True
+    conn.close()
+    return False
+
+
+def run_illustration_llm_queue_once() -> bool:
+    conn = db_conn()
     running = conn.execute(
         "SELECT id FROM chapter_illustration_tasks WHERE status IN ('running','processing') ORDER BY id ASC LIMIT 1"
     ).fetchone()
@@ -770,3 +776,7 @@ def run_illustration_queue_once() -> bool:
     conn.close()
     process_illustration_task(task_id)
     return True
+
+
+def run_illustration_queue_once() -> bool:
+    return run_illustration_image_queue_once() or run_illustration_llm_queue_once()

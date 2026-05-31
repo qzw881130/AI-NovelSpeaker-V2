@@ -74,6 +74,12 @@ ILLUSTRATION_WORKER_HEARTBEAT_TS = 0.0
 ILLUSTRATION_WORKER_LAST_PROGRESS_TS = 0.0
 ILLUSTRATION_WORKER_GENERATION = 0
 ILLUSTRATION_WORKER_STALE_SECONDS = 90.0
+ILLUSTRATION_IMAGE_WORKER_THREAD: threading.Thread | None = None
+ILLUSTRATION_IMAGE_WORKER_STOP = threading.Event()
+ILLUSTRATION_IMAGE_WORKER_HEARTBEAT_TS = 0.0
+ILLUSTRATION_IMAGE_WORKER_LAST_PROGRESS_TS = 0.0
+ILLUSTRATION_IMAGE_WORKER_GENERATION = 0
+ILLUSTRATION_IMAGE_WORKER_STALE_SECONDS = 90.0
 DURATION_CACHE_LOCK = threading.Lock()
 DURATION_CACHE_PENDING: set[int] = set()
 JSON_LLM_THROTTLE_LOCK = threading.Lock()
@@ -154,6 +160,14 @@ def touch_illustration_worker_heartbeat(*, made_progress: bool = False) -> None:
     ILLUSTRATION_WORKER_HEARTBEAT_TS = now
     if made_progress:
         ILLUSTRATION_WORKER_LAST_PROGRESS_TS = now
+
+
+def touch_illustration_image_worker_heartbeat(*, made_progress: bool = False) -> None:
+    global ILLUSTRATION_IMAGE_WORKER_HEARTBEAT_TS, ILLUSTRATION_IMAGE_WORKER_LAST_PROGRESS_TS
+    now = time.time()
+    ILLUSTRATION_IMAGE_WORKER_HEARTBEAT_TS = now
+    if made_progress:
+        ILLUSTRATION_IMAGE_WORKER_LAST_PROGRESS_TS = now
 
 
 def probe_audio_duration_seconds(file_path: Path) -> float:
@@ -3553,18 +3567,33 @@ def nsfw_review_worker_loop() -> None:
 
 
 def illustration_worker_loop() -> None:
-    from .illustration import run_illustration_queue_once
+    from .illustration import run_illustration_llm_queue_once
 
     generation = ILLUSTRATION_WORKER_GENERATION
     while not ILLUSTRATION_WORKER_STOP.is_set() and generation == ILLUSTRATION_WORKER_GENERATION:
         touch_illustration_worker_heartbeat()
         has_illustration_work = False
         try:
-            has_illustration_work = run_illustration_queue_once()
+            has_illustration_work = run_illustration_llm_queue_once()
         except Exception as exc:
-            print(f"[illustration-worker] queue error: {exc}")
+            print(f"[illustration-llm-worker] queue error: {exc}")
         touch_illustration_worker_heartbeat(made_progress=has_illustration_work)
         ILLUSTRATION_WORKER_STOP.wait(1.0 if has_illustration_work else 3.0)
+
+
+def illustration_image_worker_loop() -> None:
+    from .illustration import run_illustration_image_queue_once
+
+    generation = ILLUSTRATION_IMAGE_WORKER_GENERATION
+    while not ILLUSTRATION_IMAGE_WORKER_STOP.is_set() and generation == ILLUSTRATION_IMAGE_WORKER_GENERATION:
+        touch_illustration_image_worker_heartbeat()
+        has_illustration_work = False
+        try:
+            has_illustration_work = run_illustration_image_queue_once()
+        except Exception as exc:
+            print(f"[illustration-image-worker] queue error: {exc}")
+        touch_illustration_image_worker_heartbeat(made_progress=has_illustration_work)
+        ILLUSTRATION_IMAGE_WORKER_STOP.wait(1.0 if has_illustration_work else 3.0)
 
 
 def ensure_line_audio_worker() -> None:
@@ -3633,6 +3662,28 @@ def ensure_illustration_worker() -> None:
     ILLUSTRATION_WORKER_GENERATION += 1
     ILLUSTRATION_WORKER_THREAD = threading.Thread(target=illustration_worker_loop, daemon=True)
     ILLUSTRATION_WORKER_THREAD.start()
+
+
+def ensure_illustration_image_worker() -> None:
+    global ILLUSTRATION_IMAGE_WORKER_THREAD, ILLUSTRATION_IMAGE_WORKER_GENERATION, ILLUSTRATION_IMAGE_WORKER_HEARTBEAT_TS
+    now = time.time()
+    if ILLUSTRATION_IMAGE_WORKER_THREAD and ILLUSTRATION_IMAGE_WORKER_THREAD.is_alive():
+        if ILLUSTRATION_IMAGE_WORKER_HEARTBEAT_TS > 0 and now - ILLUSTRATION_IMAGE_WORKER_HEARTBEAT_TS > ILLUSTRATION_IMAGE_WORKER_STALE_SECONDS:
+            print("[illustration-image-worker] heartbeat stale, restarting worker")
+            ILLUSTRATION_IMAGE_WORKER_GENERATION += 1
+            ILLUSTRATION_IMAGE_WORKER_STOP.clear()
+            ILLUSTRATION_IMAGE_WORKER_THREAD = threading.Thread(target=illustration_image_worker_loop, daemon=True)
+            ILLUSTRATION_IMAGE_WORKER_THREAD.start()
+        return
+    ILLUSTRATION_IMAGE_WORKER_STOP.clear()
+    ILLUSTRATION_IMAGE_WORKER_GENERATION += 1
+    ILLUSTRATION_IMAGE_WORKER_THREAD = threading.Thread(target=illustration_image_worker_loop, daemon=True)
+    ILLUSTRATION_IMAGE_WORKER_THREAD.start()
+
+
+def ensure_illustration_workers() -> None:
+    ensure_illustration_worker()
+    ensure_illustration_image_worker()
 
 
 def ensure_task_worker() -> None:
@@ -3707,6 +3758,22 @@ def restart_illustration_worker() -> None:
     ILLUSTRATION_WORKER_THREAD.start()
 
 
+def restart_illustration_image_worker() -> None:
+    global ILLUSTRATION_IMAGE_WORKER_THREAD, ILLUSTRATION_IMAGE_WORKER_GENERATION, ILLUSTRATION_IMAGE_WORKER_HEARTBEAT_TS, ILLUSTRATION_IMAGE_WORKER_LAST_PROGRESS_TS
+    ILLUSTRATION_IMAGE_WORKER_STOP.set()
+    ILLUSTRATION_IMAGE_WORKER_GENERATION += 1
+    ILLUSTRATION_IMAGE_WORKER_STOP.clear()
+    ILLUSTRATION_IMAGE_WORKER_HEARTBEAT_TS = 0.0
+    ILLUSTRATION_IMAGE_WORKER_LAST_PROGRESS_TS = 0.0
+    ILLUSTRATION_IMAGE_WORKER_THREAD = threading.Thread(target=illustration_image_worker_loop, daemon=True)
+    ILLUSTRATION_IMAGE_WORKER_THREAD.start()
+
+
+def restart_illustration_workers() -> None:
+    restart_illustration_worker()
+    restart_illustration_image_worker()
+
+
 def get_task_worker_status() -> dict:
     now = time.time()
     heartbeat_age = max(0.0, now - TASK_WORKER_HEARTBEAT_TS) if TASK_WORKER_HEARTBEAT_TS > 0 else -1.0
@@ -3779,6 +3846,28 @@ def get_illustration_worker_status() -> dict:
         "heartbeatAgeSeconds": round(heartbeat_age, 1) if heartbeat_age >= 0 else None,
         "progressAgeSeconds": round(progress_age, 1) if progress_age >= 0 else None,
         "generation": ILLUSTRATION_WORKER_GENERATION,
+    }
+
+
+def get_illustration_image_worker_status() -> dict:
+    now = time.time()
+    heartbeat_age = max(0.0, now - ILLUSTRATION_IMAGE_WORKER_HEARTBEAT_TS) if ILLUSTRATION_IMAGE_WORKER_HEARTBEAT_TS > 0 else -1.0
+    progress_age = max(0.0, now - ILLUSTRATION_IMAGE_WORKER_LAST_PROGRESS_TS) if ILLUSTRATION_IMAGE_WORKER_LAST_PROGRESS_TS > 0 else -1.0
+    state = "stopped"
+    if ILLUSTRATION_IMAGE_WORKER_THREAD and ILLUSTRATION_IMAGE_WORKER_THREAD.is_alive():
+        state = "stale" if (ILLUSTRATION_IMAGE_WORKER_HEARTBEAT_TS > 0 and heartbeat_age > ILLUSTRATION_IMAGE_WORKER_STALE_SECONDS) else "running"
+    return {
+        "state": state,
+        "heartbeatAgeSeconds": round(heartbeat_age, 1) if heartbeat_age >= 0 else None,
+        "progressAgeSeconds": round(progress_age, 1) if progress_age >= 0 else None,
+        "generation": ILLUSTRATION_IMAGE_WORKER_GENERATION,
+    }
+
+
+def get_illustration_workers_status() -> dict:
+    return {
+        "llm": get_illustration_worker_status(),
+        "image": get_illustration_image_worker_status(),
     }
 
 
