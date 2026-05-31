@@ -1,0 +1,190 @@
+{
+  "1": {
+    "inputs": {
+      "clip_name": "qwen_3_4b.safetensors",
+      "type": "lumina2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "#1 Load CLIP"
+    }
+  },
+  "2": {
+    "inputs": {
+      "unet_name": "z_image_turbo_bf16.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "#2 Load Diffusion Model"
+    }
+  },
+  "3": {
+    "inputs": {
+      "width": [
+        "13",
+        0
+      ],
+      "height": [
+        "14",
+        0
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptySD3LatentImage",
+    "_meta": {
+      "title": "#3 EmptySD3LatentImage"
+    }
+  },
+  "4": {
+    "inputs": {
+      "shift": 3,
+      "model": [
+        "2",
+        0
+      ]
+    },
+    "class_type": "ModelSamplingAuraFlow",
+    "_meta": {
+      "title": "#4 ModelSamplingAuraFlow"
+    }
+  },
+  "5": {
+    "inputs": {
+      "samples": [
+        "8",
+        0
+      ],
+      "vae": [
+        "6",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "#5 VAE Decode"
+    }
+  },
+  "6": {
+    "inputs": {
+      "vae_name": "ae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "#6 Load VAE"
+    }
+  },
+  "7": {
+    "inputs": {
+      "filename_prefix": "z-image",
+      "images": [
+        "5",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "#7 Save Image"
+    }
+  },
+  "8": {
+    "inputs": {
+      "seed": 573681856662035,
+      "steps": 6,
+      "cfg": 1,
+      "sampler_name": "res_multistep",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": [
+        "4",
+        0
+      ],
+      "positive": [
+        "10",
+        0
+      ],
+      "negative": [
+        "11",
+        0
+      ],
+      "latent_image": [
+        "3",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "#8 KSampler"
+    }
+  },
+  "9": {
+    "inputs": {
+      "purge_cache": true,
+      "purge_models": true,
+      "anything": [
+        "5",
+        0
+      ]
+    },
+    "class_type": "LayerUtility: PurgeVRAM",
+    "_meta": {
+      "title": "#9 LayerUtility: Purge VRAM"
+    }
+  },
+  "10": {
+    "inputs": {
+      "text": [
+        "12",
+        0
+      ],
+      "clip": [
+        "1",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "#10 CLIP Text Encode (Prompt)"
+    }
+  },
+  "11": {
+    "inputs": {
+      "conditioning": [
+        "10",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "#11 ConditioningZeroOut"
+    }
+  },
+  "12": {
+    "inputs": {
+      "value": "红楼梦工笔连环画风, 上海人民美术出版社连环画风, 中国古典文学插画, 中国传统工笔画, 细腻线描, 柔和设色, 清代贵族审美, 古典文学气质, 古风电影感, 人物设定统一, 非动漫, 非二次元, 非Q版, 非照片写实，大快朵颐, 满足感, 欣喜, 丰盛菜肴，刘老老, 老年, 乡村寡妇, 粗布补丁褐衣, 头裹蓝巾, 卑微、精明、淳朴, 大快朵颐, 满足, 中景; 板儿, 幼童, 刘老老外孙, 破旧短衫, 光着脚或穿草鞋, 天真、贪吃, 舔唇咧嘴, 欣喜, 中景，精致盘碟, 丰盛饭桌, 东屋背景, 吃相对比，中景, 平视, 中心构图, 柔和日光; 画面中2人"
+    },
+    "class_type": "PrimitiveStringMultiline",
+    "_meta": {
+      "title": "#12 Prompt"
+    }
+  },
+  "13": {
+    "inputs": {
+      "Number": "1536"
+    },
+    "class_type": "Int",
+    "_meta": {
+      "title": "#13 Width"
+    }
+  },
+  "14": {
+    "inputs": {
+      "value": 864
+    },
+    "class_type": "easy int",
+    "_meta": {
+      "title": "#14 Height"
+    }
+  }
+}

@@ -800,6 +800,7 @@ async function refreshImagesModal() {
   if (!document.getElementById("illustrationImagesDialog")?.open) return;
   if (!activeImagesChapterNum) return;
   renderImages(await fetchChapterIllustrationImages(activeNovel.id, activeImagesChapterNum));
+  await refreshPage();
 }
 
 function stopImagesAutoRefresh() {
