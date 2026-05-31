@@ -3,6 +3,7 @@ import {
   enqueueAllIllustrationImages,
   enqueueIllustrationImage,
   fetchChapterIllustrationImages,
+  fetchChapterIllustrationLlmParams,
   fetchChapterIllustrationPayload,
   fetchIllustrationImageWorkerStatus,
   fetchIllustrationLlmWorkerStatus,
@@ -20,6 +21,7 @@ let allNovels = [];
 let activeNovel = null;
 let chapterItems = [];
 let autoRefreshTimer = 0;
+let elapsedRefreshTimer = 0;
 let imagesRefreshTimer = 0;
 let activeImagesChapterNum = 0;
 let activePayloadKind = "";
@@ -28,6 +30,8 @@ let currentPreviewIndex = -1;
 const selectedChapterNums = new Set();
 let dragSelecting = false;
 let dragSelectValue = true;
+const AUTO_REFRESH_KEY = "ai_novel_illustration_refresh_interval";
+const AUTO_REFRESH_VALUES = ["0", "5", "20", "60"];
 const IMAGES_REFRESH_KEY = "ai_novel_illustration_images_refresh_seconds";
 
 const STAGE_LABELS = {
@@ -35,6 +39,8 @@ const STAGE_LABELS = {
   shot: "Shot",
   prompt: "Prompt",
 };
+
+const SCENE_AUDIO_DIFF_WARNING_SECONDS = 5;
 
 function escapeHtml(text) {
   const div = document.createElement("div");
@@ -95,6 +101,51 @@ function statusClass(status) {
   return "status-badge";
 }
 
+function parseDateTime(value) {
+  const text = String(value || "").trim();
+  if (!text) return null;
+  const normalized = text.includes("T") ? text : text.replace(" ", "T");
+  const hasTimezone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(normalized);
+  const date = new Date(hasTimezone ? normalized : `${normalized}Z`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatElapsedSeconds(seconds) {
+  const total = Math.max(0, Math.round(Number(seconds || 0)));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const rest = total % 60;
+  if (hours) return `${hours}:${String(minutes).padStart(2, "0")}:${String(rest).padStart(2, "0")}`;
+  return `${String(minutes).padStart(2, "0")}:${String(rest).padStart(2, "0")}`;
+}
+
+function stageElapsedLabel(data) {
+  const startedAt = parseDateTime(data?.startedAt);
+  if (!startedAt) return "";
+  const status = String(data?.status || "");
+  const updatedAt = parseDateTime(data?.updatedAt);
+  const endAt = ["pending", "running", "processing"].includes(status) || !updatedAt ? new Date() : updatedAt;
+  return `本次执行耗时 {${formatElapsedSeconds((endAt.getTime() - startedAt.getTime()) / 1000)}}`;
+}
+
+function stageElapsedAttrs(data) {
+  return [
+    `data-status="${escapeHtml(data?.status || "")}"`,
+    `data-started-at="${escapeHtml(data?.startedAt || "")}"`,
+    `data-updated-at="${escapeHtml(data?.updatedAt || "")}"`,
+  ].join(" ");
+}
+
+function updateLiveElapsedLabels() {
+  document.querySelectorAll(".stage-elapsed").forEach((el) => {
+    const status = String(el.dataset.status || "");
+    if (!["pending", "running", "processing"].includes(status)) return;
+    const startedAt = parseDateTime(el.dataset.startedAt || "");
+    if (!startedAt) return;
+    el.textContent = `本次执行耗时 {${formatElapsedSeconds((Date.now() - startedAt.getTime()) / 1000)}}`;
+  });
+}
+
 function renderNovelSelect() {
   const select = document.getElementById("illustrationNovelSelect");
   select.innerHTML = allNovels.map((novel) => `<option value="${novel.id}">${escapeHtml(novel.name)}</option>`).join("");
@@ -126,17 +177,64 @@ function renderStageCell(item, stage) {
   const chapterNum = Number(item.chapterNum || 0);
   const progress = Number(data.progress || 0);
   const disabled = ["pending", "running", "processing"].includes(String(data.status || ""));
+  const sceneWarning = stage === "scene" ? sceneTimingWarningFromChapter(item) : null;
   return `
     <div class="stage-cell">
-      <span class="${statusClass(data.status)}" title="${escapeHtml(data.errorMessage || "")}">${statusLabel(data.status)}${progress ? ` ${progress}%` : ""}</span>
+      <div class="stage-status-row">
+        <span class="${statusClass(data.status)}" title="${escapeHtml(data.errorMessage || "")}">${statusLabel(data.status)}${progress ? ` ${progress}%` : ""}</span>
+        ${stageElapsedLabel(data) ? `<span class="stage-elapsed" ${stageElapsedAttrs(data)} title="${escapeHtml(data.startedAt || "")}">${escapeHtml(stageElapsedLabel(data))}</span>` : ""}
+      </div>
       <div class="table-actions-inline">
         <button class="ghost-btn btn-sm illustration-run-btn" type="button" data-stage="${stage}" data-chapter-num="${chapterNum}" ${disabled ? "disabled" : ""}>解析插画${STAGE_LABELS[stage].toLowerCase()}</button>
+        <button class="ghost-btn btn-sm illustration-llm-params-btn" type="button" data-stage="${stage}" data-chapter-num="${chapterNum}">LLM参数</button>
         <button class="ghost-btn btn-sm illustration-view-btn" type="button" data-kind="input" data-stage="${stage}" data-chapter-num="${chapterNum}">输入</button>
-        <button class="ghost-btn btn-sm illustration-view-btn" type="button" data-kind="output" data-stage="${stage}" data-chapter-num="${chapterNum}">输出</button>
+        <button class="ghost-btn btn-sm illustration-view-btn ${sceneWarning ? "has-scene-timing-warning" : ""}" type="button" data-kind="output" data-stage="${stage}" data-chapter-num="${chapterNum}" ${sceneWarning ? `title="${escapeHtml(sceneWarning)}"` : ""}>输出${sceneWarning ? '<span class="illustration-alert-dot" aria-hidden="true">!</span>' : ""}</button>
         ${stage === "prompt" && data.status === "completed" ? renderImagesButton(item, chapterNum) : ""}
       </div>
     </div>
   `;
+}
+
+function sceneTimingWarningFromChapter(item) {
+  const warning = item?.sceneTimingWarning;
+  if (!warning?.hasWarning) return "";
+  return sceneTimingWarningTitle(warning.lastEndSeconds, warning.audioDurationSeconds, warning.diffSeconds);
+}
+
+function sceneTimingWarningTitle(lastEndSeconds, audioDurationSeconds, diffSeconds) {
+  const lastEnd = Number(lastEndSeconds || 0);
+  const duration = Number(audioDurationSeconds || 0);
+  const diff = Number.isFinite(Number(diffSeconds)) ? Number(diffSeconds) : Math.abs(lastEnd - duration);
+  return `Scene最后一项end与音频时长相差 ${formatTimeSeconds(diff)}（end ${formatTimeSeconds(lastEnd)}，音频 ${formatTimeSeconds(duration)}）`;
+}
+
+function sceneTimingWarningFromText(raw, audioDurationSeconds) {
+  const duration = Number(audioDurationSeconds || 0);
+  if (duration <= 0) return "";
+  let parsed;
+  try {
+    parsed = JSON.parse(String(raw || ""));
+  } catch {
+    return "";
+  }
+  const grid = parsed && typeof parsed === "object" ? parsed.grid : null;
+  if (!Array.isArray(grid) || !grid.length) return "";
+  const last = grid[grid.length - 1];
+  const lastEnd = parseSceneTimecode(last?.end);
+  if (lastEnd == null) return "";
+  const diff = Math.abs(lastEnd - duration);
+  return diff >= SCENE_AUDIO_DIFF_WARNING_SECONDS ? sceneTimingWarningTitle(lastEnd, duration, diff) : "";
+}
+
+function setPayloadTitle(titleEl, text, warningTitle = "") {
+  titleEl.textContent = text;
+  if (!warningTitle) return;
+  const badge = document.createElement("span");
+  badge.className = "payload-warning-badge";
+  badge.textContent = "!";
+  badge.title = warningTitle;
+  titleEl.appendChild(document.createTextNode(" "));
+  titleEl.appendChild(badge);
 }
 
 function renderImagesButton(item, chapterNum) {
@@ -356,6 +454,21 @@ function formatSelectedSeconds(value) {
   return `{${minutes}:${String(seconds).padStart(2, "0")}}`;
 }
 
+function parseSceneTimecode(value) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  const text = String(value ?? "").trim();
+  if (!text) return null;
+  if (!text.includes(":")) {
+    const seconds = Number(text);
+    return Number.isFinite(seconds) ? seconds : null;
+  }
+  const parts = text.split(":");
+  if (parts.length !== 3 || parts.some((part) => !/^\d+$/.test(part))) return null;
+  const [hours, minutes, seconds] = parts.map(Number);
+  if (hours < 0 || minutes < 0 || minutes >= 60 || seconds < 0 || seconds >= 60) return null;
+  return hours * 3600 + minutes * 60 + seconds;
+}
+
 function hidePayloadTimeTooltip() {
   document.getElementById("payloadTimeTooltip")?.remove();
 }
@@ -373,7 +486,8 @@ function showPayloadTimeTooltip() {
     return;
   }
   const selectedText = String(selection.toString() || "").trim().replace(/[，,。；;：:]+$/g, "");
-  if (!/^\d+(?:\.\d+)?$/.test(selectedText)) {
+  const selectedSeconds = parseSceneTimecode(selectedText);
+  if (selectedSeconds == null) {
     hidePayloadTimeTooltip();
     return;
   }
@@ -394,7 +508,7 @@ function showPayloadTimeTooltip() {
     tooltip.className = "payload-time-tooltip";
     dialog.appendChild(tooltip);
   }
-  tooltip.textContent = formatSelectedSeconds(Number(selectedText));
+  tooltip.textContent = formatSelectedSeconds(selectedSeconds);
   tooltip.style.left = `${Math.min(window.innerWidth - 80, Math.max(8, rect.left + rect.width / 2))}px`;
   tooltip.style.top = `${Math.max(8, rect.top - 34)}px`;
 }
@@ -418,14 +532,31 @@ async function openPayload(chapterNum, stage, kind) {
   const duration = Number(chapter?.audioDurationSeconds || 0);
   const durationText = duration > 0 ? ` · 音频时长 ${formatTimeSeconds(duration)}` : "";
   const titlePrefix = `${STAGE_LABELS[stage]} ${kind === "input" ? "输入" : "输出"} · 第${String(chapterNum).padStart(3, "0")}回${durationText}`;
-  title.textContent = titlePrefix;
+  const initialWarning = stage === "scene" && kind === "output" ? sceneTimingWarningFromChapter(chapter) : "";
+  setPayloadTitle(title, titlePrefix, initialWarning);
   content.textContent = "加载中...";
   dialog.showModal();
   try {
     const payload = await fetchChapterIllustrationPayload(activeNovel.id, chapterNum, stage, kind);
     const raw = String(payload.text || "");
-    title.textContent = `${titlePrefix} · 字数 ${raw.length.toLocaleString()}`;
+    const loadedWarning = stage === "scene" && kind === "output" ? sceneTimingWarningFromText(raw, duration) || initialWarning : "";
+    setPayloadTitle(title, `${titlePrefix} · 字数 ${raw.length.toLocaleString()}`, loadedWarning);
     content.textContent = raw ? formatMaybeJson(raw) : "暂无内容";
+  } catch (err) {
+    content.textContent = `加载失败：${err.message}`;
+  }
+}
+
+async function openLlmParams(chapterNum, stage) {
+  const dialog = document.getElementById("illustrationLlmParamsDialog");
+  const title = document.getElementById("illustrationLlmParamsTitle");
+  const content = document.getElementById("illustrationLlmParamsContent");
+  title.textContent = `${STAGE_LABELS[stage]} LLM参数 · 第${String(chapterNum).padStart(3, "0")}回`;
+  content.textContent = "加载中...";
+  dialog.showModal();
+  try {
+    const params = await fetchChapterIllustrationLlmParams(activeNovel.id, chapterNum, stage);
+    content.textContent = JSON.stringify(params, null, 2);
   } catch (err) {
     content.textContent = `加载失败：${err.message}`;
   }
@@ -532,6 +663,44 @@ function initImagesRefreshControl() {
   applyImagesAutoRefresh();
 }
 
+function stopAutoRefresh() {
+  if (autoRefreshTimer) {
+    window.clearInterval(autoRefreshTimer);
+    autoRefreshTimer = 0;
+  }
+}
+
+function stopElapsedRefresh() {
+  if (elapsedRefreshTimer) {
+    window.clearInterval(elapsedRefreshTimer);
+    elapsedRefreshTimer = 0;
+  }
+}
+
+function initElapsedRefresh() {
+  stopElapsedRefresh();
+  elapsedRefreshTimer = window.setInterval(updateLiveElapsedLabels, 1000);
+}
+
+function applyAutoRefresh() {
+  stopAutoRefresh();
+  const select = document.getElementById("illustrationAutoRefreshSelect");
+  const seconds = Number(select?.value || 0);
+  localStorage.setItem(AUTO_REFRESH_KEY, String(seconds));
+  if (Number.isFinite(seconds) && seconds > 0) {
+    autoRefreshTimer = window.setInterval(() => refreshPage().catch(() => {}), seconds * 1000);
+  }
+}
+
+function initAutoRefreshControl() {
+  const select = document.getElementById("illustrationAutoRefreshSelect");
+  if (!select) return;
+  const saved = String(localStorage.getItem(AUTO_REFRESH_KEY) || "5");
+  select.value = AUTO_REFRESH_VALUES.includes(saved) ? saved : "5";
+  select.addEventListener("change", applyAutoRefresh);
+  applyAutoRefresh();
+}
+
 async function openImagesModal(chapterNum) {
   activeImagesChapterNum = Number(chapterNum || 0);
   const chapter = chapterItems.find((item) => Number(item.chapterNum || 0) === activeImagesChapterNum);
@@ -588,6 +757,11 @@ function bindEvents() {
       await enqueueStage(Number(runBtn.dataset.chapterNum || 0), String(runBtn.dataset.stage || ""));
       return;
     }
+    const llmParamsBtn = event.target.closest(".illustration-llm-params-btn");
+    if (llmParamsBtn) {
+      await openLlmParams(Number(llmParamsBtn.dataset.chapterNum || 0), String(llmParamsBtn.dataset.stage || ""));
+      return;
+    }
     const viewBtn = event.target.closest(".illustration-view-btn");
     if (viewBtn) {
       await openPayload(Number(viewBtn.dataset.chapterNum || 0), String(viewBtn.dataset.stage || ""), String(viewBtn.dataset.kind || ""));
@@ -620,6 +794,11 @@ function bindEvents() {
   });
   document.getElementById("illustrationPayloadCopyBtn").addEventListener("click", () => {
     copyText(document.getElementById("illustrationPayloadContent")?.textContent || "").catch((err) => {
+      toast(`复制失败：${err.message}`);
+    });
+  });
+  document.getElementById("illustrationLlmParamsCopyBtn").addEventListener("click", () => {
+    copyText(document.getElementById("illustrationLlmParamsContent")?.textContent || "").catch((err) => {
       toast(`复制失败：${err.message}`);
     });
   });
@@ -686,9 +865,11 @@ async function init() {
   renderNovelSelect();
   bindEvents();
   await refreshPage();
-  autoRefreshTimer = window.setInterval(refreshPage, 5000);
+  initAutoRefreshControl();
+  initElapsedRefresh();
   window.addEventListener("beforeunload", () => {
-    window.clearInterval(autoRefreshTimer);
+    stopAutoRefresh();
+    stopElapsedRefresh();
     stopImagesAutoRefresh();
   });
 }

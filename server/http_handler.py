@@ -50,6 +50,7 @@ from .illustration import (
     enqueue_all_illustration_images,
     enqueue_illustration_image,
     get_illustration_task_payload,
+    get_illustration_llm_request_preview,
     list_illustration_images,
     list_illustration_chapters,
     sync_prompt_images,
@@ -2574,6 +2575,28 @@ class Handler(BaseHTTPRequestHandler):
                 "text": payload["inputText"] if kind == "input" else (payload["resultJsonText"] or payload["outputText"]),
                 **payload,
             })
+            return
+
+        m_illustration_llm_params = re.match(
+            r"^/api/novels/(\d+)/chapters/(\d+)/illustration/(scene|shot|prompt)/llm-params$", route
+        )
+        if m_illustration_llm_params:
+            novel_id = int(m_illustration_llm_params.group(1))
+            chapter_num = int(m_illustration_llm_params.group(2))
+            stage = str(m_illustration_llm_params.group(3))
+            conn = db_conn()
+            chapter_row = conn.execute(
+                "SELECT id FROM chapters WHERE novel_id=? AND chapter_num=?",
+                (novel_id, chapter_num),
+            ).fetchone()
+            conn.close()
+            if not chapter_row:
+                self.send_json({"error": "chapter not found"}, 404)
+                return
+            try:
+                self.send_json(get_illustration_llm_request_preview(novel_id, int(chapter_row["id"]), stage))
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, 400)
             return
 
         m_illustration_images = re.match(

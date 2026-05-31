@@ -2434,6 +2434,54 @@ def call_llm_prompt_json(
     system_prompt: str,
     user_prompt: str,
 ) -> str:
+    request = build_llm_prompt_json_request(
+        llm=llm,
+        proxy_url=proxy_url,
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+    )
+    provider = str(request.get("provider") or "").strip()
+    base_url = str(request.get("baseUrl") or "").strip()
+    model = str(request.get("model") or "").strip()
+    unload_after_call = bool(request.get("unloadAfterCall", False))
+    try:
+        code, body = http_json_request(
+            "POST",
+            str(request["url"]),
+            payload=request["payload"],
+            headers=request["headers"],
+            timeout=float(request["timeoutSeconds"]),
+            proxy_url=str(request.get("proxyUrl") or ""),
+        )
+    finally:
+        if provider == "ollama" and unload_after_call:
+            try:
+                unload_ollama_model(base_url=base_url, model=model, proxy_url=proxy_url, timeout=30.0)
+            except Exception:
+                pass
+        if provider == "local_llama" and unload_after_call:
+            try:
+                clear_local_llama_context(base_url=base_url, proxy_url=proxy_url, timeout=10.0)
+            except Exception:
+                pass
+    if not (200 <= code < 300):
+        raise RuntimeError(f"LLM request failed (HTTP {code})")
+    parsed_body = json.loads(body or "{}")
+    if not isinstance(parsed_body, dict):
+        raise RuntimeError("LLM response is not object")
+    content = extract_chat_content(parsed_body)
+    if not content:
+        raise RuntimeError("LLM response content is empty")
+    return content
+
+
+def build_llm_prompt_json_request(
+    *,
+    llm: dict,
+    proxy_url: str,
+    system_prompt: str,
+    user_prompt: str,
+) -> dict:
     base_url = str(llm.get("baseUrl") or "").strip()
     provider = str(llm.get("provider") or "").strip()
     model = str(llm.get("model") or "").strip()
@@ -2485,35 +2533,17 @@ def call_llm_prompt_json(
                 "num_predict": max_tokens,
             },
         }
-    try:
-        code, body = http_json_request(
-            "POST",
-            url,
-            payload=payload,
-            headers=headers,
-            timeout=float(max(60, batch_timeout_minutes * 60)),
-            proxy_url=proxy_url,
-        )
-    finally:
-        if provider == "ollama" and unload_after_call:
-            try:
-                unload_ollama_model(base_url=base_url, model=model, proxy_url=proxy_url, timeout=30.0)
-            except Exception:
-                pass
-        if provider == "local_llama" and unload_after_call:
-            try:
-                clear_local_llama_context(base_url=base_url, proxy_url=proxy_url, timeout=10.0)
-            except Exception:
-                pass
-    if not (200 <= code < 300):
-        raise RuntimeError(f"LLM request failed (HTTP {code})")
-    parsed_body = json.loads(body or "{}")
-    if not isinstance(parsed_body, dict):
-        raise RuntimeError("LLM response is not object")
-    content = extract_chat_content(parsed_body)
-    if not content:
-        raise RuntimeError("LLM response content is empty")
-    return content
+    return {
+        "provider": provider,
+        "baseUrl": base_url,
+        "url": url,
+        "model": model,
+        "proxyUrl": str(proxy_url or ""),
+        "timeoutSeconds": float(max(60, batch_timeout_minutes * 60)),
+        "headers": headers,
+        "payload": payload,
+        "unloadAfterCall": unload_after_call,
+    }
 
 
 class JsonTaskCancelledError(RuntimeError):

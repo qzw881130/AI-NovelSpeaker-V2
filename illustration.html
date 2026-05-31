@@ -10,14 +10,24 @@
     <div class="app-shell">
       <aside class="main-nav" id="mainNav"></aside>
       <main class="page">
-        <header class="page-header">
+        <header class="page-header illustration-page-header">
           <div>
             <p class="eyebrow">插画解析</p>
             <h1 id="illustrationPageTitle">生成插画</h1>
             <p id="illustrationPageMeta" class="meta">加载中...</p>
           </div>
-          <div class="header-actions">
-            <select id="illustrationNovelSelect"></select>
+          <div class="header-actions illustration-header-actions">
+            <label class="header-novel-switch">切换小说
+              <select id="illustrationNovelSelect"></select>
+            </label>
+            <label class="header-novel-switch">自动刷新
+              <select id="illustrationAutoRefreshSelect">
+                <option value="0">关闭</option>
+                <option value="5">5 秒</option>
+                <option value="20">20 秒</option>
+                <option value="60">60 秒</option>
+              </select>
+            </label>
             <button class="ghost-btn" id="refreshIllustrationBtn" type="button">刷新</button>
             <button class="ghost-btn" id="restartIllustrationLlmWorkerBtn" type="button">重启解析Worker</button>
             <button class="ghost-btn" id="restartIllustrationImageWorkerBtn" type="button">重启生图Worker</button>
@@ -81,6 +91,21 @@
           <pre id="illustrationPayloadContent" class="dialog-code-block">加载中...</pre>
           <button id="payloadScrollBottomBtn" class="payload-scroll-bottom-btn" type="button" aria-label="跳到底部" title="跳到底部">↓</button>
         </div>
+      </form>
+    </dialog>
+
+    <dialog id="illustrationLlmParamsDialog" class="modal modal-large">
+      <form method="dialog">
+        <div class="dialog-header">
+          <h3 id="illustrationLlmParamsTitle">LLM参数</h3>
+          <button id="illustrationLlmParamsCopyBtn" class="dialog-copy-btn icon-btn" type="button" aria-label="复制内容" title="复制内容">
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+              <path d="M8 7a3 3 0 0 1 3-3h6a3 3 0 0 1 3 3v6a3 3 0 0 1-3 3h-1v1a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3v-6a3 3 0 0 1 3-3h1V7Zm2 1h3a3 3 0 0 1 3 3v3h1a1 1 0 0 0 1-1V7a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v1Zm-3 2a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-6a1 1 0 0 0-1-1H7Z" fill="currentColor" />
+            </svg>
+          </button>
+          <button class="dialog-close-btn" type="submit" aria-label="关闭">×</button>
+        </div>
+        <pre id="illustrationLlmParamsContent" class="dialog-code-block illustration-llm-params-content">加载中...</pre>
       </form>
     </dialog>
 

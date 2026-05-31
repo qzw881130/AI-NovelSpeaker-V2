@@ -10,6 +10,7 @@ from pathlib import Path
 from .app_context import ROOT_DIR, db_conn
 from .services import (
     apply_prompt_llm_settings,
+    build_llm_prompt_json_request,
     call_llm_prompt_json,
     comfy_download_file,
     comfy_request_json,
@@ -148,10 +149,20 @@ def _scene_grid_meta(conn, novel_id: int, chapter_id: int) -> dict[int, dict]:
 
 
 def _scene_timecode_to_seconds(value) -> float:
+    if isinstance(value, (int, float)):
+        return float(value)
     raw = str(value if value is not None else "").strip()
     if not raw:
         raise ValueError("empty timecode")
-    return float(raw)
+    if ":" not in raw:
+        return float(raw)
+    parts = raw.split(":")
+    if len(parts) != 3:
+        raise ValueError(f"invalid HH:MM:SS timecode: {raw}")
+    hours, minutes, seconds = (int(part) for part in parts)
+    if minutes < 0 or minutes >= 60 or seconds < 0 or seconds >= 60 or hours < 0:
+        raise ValueError(f"invalid HH:MM:SS timecode: {raw}")
+    return float(hours * 3600 + minutes * 60 + seconds)
 
 
 def _safe_unlink_under_root(path: Path) -> None:
@@ -289,14 +300,43 @@ def _count_prompt_image_items(result_json_text: str) -> int:
     return len(prompts) if isinstance(prompts, list) else 0
 
 
+def _scene_timing_warning(result_json_text: str, audio_duration_seconds: float) -> dict:
+    try:
+        parsed = _parse_json_any(str(result_json_text or ""))
+    except Exception:
+        return {"hasWarning": False}
+    grid = parsed.get("grid") if isinstance(parsed, dict) else []
+    if not isinstance(grid, list) or not grid:
+        return {"hasWarning": False}
+    last = grid[-1]
+    if not isinstance(last, dict):
+        return {"hasWarning": False}
+    try:
+        end = _scene_timecode_to_seconds(last.get("end"))
+        duration = float(audio_duration_seconds or 0)
+    except (TypeError, ValueError):
+        return {"hasWarning": False}
+    diff = abs(end - duration)
+    return {
+        "hasWarning": duration > 0 and diff >= 5,
+        "lastEndSeconds": end,
+        "audioDurationSeconds": duration,
+        "diffSeconds": diff,
+    }
+
+
 def list_illustration_chapters(novel_id: int) -> list[dict]:
     conn = db_conn()
     rows = conn.execute(
         """
         SELECT c.id, c.chapter_num, c.title, c.word_count, c.audio_duration_seconds,
                s.status AS scene_status, s.progress AS scene_progress, s.error_message AS scene_error,
+               s.started_at AS scene_started_at, s.updated_at AS scene_updated_at,
+               s.result_json_text AS scene_result_json,
                h.status AS shot_status, h.progress AS shot_progress, h.error_message AS shot_error,
+               h.started_at AS shot_started_at, h.updated_at AS shot_updated_at,
                p.status AS prompt_status, p.progress AS prompt_progress, p.error_message AS prompt_error,
+               p.started_at AS prompt_started_at, p.updated_at AS prompt_updated_at,
                p.result_json_text AS prompt_result_json,
                COALESCE(img.image_total, 0) AS image_total,
                COALESCE(img.image_generated, 0) AS image_generated
@@ -324,6 +364,7 @@ def list_illustration_chapters(novel_id: int) -> list[dict]:
         image_total = int(r["image_total"] or 0)
         image_generated = int(r["image_generated"] or 0)
         image_expected = max(prompt_count, image_total)
+        scene_result = str(r["scene_result_json"] or "") if _status_value(r["scene_status"]) == "completed" else ""
         items.append({
             "chapterId": int(r["id"]),
             "chapterNum": int(r["chapter_num"] or 0),
@@ -335,10 +376,11 @@ def list_illustration_chapters(novel_id: int) -> list[dict]:
                 "generated": image_generated,
                 "missing": max(0, image_expected - image_generated),
             },
+            "sceneTimingWarning": _scene_timing_warning(scene_result, float(r["audio_duration_seconds"] or 0)),
             "stages": {
-                "scene": {"status": _status_value(r["scene_status"]), "progress": int(r["scene_progress"] or 0), "errorMessage": str(r["scene_error"] or "")},
-                "shot": {"status": _status_value(r["shot_status"]), "progress": int(r["shot_progress"] or 0), "errorMessage": str(r["shot_error"] or "")},
-                "prompt": {"status": _status_value(r["prompt_status"]), "progress": int(r["prompt_progress"] or 0), "errorMessage": str(r["prompt_error"] or "")},
+                "scene": {"status": _status_value(r["scene_status"]), "progress": int(r["scene_progress"] or 0), "errorMessage": str(r["scene_error"] or ""), "startedAt": str(r["scene_started_at"] or ""), "updatedAt": str(r["scene_updated_at"] or "")},
+                "shot": {"status": _status_value(r["shot_status"]), "progress": int(r["shot_progress"] or 0), "errorMessage": str(r["shot_error"] or ""), "startedAt": str(r["shot_started_at"] or ""), "updatedAt": str(r["shot_updated_at"] or "")},
+                "prompt": {"status": _status_value(r["prompt_status"]), "progress": int(r["prompt_progress"] or 0), "errorMessage": str(r["prompt_error"] or ""), "startedAt": str(r["prompt_started_at"] or ""), "updatedAt": str(r["prompt_updated_at"] or "")},
             },
         })
     return items
@@ -383,14 +425,14 @@ def enqueue_illustration_task(novel_id: int, chapter_id: int, stage: str, allow_
         return False, "task already queued"
     if stage == "scene":
         conn.execute(
-            "UPDATE chapter_illustration_tasks SET status='idle',progress=0,input_text='',output_text='',result_json_text='',error_message='',updated_at=CURRENT_TIMESTAMP WHERE novel_id=? AND chapter_id=? AND stage IN ('shot','prompt')",
+            "UPDATE chapter_illustration_tasks SET status='idle',progress=0,input_text='',output_text='',result_json_text='',error_message='',started_at=NULL,updated_at=CURRENT_TIMESTAMP WHERE novel_id=? AND chapter_id=? AND stage IN ('shot','prompt')",
             (novel_id, chapter_id),
         )
         _delete_illustration_image_files(conn, novel_id, chapter_id)
         conn.execute("DELETE FROM chapter_illustration_images WHERE novel_id=? AND chapter_id=?", (novel_id, chapter_id))
     elif stage == "shot":
         conn.execute(
-            "UPDATE chapter_illustration_tasks SET status='idle',progress=0,input_text='',output_text='',result_json_text='',error_message='',updated_at=CURRENT_TIMESTAMP WHERE novel_id=? AND chapter_id=? AND stage='prompt'",
+            "UPDATE chapter_illustration_tasks SET status='idle',progress=0,input_text='',output_text='',result_json_text='',error_message='',started_at=NULL,updated_at=CURRENT_TIMESTAMP WHERE novel_id=? AND chapter_id=? AND stage='prompt'",
             (novel_id, chapter_id),
         )
         _delete_illustration_image_files(conn, novel_id, chapter_id)
@@ -400,10 +442,10 @@ def enqueue_illustration_task(novel_id: int, chapter_id: int, stage: str, allow_
         conn.execute("DELETE FROM chapter_illustration_images WHERE novel_id=? AND chapter_id=?", (novel_id, chapter_id))
     conn.execute(
         """
-        INSERT INTO chapter_illustration_tasks(novel_id,chapter_id,chapter_num,chapter_title,stage,prompt_id,status,progress,input_text,output_text,result_json_text,error_message,started_at,updated_at)
-        VALUES(?,?,?,?,?,?,'pending',0,'','','','',NULL,CURRENT_TIMESTAMP)
-        ON CONFLICT(novel_id,chapter_id,stage) DO UPDATE SET
-            chapter_num=excluded.chapter_num, chapter_title=excluded.chapter_title, prompt_id=excluded.prompt_id,
+            INSERT INTO chapter_illustration_tasks(novel_id,chapter_id,chapter_num,chapter_title,stage,prompt_id,status,progress,input_text,output_text,result_json_text,error_message,started_at,updated_at)
+            VALUES(?,?,?,?,?,?,'pending',0,'','','','',NULL,CURRENT_TIMESTAMP)
+            ON CONFLICT(novel_id,chapter_id,stage) DO UPDATE SET
+                chapter_num=excluded.chapter_num, chapter_title=excluded.chapter_title, prompt_id=excluded.prompt_id,
             status='pending', progress=0, input_text='', output_text='', result_json_text='', error_message='', started_at=NULL, updated_at=CURRENT_TIMESTAMP
         """,
         (novel_id, chapter_id, int(chapter["chapter_num"] or 0), str(chapter["title"] or ""), stage, prompt_id),
@@ -428,6 +470,55 @@ def get_illustration_task_payload(novel_id: int, chapter_id: int, stage: str) ->
         "resultJsonText": str(row["result_json_text"] or ""),
         "errorMessage": str(row["error_message"] or ""),
         "status": str(row["status"] or ""),
+    }
+
+
+def get_illustration_llm_request_preview(novel_id: int, chapter_id: int, stage: str) -> dict:
+    if stage not in ILLUSTRATION_STAGES:
+        raise RuntimeError("invalid illustration stage")
+    conn = db_conn()
+    row = conn.execute(
+        """
+        SELECT c.id AS chapter_id, c.novel_id, c.chapter_num, c.title AS chapter_title, c.text_file_path,
+               t.prompt_id
+        FROM chapters c
+        LEFT JOIN chapter_illustration_tasks t ON t.chapter_id=c.id AND t.stage=?
+        WHERE c.novel_id=? AND c.id=?
+        """,
+        (stage, novel_id, chapter_id),
+    ).fetchone()
+    if not row:
+        conn.close()
+        raise RuntimeError("chapter not found")
+    prompt_id = int(row["prompt_id"] or 0) or (_lookup_stage_prompt(conn, stage) or 0)
+    if not prompt_id:
+        conn.close()
+        raise RuntimeError("prompt not found")
+    prompt = conn.execute("SELECT content FROM json_prompts WHERE id=?", (prompt_id,)).fetchone()
+    if not prompt:
+        conn.close()
+        raise RuntimeError("prompt not found")
+    system_prompt = str(prompt["content"] or "").strip()
+    user_input = _build_user_input(conn, stage, row)
+    settings = fetch_settings(conn)
+    llm = apply_prompt_llm_settings(settings.get("llm") or {}, load_prompt_llm_settings(conn, prompt_id))
+    proxy_url = str(settings.get("proxyUrl") or "")
+    conn.close()
+    request = build_llm_prompt_json_request(
+        llm=llm,
+        proxy_url=proxy_url,
+        system_prompt=system_prompt,
+        user_prompt=user_input,
+    )
+    headers = dict(request.get("headers") or {})
+    if headers.get("Authorization"):
+        headers["Authorization"] = "Bearer ***"
+    return {
+        **request,
+        "headers": headers,
+        "promptId": prompt_id,
+        "stage": stage,
+        "chapterNum": int(row["chapter_num"] or 0),
     }
 
 

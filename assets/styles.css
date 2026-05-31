@@ -523,6 +523,20 @@ h1 {
   justify-content: flex-end;
 }
 
+.illustration-page-header {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.illustration-header-actions {
+  width: 100%;
+  justify-content: flex-end;
+}
+
+.illustration-header-actions .header-novel-switch select {
+  min-width: 360px;
+}
+
 .header-inline-tools {
   display: inline-flex;
   align-items: center;
@@ -3681,7 +3695,25 @@ body.is-illustration-drag-selecting {
   min-width: 220px;
 }
 
-.illustration-images-btn {
+.stage-status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.stage-status-row .status-badge {
+  flex: 1 1 auto;
+}
+
+.stage-elapsed {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.illustration-images-btn,
+.illustration-view-btn.has-scene-timing-warning {
   position: relative;
 }
 
@@ -3701,6 +3733,21 @@ body.is-illustration-drag-selecting {
   font-weight: 700;
   line-height: 1;
   box-shadow: 0 0 0 2px #fff8ef;
+}
+
+.payload-warning-badge {
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1;
+  vertical-align: middle;
 }
 
 .payload-time-tooltip {
@@ -3724,6 +3771,12 @@ body.is-illustration-drag-selecting {
 
 .payload-content-wrap .dialog-code-block {
   margin: 0;
+}
+
+.illustration-llm-params-content {
+  max-height: min(72vh, 780px);
+  overflow: auto;
+  white-space: pre-wrap;
 }
 
 .payload-scroll-bottom-btn {

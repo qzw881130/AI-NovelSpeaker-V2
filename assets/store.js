@@ -640,6 +640,13 @@ async function fetchChapterIllustrationPayload(novelId, chapterNum, stage, kind)
   });
 }
 
+async function fetchChapterIllustrationLlmParams(novelId, chapterNum, stage) {
+  return api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/illustration/${String(stage)}/llm-params`, {
+    method: "POST",
+    body: "{}",
+  });
+}
+
 async function fetchChapterIllustrationImages(novelId, chapterNum) {
   const data = await api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/illustration/images`, {
     method: "POST",
@@ -883,6 +890,7 @@ export {
   enqueueBatchNsfwReview,
   enqueueChapterIllustration,
   fetchChapterIllustrationPayload,
+  fetchChapterIllustrationLlmParams,
   fetchChapterIllustrationImages,
   enqueueIllustrationImage,
   enqueueAllIllustrationImages,
