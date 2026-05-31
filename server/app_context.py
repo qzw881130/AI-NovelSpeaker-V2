@@ -518,6 +518,35 @@ def migrate_chapter_illustration_images_table(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE chapter_illustration_images ADD COLUMN suggested_size TEXT NOT NULL DEFAULT ''")
 
 
+def migrate_chapter_illustration_prompt_batches_table(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS chapter_illustration_prompt_batches (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            novel_id INTEGER NOT NULL,
+            chapter_id INTEGER NOT NULL,
+            task_id INTEGER NOT NULL,
+            batch_index INTEGER NOT NULL,
+            start_index INTEGER NOT NULL DEFAULT 0,
+            end_index INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'pending',
+            progress INTEGER NOT NULL DEFAULT 0,
+            input_text TEXT NOT NULL DEFAULT '',
+            llm_request_json TEXT NOT NULL DEFAULT '',
+            output_text TEXT NOT NULL DEFAULT '',
+            result_json_text TEXT NOT NULL DEFAULT '',
+            error_message TEXT NOT NULL DEFAULT '',
+            started_at DATETIME,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(task_id, batch_index),
+            FOREIGN KEY(novel_id) REFERENCES novels(id) ON DELETE CASCADE,
+            FOREIGN KEY(chapter_id) REFERENCES chapters(id) ON DELETE CASCADE,
+            FOREIGN KEY(task_id) REFERENCES chapter_illustration_tasks(id) ON DELETE CASCADE
+        )
+        """
+    )
+
+
 def db_conn() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH, timeout=12.0)
     conn.row_factory = sqlite3.Row
@@ -548,6 +577,7 @@ def db_conn() -> sqlite3.Connection:
     migrate_chapter_asr_tasks_table(conn)
     migrate_chapter_nsfw_tasks_table(conn)
     migrate_chapter_illustration_tasks_table(conn)
+    migrate_chapter_illustration_prompt_batches_table(conn)
     migrate_chapter_illustration_images_table(conn)
     migrate_workflow_io_config_column(conn)
     migrate_workflow_logs_table(conn)

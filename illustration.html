@@ -12,11 +12,11 @@
       <main class="page">
         <header class="page-header illustration-page-header">
           <div>
-            <p class="eyebrow">插画解析</p>
             <h1 id="illustrationPageTitle">生成插画</h1>
             <p id="illustrationPageMeta" class="meta">加载中...</p>
           </div>
           <div class="header-actions illustration-header-actions">
+            <span id="illustrationWorkerStatus" class="meta illustration-worker-status">Worker: -</span>
             <label class="header-novel-switch">切换小说
               <select id="illustrationNovelSelect"></select>
             </label>
@@ -37,33 +37,35 @@
 
         <section class="panel">
           <div class="panel-head">
-            <div>
+            <div class="panel-head-title-row">
               <h2>章回插画解析</h2>
-              <p id="illustrationSummary" class="meta">-</p>
+              <span id="illustrationSelectionCount" class="meta">已选 0 回</span>
+              <span id="illustrationSummary" class="meta">每回依次解析 scene、shot、prompt</span>
             </div>
-            <span id="illustrationWorkerStatus" class="chip">Worker: -</span>
-          </div>
-          <div class="illustration-batch-toolbar">
-            <label class="checkbox-inline">
-              <input id="illustrationSelectAll" type="checkbox" />
-              <span>全选</span>
-            </label>
-            <span id="illustrationSelectionCount" class="meta">已选 0 回</span>
-            <button id="batchIllustrationSceneBtn" class="ghost-btn" type="button" disabled>解析Scene</button>
-            <button id="batchIllustrationShotBtn" class="ghost-btn" type="button" disabled>解析Shot</button>
-            <button id="batchIllustrationPromptBtn" class="ghost-btn" type="button" disabled>解析Prompt</button>
-            <button id="batchIllustrationAllStagesBtn" class="ghost-btn" type="button" disabled>一键解析Scene+Shot+Prompt</button>
-            <button id="batchIllustrationImagesBtn" class="primary-btn" type="button" disabled>生成插图</button>
+            <span id="illustrationImageSummary" class="meta illustration-image-summary">插画共0个，已生成0个，待生成0个</span>
+            <div class="panel-head-actions illustration-panel-actions">
+              <button id="batchIllustrationSceneBtn" class="ghost-btn" type="button" disabled>解析Scene</button>
+              <button id="batchIllustrationShotBtn" class="ghost-btn" type="button" disabled>解析Shot</button>
+              <button id="batchIllustrationPromptBtn" class="ghost-btn" type="button" disabled>解析Prompt</button>
+              <button id="batchIllustrationAllStagesBtn" class="ghost-btn" type="button" disabled>一键解析Scene+Shot+Prompt</button>
+              <button id="batchIllustrationImagesBtn" class="primary-btn" type="button" disabled>生成插图</button>
+            </div>
           </div>
           <div class="roles-table-wrap novel-download-table-wrap illustration-table-wrap">
             <table class="roles-table novel-download-table illustration-table">
               <thead>
                 <tr>
-                  <th class="select-col">选择</th>
+                  <th class="select-col">
+                    <label class="inline-check novel-download-select-all">
+                      <input id="illustrationSelectAll" type="checkbox" />
+                      <span>选择全部</span>
+                    </label>
+                  </th>
                   <th>编号</th>
                   <th>章回标题</th>
                   <th>音频时长</th>
                   <th>字数</th>
+                  <th>插图数</th>
                   <th>Scene</th>
                   <th>Shot</th>
                   <th>Prompt</th>
@@ -109,11 +111,59 @@
       </form>
     </dialog>
 
+    <dialog id="promptBatchDialog" class="modal modal-large">
+      <form method="dialog">
+        <div class="dialog-header">
+          <h3 id="promptBatchTitle">Prompt 详情</h3>
+          <button id="promptBatchCopyBtn" class="dialog-copy-btn icon-btn" type="button" aria-label="复制内容" title="复制内容">
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+              <path d="M8 7a3 3 0 0 1 3-3h6a3 3 0 0 1 3 3v6a3 3 0 0 1-3 3h-1v1a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3v-6a3 3 0 0 1 3-3h1V7Zm2 1h3a3 3 0 0 1 3 3v3h1a1 1 0 0 0 1-1V7a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v1Zm-3 2a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-6a1 1 0 0 0-1-1H7Z" fill="currentColor" />
+            </svg>
+          </button>
+          <button class="dialog-close-btn" type="submit" aria-label="关闭">×</button>
+        </div>
+        <div class="prompt-batch-layout">
+          <aside id="promptBatchList" class="prompt-batch-list"></aside>
+          <section class="prompt-batch-main">
+            <div class="prompt-batch-toolbar">
+              <div id="promptBatchTabs" class="prompt-batch-tabs">
+                <button class="ghost-btn btn-sm prompt-batch-tab active" type="button" data-tab="llm">LLM参数</button>
+                <button class="ghost-btn btn-sm prompt-batch-tab" type="button" data-tab="input">输入</button>
+                <button class="ghost-btn btn-sm prompt-batch-tab" type="button" data-tab="output">输出</button>
+              </div>
+              <button id="retryPromptBatchBtn" class="ghost-btn btn-sm" type="button">重试本批</button>
+            </div>
+            <p id="promptBatchMeta" class="meta">-</p>
+            <pre id="promptBatchContent" class="dialog-code-block prompt-batch-content">加载中...</pre>
+          </section>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="promptOutputDialog" class="modal modal-large">
+      <form method="dialog">
+        <div class="dialog-header">
+          <h3 id="promptOutputTitle">Prompt 输出</h3>
+          <button id="promptOutputCopyBtn" class="dialog-copy-btn icon-btn" type="button" aria-label="复制内容" title="复制内容">
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+              <path d="M8 7a3 3 0 0 1 3-3h6a3 3 0 0 1 3 3v6a3 3 0 0 1-3 3h-1v1a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3v-6a3 3 0 0 1 3-3h1V7Zm2 1h3a3 3 0 0 1 3 3v3h1a1 1 0 0 0 1-1V7a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v1Zm-3 2a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-6a1 1 0 0 0-1-1H7Z" fill="currentColor" />
+            </svg>
+          </button>
+          <button class="dialog-close-btn" type="submit" aria-label="关闭">×</button>
+        </div>
+        <textarea id="promptOutputEditor" class="dialog-code-block prompt-output-editor" spellcheck="false">加载中...</textarea>
+        <div class="dialog-actions">
+          <button id="savePromptOutputBtn" class="primary-btn" type="button">保存</button>
+        </div>
+      </form>
+    </dialog>
+
     <dialog id="illustrationImagesDialog" class="modal modal-large illustration-images-modal">
       <form method="dialog">
         <div class="dialog-header">
           <h3 id="illustrationImagesTitle">插图生成</h3>
           <div class="illustration-images-actions">
+            <span id="illustrationImagesQueueSummary" class="illustration-images-queue-summary">已生成: 0　待生成：0</span>
             <label class="illustration-refresh-control"><span>自动刷新</span>
               <select id="illustrationImagesRefreshInterval">
                 <option value="0">不刷新</option>

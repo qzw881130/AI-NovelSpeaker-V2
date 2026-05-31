@@ -647,6 +647,27 @@ async function fetchChapterIllustrationLlmParams(novelId, chapterNum, stage) {
   });
 }
 
+async function fetchChapterIllustrationPromptBatches(novelId, chapterNum) {
+  return api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/illustration/prompt/batches`, {
+    method: "POST",
+    body: "{}",
+  });
+}
+
+async function retryChapterIllustrationPromptBatch(novelId, chapterNum, batchIndex) {
+  return api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/illustration/prompt/batches/${Number(batchIndex)}/retry`, {
+    method: "POST",
+    body: "{}",
+  });
+}
+
+async function saveChapterIllustrationPromptOutput(novelId, chapterNum, jsonText) {
+  return api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/illustration/prompt/output/save`, {
+    method: "POST",
+    body: JSON.stringify({ jsonText }),
+  });
+}
+
 async function fetchChapterIllustrationImages(novelId, chapterNum) {
   const data = await api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/illustration/images`, {
     method: "POST",
@@ -891,9 +912,12 @@ export {
   enqueueChapterIllustration,
   fetchChapterIllustrationPayload,
   fetchChapterIllustrationLlmParams,
+  fetchChapterIllustrationPromptBatches,
+  saveChapterIllustrationPromptOutput,
   fetchChapterIllustrationImages,
   enqueueIllustrationImage,
   enqueueAllIllustrationImages,
+  retryChapterIllustrationPromptBatch,
   fetchChapterAsrFile,
   createChapter,
   updateChapter,

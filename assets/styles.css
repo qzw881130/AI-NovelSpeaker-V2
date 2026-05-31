@@ -524,17 +524,19 @@ h1 {
 }
 
 .illustration-page-header {
-  flex-direction: column;
-  align-items: stretch;
+  align-items: end;
 }
 
 .illustration-header-actions {
-  width: 100%;
   justify-content: flex-end;
 }
 
+.illustration-worker-status {
+  white-space: nowrap;
+}
+
 .illustration-header-actions .header-novel-switch select {
-  min-width: 360px;
+  min-width: 260px;
 }
 
 .header-inline-tools {
@@ -3667,6 +3669,49 @@ body.is-novel-download-drag-selecting .novel-download-table {
   margin: 12px 0;
 }
 
+.illustration-panel-actions {
+  gap: 8px;
+}
+
+.illustration-panel-actions .meta {
+  white-space: nowrap;
+}
+
+.illustration-image-summary {
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.illustration-stat-number {
+  font-weight: 900;
+  padding: 0 2px;
+}
+
+.illustration-stat-total {
+  color: #7c4a14;
+}
+
+.illustration-stat-generated {
+  color: #167a3a;
+}
+
+.illustration-stat-queued {
+  color: #b25a08;
+}
+
+.illustration-stat-not-queued {
+  color: #8a4fb8;
+}
+
+.illustration-panel-actions .ghost-btn,
+.illustration-panel-actions .primary-btn {
+  padding: 6px 10px;
+}
+
+.illustration-page-header + .panel {
+  margin-top: 10px;
+}
+
 .select-col {
   width: 56px;
   text-align: center;
@@ -3682,6 +3727,19 @@ body.is-novel-download-drag-selecting .novel-download-table {
 
 .illustration-select-row.is-selected td {
   background: rgba(164, 74, 28, 0.08);
+}
+
+.illustration-select-row.is-running td {
+  background: rgba(220, 143, 42, 0.16);
+  box-shadow: inset 0 1px rgba(220, 143, 42, 0.18), inset 0 -1px rgba(220, 143, 42, 0.18);
+}
+
+.illustration-select-row.is-running td:first-child {
+  border-left: 4px solid var(--accent);
+}
+
+.illustration-select-row.is-selected.is-running td {
+  background: rgba(220, 143, 42, 0.22);
 }
 
 body.is-illustration-drag-selecting {
@@ -3779,6 +3837,83 @@ body.is-illustration-drag-selecting {
   white-space: pre-wrap;
 }
 
+.prompt-batch-layout {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 14px;
+  min-height: 620px;
+}
+
+.prompt-batch-list {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 10px;
+  overflow: auto;
+  background: rgba(255, 248, 239, 0.52);
+}
+
+.prompt-batch-item {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  margin-bottom: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fffaf2;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.prompt-batch-item.active {
+  border-color: var(--accent);
+  background: rgba(164, 74, 28, 0.1);
+}
+
+.prompt-batch-item span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.prompt-batch-main {
+  min-width: 0;
+}
+
+.prompt-batch-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.prompt-batch-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.prompt-batch-tab.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(164, 74, 28, 0.08);
+}
+
+.prompt-batch-content {
+  max-height: min(68vh, 720px);
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.prompt-output-editor {
+  width: 100%;
+  min-height: min(70vh, 720px);
+  resize: vertical;
+  white-space: pre;
+}
+
 .payload-scroll-bottom-btn {
   position: absolute;
   right: 18px;
@@ -3827,6 +3962,12 @@ body.is-illustration-drag-selecting {
   justify-content: flex-end;
   gap: 10px;
   flex: 0 0 auto;
+}
+
+.illustration-images-queue-summary {
+  color: var(--text);
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .illustration-refresh-control {

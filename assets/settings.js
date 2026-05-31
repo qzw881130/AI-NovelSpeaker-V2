@@ -333,6 +333,7 @@ function syncOllamaFieldVisibility() {
   document.getElementById("llmKeepAliveWrap")?.classList.toggle("hidden", !isOllama);
   document.getElementById("llmUnloadAfterCallWrap")?.classList.toggle("hidden", !(isOllama || isLocalLlama));
   document.getElementById("llmThinkWrap")?.classList.toggle("hidden", !supportsThink);
+  document.getElementById("clearLocalLlamaContextBtn")?.classList.toggle("hidden", !isLocalLlama);
   const unloadLabel = document.getElementById("llmUnloadAfterCallLabel");
   if (unloadLabel) {
     unloadLabel.textContent = isLocalLlama ? "调用后清空上下文" : "调用后卸载模型，清空上下文";
@@ -462,6 +463,43 @@ async function testLlm() {
     setTestResult("testLlmResult", "fail", `失败 · ${text}`);
     localizeDocumentText(document);
     toast(t("error.operationFailed", { msg: text }));
+  }
+}
+
+async function clearLocalLlamaContextNow() {
+  const payload = readSettingsForm();
+  if (payload.llm.provider !== "local_llama") {
+    toast("仅本地LLama支持清空上下文");
+    return;
+  }
+  const btn = document.getElementById("clearLocalLlamaContextBtn");
+  const originalText = btn?.textContent || "清空上下文";
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "清空中...";
+  }
+  try {
+    const res = await fetch("/api/settings/local-llama/clear-context", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || `HTTP ${res.status}`);
+    }
+    setTestResult("testLlmResult", "ok", data.message || "上下文已清空");
+    toast(data.message || "上下文已清空");
+  } catch (err) {
+    const text = friendlyErrorText(err.message, "llm");
+    setTestResult("testLlmResult", "fail", `失败 · ${text}`);
+    toast(t("error.operationFailed", { msg: text }));
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = originalText;
+    }
+    localizeDocumentText(document);
   }
 }
 
@@ -635,6 +673,9 @@ function bindEvents() {
 
   document.getElementById("testLlmBtn").addEventListener("click", () => {
     testLlm();
+  });
+  document.getElementById("clearLocalLlamaContextBtn").addEventListener("click", () => {
+    clearLocalLlamaContextNow();
   });
 }
 

@@ -4,6 +4,7 @@ import {
   enqueueIllustrationImage,
   fetchChapterIllustrationImages,
   fetchChapterIllustrationLlmParams,
+  fetchChapterIllustrationPromptBatches,
   fetchChapterIllustrationPayload,
   fetchIllustrationImageWorkerStatus,
   fetchIllustrationLlmWorkerStatus,
@@ -13,6 +14,8 @@ import {
   getData,
   restartIllustrationImageWorker,
   restartIllustrationLlmWorker,
+  retryChapterIllustrationPromptBatch,
+  saveChapterIllustrationPromptOutput,
   setActiveNovelId,
 } from "./store.js";
 import { renderNav, toast } from "./ui.js";
@@ -25,6 +28,12 @@ let elapsedRefreshTimer = 0;
 let imagesRefreshTimer = 0;
 let activeImagesChapterNum = 0;
 let activePayloadKind = "";
+let activePromptBatchesChapterNum = 0;
+let activePromptBatches = [];
+let activePromptBatchIndex = 0;
+let activePromptBatchTab = "llm";
+let promptBatchesRefreshTimer = 0;
+let activePromptOutputChapterNum = 0;
 let currentPreviewItems = [];
 let currentPreviewIndex = -1;
 const selectedChapterNums = new Set();
@@ -144,6 +153,7 @@ function updateLiveElapsedLabels() {
     if (!startedAt) return;
     el.textContent = `本次执行耗时 {${formatElapsedSeconds((Date.now() - startedAt.getTime()) / 1000)}}`;
   });
+  updatePromptBatchLiveElapsed();
 }
 
 function renderNovelSelect() {
@@ -156,19 +166,33 @@ function setHeader() {
   const titleEl = document.getElementById("illustrationPageTitle");
   const metaEl = document.getElementById("illustrationPageMeta");
   const summaryEl = document.getElementById("illustrationSummary");
+  const imageSummaryEl = document.getElementById("illustrationImageSummary");
   const chaptersLink = document.getElementById("illustrationChaptersLink");
   if (!activeNovel) {
     titleEl.textContent = "生成插画";
     metaEl.textContent = "未找到小说";
     summaryEl.textContent = "-";
+    if (imageSummaryEl) imageSummaryEl.textContent = "插画共0个，已生成0个，待生成0个";
     return;
   }
   const completed = chapterItems.reduce((sum, item) => {
     return sum + ["scene", "shot", "prompt"].filter((stage) => item.stages?.[stage]?.status === "completed").length;
   }, 0);
+  const illustrationTotal = chapterItems.reduce((sum, item) => sum + Number(item.illustrationCount || 0), 0);
+  const imageGenerated = chapterItems.reduce((sum, item) => sum + Number(item.images?.generated || 0), 0);
+  const imageQueued = chapterItems.reduce((sum, item) => sum + Number(item.images?.queued || 0), 0);
+  const imageNotQueued = chapterItems.reduce((sum, item) => sum + Number(item.images?.unqueued || 0), 0);
   titleEl.textContent = `${activeNovel.name} - 生成插画`;
   metaEl.textContent = `共 ${chapterItems.length} 回 · 已完成 ${completed}/${chapterItems.length * 3} 项`;
-  summaryEl.textContent = `每回依次解析 scene.json、shot.json、prompt.json`;
+  summaryEl.textContent = `每回依次解析 scene、shot、prompt`;
+  if (imageSummaryEl) {
+    imageSummaryEl.innerHTML = [
+      `插画共<span class="illustration-stat-number illustration-stat-total">${illustrationTotal}</span>个`,
+      `已生成<span class="illustration-stat-number illustration-stat-generated">${imageGenerated}</span>个`,
+      `待生成<span class="illustration-stat-number illustration-stat-queued">${imageQueued}</span>个`,
+      `未入队列<span class="illustration-stat-number illustration-stat-not-queued">${imageNotQueued}</span>个`,
+    ].join("，");
+  }
   chaptersLink.href = `./chapters.html?novelId=${encodeURIComponent(activeNovel.id)}`;
 }
 
@@ -178,6 +202,19 @@ function renderStageCell(item, stage) {
   const progress = Number(data.progress || 0);
   const disabled = ["pending", "running", "processing"].includes(String(data.status || ""));
   const sceneWarning = stage === "scene" ? sceneTimingWarningFromChapter(item) : null;
+  const actionButtons = stage === "prompt"
+    ? `
+        <button class="ghost-btn btn-sm illustration-run-btn" type="button" data-stage="${stage}" data-chapter-num="${chapterNum}" ${disabled ? "disabled" : ""}>解析插画${STAGE_LABELS[stage].toLowerCase()}</button>
+        <button class="ghost-btn btn-sm illustration-prompt-detail-btn" type="button" data-chapter-num="${chapterNum}">详情</button>
+        <button class="ghost-btn btn-sm illustration-prompt-output-btn" type="button" data-chapter-num="${chapterNum}">输出</button>
+        ${data.status === "completed" ? renderImagesButton(item, chapterNum) : ""}
+      `
+    : `
+        <button class="ghost-btn btn-sm illustration-run-btn" type="button" data-stage="${stage}" data-chapter-num="${chapterNum}" ${disabled ? "disabled" : ""}>解析插画${STAGE_LABELS[stage].toLowerCase()}</button>
+        <button class="ghost-btn btn-sm illustration-llm-params-btn" type="button" data-stage="${stage}" data-chapter-num="${chapterNum}">LLM参数</button>
+        <button class="ghost-btn btn-sm illustration-view-btn" type="button" data-kind="input" data-stage="${stage}" data-chapter-num="${chapterNum}">输入</button>
+        <button class="ghost-btn btn-sm illustration-view-btn ${sceneWarning ? "has-scene-timing-warning" : ""}" type="button" data-kind="output" data-stage="${stage}" data-chapter-num="${chapterNum}" ${sceneWarning ? `title="${escapeHtml(sceneWarning)}"` : ""}>输出${sceneWarning ? '<span class="illustration-alert-dot" aria-hidden="true">!</span>' : ""}</button>
+      `;
   return `
     <div class="stage-cell">
       <div class="stage-status-row">
@@ -185,11 +222,7 @@ function renderStageCell(item, stage) {
         ${stageElapsedLabel(data) ? `<span class="stage-elapsed" ${stageElapsedAttrs(data)} title="${escapeHtml(data.startedAt || "")}">${escapeHtml(stageElapsedLabel(data))}</span>` : ""}
       </div>
       <div class="table-actions-inline">
-        <button class="ghost-btn btn-sm illustration-run-btn" type="button" data-stage="${stage}" data-chapter-num="${chapterNum}" ${disabled ? "disabled" : ""}>解析插画${STAGE_LABELS[stage].toLowerCase()}</button>
-        <button class="ghost-btn btn-sm illustration-llm-params-btn" type="button" data-stage="${stage}" data-chapter-num="${chapterNum}">LLM参数</button>
-        <button class="ghost-btn btn-sm illustration-view-btn" type="button" data-kind="input" data-stage="${stage}" data-chapter-num="${chapterNum}">输入</button>
-        <button class="ghost-btn btn-sm illustration-view-btn ${sceneWarning ? "has-scene-timing-warning" : ""}" type="button" data-kind="output" data-stage="${stage}" data-chapter-num="${chapterNum}" ${sceneWarning ? `title="${escapeHtml(sceneWarning)}"` : ""}>输出${sceneWarning ? '<span class="illustration-alert-dot" aria-hidden="true">!</span>' : ""}</button>
-        ${stage === "prompt" && data.status === "completed" ? renderImagesButton(item, chapterNum) : ""}
+        ${actionButtons}
       </div>
     </div>
   `;
@@ -250,15 +283,23 @@ function renderImagesButton(item, chapterNum) {
   `;
 }
 
+function isBusyStatus(status) {
+  return ["running", "processing"].includes(String(status || ""));
+}
+
+function confirmSelectedChapters(chapters) {
+  return window.confirm(`当前选择${chapters.length}个，是否确定？`);
+}
+
 function renderTable() {
   const tbody = document.getElementById("illustrationTableBody");
   if (!activeNovel) {
-    tbody.innerHTML = '<tr><td colspan="8" class="empty-text">未找到小说</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" class="empty-text">未找到小说</td></tr>';
     updateSelectionUi();
     return;
   }
   if (!chapterItems.length) {
-    tbody.innerHTML = '<tr><td colspan="8" class="empty-text">暂无章回数据</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" class="empty-text">暂无章回数据</td></tr>';
     updateSelectionUi();
     return;
   }
@@ -266,18 +307,22 @@ function renderTable() {
   Array.from(selectedChapterNums).forEach((chapterNum) => {
     if (!available.has(chapterNum)) selectedChapterNums.delete(chapterNum);
   });
-  tbody.innerHTML = chapterItems.map((item) => `
-    <tr class="illustration-select-row ${selectedChapterNums.has(Number(item.chapterNum || 0)) ? "is-selected" : ""}" data-chapter-num="${Number(item.chapterNum || 0)}">
+  tbody.innerHTML = chapterItems.map((item) => {
+    const running = ["scene", "shot", "prompt"].some((stage) => isBusyStatus(item.stages?.[stage]?.status));
+    return `
+    <tr class="illustration-select-row ${selectedChapterNums.has(Number(item.chapterNum || 0)) ? "is-selected" : ""} ${running ? "is-running" : ""}" data-chapter-num="${Number(item.chapterNum || 0)}">
       <td class="select-col"><input class="illustration-row-select" type="checkbox" data-chapter-num="${Number(item.chapterNum || 0)}" ${selectedChapterNums.has(Number(item.chapterNum || 0)) ? "checked" : ""} /></td>
       <td>第 ${String(item.chapterNum || 0).padStart(3, "0")} 回</td>
       <td>${escapeHtml(item.title || "")}</td>
       <td>${formatTimeSeconds(item.audioDurationSeconds || 0)}</td>
       <td>${Number(item.wordCount || 0).toLocaleString()}</td>
+      <td>${Number(item.illustrationCount || 0) || "-"}</td>
       <td>${renderStageCell(item, "scene")}</td>
       <td>${renderStageCell(item, "shot")}</td>
       <td>${renderStageCell(item, "prompt")}</td>
     </tr>
-  `).join("");
+  `;
+  }).join("");
   updateSelectionUi();
 }
 
@@ -315,6 +360,7 @@ async function enqueueSelectedStage(stage) {
     toast("请先选择章回");
     return;
   }
+  if (!confirmSelectedChapters(chapters)) return;
   let queued = 0;
   let skipped = 0;
   for (const chapterNum of chapters) {
@@ -335,6 +381,7 @@ async function enqueueSelectedImages() {
     toast("请先选择章回");
     return;
   }
+  if (!confirmSelectedChapters(chapters)) return;
   let queued = 0;
   let skipped = 0;
   for (const chapterNum of chapters) {
@@ -356,6 +403,7 @@ async function enqueueSelectedAllStages() {
     toast("请先选择章回");
     return;
   }
+  if (!confirmSelectedChapters(chapters)) return;
   let queued = 0;
   let skipped = 0;
   for (const chapterNum of chapters) {
@@ -547,6 +595,38 @@ async function openPayload(chapterNum, stage, kind) {
   }
 }
 
+async function openPromptOutput(chapterNum) {
+  activePromptOutputChapterNum = Number(chapterNum || 0);
+  const dialog = document.getElementById("promptOutputDialog");
+  const title = document.getElementById("promptOutputTitle");
+  const editor = document.getElementById("promptOutputEditor");
+  title.textContent = `Prompt 输出 · 第${String(chapterNum).padStart(3, "0")}回`;
+  editor.value = "加载中...";
+  dialog.showModal();
+  try {
+    const payload = await fetchChapterIllustrationPayload(activeNovel.id, chapterNum, "prompt", "output");
+    const raw = String(payload.resultJsonText || payload.text || "");
+    editor.value = raw ? formatMaybeJson(raw) : "";
+  } catch (err) {
+    editor.value = `加载失败：${err.message}`;
+  }
+}
+
+async function savePromptOutput() {
+  if (!activePromptOutputChapterNum) return;
+  const editor = document.getElementById("promptOutputEditor");
+  const text = String(editor.value || "");
+  try {
+    JSON.parse(text);
+  } catch (err) {
+    toast(`JSON 格式错误：${err.message}`);
+    return;
+  }
+  await saveChapterIllustrationPromptOutput(activeNovel.id, activePromptOutputChapterNum, text);
+  toast("Prompt 输出已保存，插图列表已同步");
+  await refreshPage();
+}
+
 async function openLlmParams(chapterNum, stage) {
   const dialog = document.getElementById("illustrationLlmParamsDialog");
   const title = document.getElementById("illustrationLlmParamsTitle");
@@ -562,8 +642,93 @@ async function openLlmParams(chapterNum, stage) {
   }
 }
 
+function promptBatchElapsed(batch) {
+  const startedAt = parseDateTime(batch?.startedAt);
+  if (!startedAt) return "";
+  const status = String(batch?.status || "");
+  const updatedAt = ["pending", "running", "processing"].includes(status) ? new Date() : parseDateTime(batch?.updatedAt) || new Date();
+  return formatElapsedSeconds((updatedAt.getTime() - startedAt.getTime()) / 1000);
+}
+
+function promptBatchMetaText(batch) {
+  if (!batch) return "-";
+  return `状态 ${statusLabel(batch.status)}${batch.progress ? ` ${batch.progress}%` : ""} · 范围 #${batch.startIndex}-${batch.endIndex}${promptBatchElapsed(batch) ? ` · 耗时 ${promptBatchElapsed(batch)}` : ""}${batch.errorMessage ? ` · ${batch.errorMessage}` : ""}`;
+}
+
+function updatePromptBatchLiveElapsed() {
+  if (!document.getElementById("promptBatchDialog")?.open) return;
+  const batch = activePromptBatches[activePromptBatchIndex];
+  if (!batch || !["pending", "running", "processing"].includes(String(batch.status || ""))) return;
+  const meta = document.getElementById("promptBatchMeta");
+  if (meta) meta.textContent = promptBatchMetaText(batch);
+}
+
+function promptBatchContent(batch) {
+  if (!batch) return "暂无批次";
+  if (activePromptBatchTab === "input") return batch.inputText || "暂无输入";
+  if (activePromptBatchTab === "output") return batch.resultJsonText || batch.outputText || batch.errorMessage || "暂无输出";
+  return batch.llmParamsText || "暂无 LLM 参数";
+}
+
+function renderPromptBatchModal() {
+  const list = document.getElementById("promptBatchList");
+  const content = document.getElementById("promptBatchContent");
+  const meta = document.getElementById("promptBatchMeta");
+  const retryBtn = document.getElementById("retryPromptBatchBtn");
+  list.innerHTML = activePromptBatches.length ? activePromptBatches.map((batch, idx) => `
+    <button class="prompt-batch-item ${idx === activePromptBatchIndex ? "active" : ""}" type="button" data-batch-index="${idx}">
+      <strong>第 ${batch.batchIndex} 批</strong>
+      <span>#${batch.startIndex}-${batch.endIndex} · ${statusLabel(batch.status)}${batch.progress ? ` ${batch.progress}%` : ""}</span>
+    </button>
+  `).join("") : '<p class="empty-text">暂无批次数据，开始解析 Prompt 后生成。</p>';
+  const batch = activePromptBatches[activePromptBatchIndex] || null;
+  meta.textContent = promptBatchMetaText(batch);
+  retryBtn.disabled = !batch || ["pending", "running", "processing"].includes(String(batch.status || ""));
+  content.textContent = promptBatchContent(batch);
+  document.querySelectorAll(".prompt-batch-tab").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.tab === activePromptBatchTab);
+  });
+}
+
+async function refreshPromptBatchesModal() {
+  if (!activePromptBatchesChapterNum) return;
+  if (!document.getElementById("promptBatchDialog")?.open) return;
+  const data = await fetchChapterIllustrationPromptBatches(activeNovel.id, activePromptBatchesChapterNum);
+  activePromptBatches = data.batches || [];
+  if (activePromptBatchIndex >= activePromptBatches.length) activePromptBatchIndex = Math.max(0, activePromptBatches.length - 1);
+  renderPromptBatchModal();
+}
+
+function stopPromptBatchesAutoRefresh() {
+  if (promptBatchesRefreshTimer) {
+    window.clearInterval(promptBatchesRefreshTimer);
+    promptBatchesRefreshTimer = 0;
+  }
+}
+
+function startPromptBatchesAutoRefresh() {
+  stopPromptBatchesAutoRefresh();
+  promptBatchesRefreshTimer = window.setInterval(() => refreshPromptBatchesModal().catch(() => {}), 3000);
+}
+
+async function openPromptBatches(chapterNum) {
+  activePromptBatchesChapterNum = Number(chapterNum || 0);
+  activePromptBatchIndex = 0;
+  activePromptBatchTab = "llm";
+  document.getElementById("promptBatchTitle").textContent = `Prompt 详情 · 第${String(chapterNum).padStart(3, "0")}回`;
+  document.getElementById("promptBatchContent").textContent = "加载中...";
+  document.getElementById("promptBatchDialog").showModal();
+  await refreshPromptBatchesModal();
+  startPromptBatchesAutoRefresh();
+}
+
 function renderImages(items) {
   currentPreviewItems = items.filter((item) => Boolean(item.imageUrl));
+  const summary = document.getElementById("illustrationImagesQueueSummary");
+  if (summary) {
+    const generated = currentPreviewItems.length;
+    summary.textContent = `已生成: ${generated}　待生成：${Math.max(0, items.length - generated)}`;
+  }
   const root = document.getElementById("illustrationImagesList");
   if (!items.length) {
     root.innerHTML = '<p class="empty-text">暂无 prompt.json 插图数据</p>';
@@ -708,9 +873,22 @@ async function openImagesModal(chapterNum) {
   const durationText = duration > 0 ? ` · 音频时长 ${formatTimeSeconds(duration)}` : "";
   document.getElementById("illustrationImagesTitle").textContent = `插图生成 · 第${String(activeImagesChapterNum).padStart(3, "0")}回${durationText}`;
   document.getElementById("illustrationImagesList").innerHTML = '<p class="empty-text">加载中...</p>';
-  document.getElementById("illustrationImagesDialog").showModal();
+  const dialog = document.getElementById("illustrationImagesDialog");
+  if (!dialog.open) dialog.showModal();
   applyImagesAutoRefresh();
   await refreshImagesModal();
+}
+
+async function switchImagesChapter(delta) {
+  if (!activeImagesChapterNum) return;
+  const nums = chapterItems.map((item) => Number(item.chapterNum || 0)).filter(Boolean);
+  const currentIndex = nums.indexOf(activeImagesChapterNum);
+  const nextNum = nums[currentIndex + delta];
+  if (!nextNum) {
+    toast(delta < 0 ? "已经是第一回" : "已经是最后一回");
+    return;
+  }
+  await openImagesModal(nextNum);
 }
 
 function bindEvents() {
@@ -762,6 +940,16 @@ function bindEvents() {
       await openLlmParams(Number(llmParamsBtn.dataset.chapterNum || 0), String(llmParamsBtn.dataset.stage || ""));
       return;
     }
+    const promptDetailBtn = event.target.closest(".illustration-prompt-detail-btn");
+    if (promptDetailBtn) {
+      await openPromptBatches(Number(promptDetailBtn.dataset.chapterNum || 0));
+      return;
+    }
+    const promptOutputBtn = event.target.closest(".illustration-prompt-output-btn");
+    if (promptOutputBtn) {
+      await openPromptOutput(Number(promptOutputBtn.dataset.chapterNum || 0));
+      return;
+    }
     const viewBtn = event.target.closest(".illustration-view-btn");
     if (viewBtn) {
       await openPayload(Number(viewBtn.dataset.chapterNum || 0), String(viewBtn.dataset.stage || ""), String(viewBtn.dataset.kind || ""));
@@ -802,6 +990,50 @@ function bindEvents() {
       toast(`复制失败：${err.message}`);
     });
   });
+  document.getElementById("promptBatchCopyBtn").addEventListener("click", () => {
+    copyText(document.getElementById("promptBatchContent")?.textContent || "").catch((err) => {
+      toast(`复制失败：${err.message}`);
+    });
+  });
+  document.getElementById("promptOutputCopyBtn").addEventListener("click", () => {
+    copyText(document.getElementById("promptOutputEditor")?.value || "").catch((err) => {
+      toast(`复制失败：${err.message}`);
+    });
+  });
+  document.getElementById("savePromptOutputBtn").addEventListener("click", async () => {
+    try {
+      await savePromptOutput();
+    } catch (err) {
+      toast(`保存失败：${err.message}`);
+    }
+  });
+  document.getElementById("promptOutputDialog").addEventListener("close", () => {
+    activePromptOutputChapterNum = 0;
+  });
+  document.getElementById("promptBatchList").addEventListener("click", (event) => {
+    const btn = event.target.closest(".prompt-batch-item");
+    if (!btn) return;
+    activePromptBatchIndex = Number(btn.dataset.batchIndex || 0);
+    renderPromptBatchModal();
+  });
+  document.getElementById("promptBatchTabs").addEventListener("click", (event) => {
+    const btn = event.target.closest(".prompt-batch-tab");
+    if (!btn) return;
+    activePromptBatchTab = String(btn.dataset.tab || "llm");
+    renderPromptBatchModal();
+  });
+  document.getElementById("retryPromptBatchBtn").addEventListener("click", async () => {
+    const batch = activePromptBatches[activePromptBatchIndex];
+    if (!batch) return;
+    await retryChapterIllustrationPromptBatch(activeNovel.id, activePromptBatchesChapterNum, batch.batchIndex);
+    toast(`第 ${batch.batchIndex} 批已重新入队`);
+    await refreshPromptBatchesModal();
+    await refreshPage();
+  });
+  document.getElementById("promptBatchDialog").addEventListener("close", () => {
+    activePromptBatchesChapterNum = 0;
+    stopPromptBatchesAutoRefresh();
+  });
   const payloadContent = document.getElementById("illustrationPayloadContent");
   payloadContent.addEventListener("mouseup", () => window.setTimeout(showPayloadTimeTooltip, 0));
   payloadContent.addEventListener("keyup", showPayloadTimeTooltip);
@@ -839,16 +1071,30 @@ function bindEvents() {
       openPreviewAt(index >= 0 ? index : 0);
     }
   });
-  document.addEventListener("keydown", (event) => {
-    const dialog = document.getElementById("illustrationImagePreviewDialog");
-    if (!dialog?.open || !["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+  document.addEventListener("keydown", async (event) => {
+    if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+    if (event.target.closest("input,select,textarea")) return;
+    const previewDialog = document.getElementById("illustrationImagePreviewDialog");
+    if (previewDialog?.open) {
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        switchPreview(-1);
+      }
+      if (event.key === "ArrowRight") {
+        event.preventDefault();
+        switchPreview(1);
+      }
+      return;
+    }
+    const imagesDialog = document.getElementById("illustrationImagesDialog");
+    if (!imagesDialog?.open) return;
     if (event.key === "ArrowLeft") {
       event.preventDefault();
-      switchPreview(-1);
+      await switchImagesChapter(-1);
     }
     if (event.key === "ArrowRight") {
       event.preventDefault();
-      switchPreview(1);
+      await switchImagesChapter(1);
     }
   });
   document.getElementById("illustrationPreviewPrevBtn").addEventListener("click", () => switchPreview(-1));
@@ -870,6 +1116,7 @@ async function init() {
   window.addEventListener("beforeunload", () => {
     stopAutoRefresh();
     stopElapsedRefresh();
+    stopPromptBatchesAutoRefresh();
     stopImagesAutoRefresh();
   });
 }

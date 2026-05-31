@@ -53,6 +53,9 @@ from .illustration import (
     get_illustration_llm_request_preview,
     list_illustration_images,
     list_illustration_chapters,
+    list_prompt_batches,
+    retry_prompt_batch,
+    save_illustration_prompt_output,
     sync_prompt_images,
 )
 
@@ -1608,6 +1611,29 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"status": "ok", "message": msg})
             return
 
+        if route == "/api/settings/local-llama/clear-context":
+            body = self.read_json()
+            llm = body.get("llm") or {}
+            provider = str(llm.get("provider") or "").strip()
+            base_url = str(llm.get("baseUrl") or "").strip()
+            if provider != "local_llama":
+                self.send_json({"error": "仅本地LLama支持清空上下文"}, 400)
+                return
+            if not base_url:
+                self.send_json({"error": "LLM baseUrl is empty"}, 400)
+                return
+            try:
+                clear_local_llama_context(
+                    base_url=base_url,
+                    proxy_url=str(body.get("proxyUrl") or "").strip(),
+                    timeout=10.0,
+                )
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, 409)
+                return
+            self.send_json({"status": "ok", "message": "上下文已清空"})
+            return
+
         m_copyright_audio_upload = re.match(
             r"^/api/settings/copyright-audio/(intro|outro)$", route
         )
@@ -2597,6 +2623,72 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json(get_illustration_llm_request_preview(novel_id, int(chapter_row["id"]), stage))
             except Exception as exc:
                 self.send_json({"error": str(exc)}, 400)
+            return
+
+        m_prompt_batches = re.match(
+            r"^/api/novels/(\d+)/chapters/(\d+)/illustration/prompt/batches$", route
+        )
+        if m_prompt_batches:
+            novel_id = int(m_prompt_batches.group(1))
+            chapter_num = int(m_prompt_batches.group(2))
+            conn = db_conn()
+            chapter_row = conn.execute(
+                "SELECT id FROM chapters WHERE novel_id=? AND chapter_num=?",
+                (novel_id, chapter_num),
+            ).fetchone()
+            conn.close()
+            if not chapter_row:
+                self.send_json({"error": "chapter not found"}, 404)
+                return
+            self.send_json(list_prompt_batches(novel_id, int(chapter_row["id"])))
+            return
+
+        m_prompt_batch_retry = re.match(
+            r"^/api/novels/(\d+)/chapters/(\d+)/illustration/prompt/batches/(\d+)/retry$", route
+        )
+        if m_prompt_batch_retry:
+            ensure_illustration_worker()
+            novel_id = int(m_prompt_batch_retry.group(1))
+            chapter_num = int(m_prompt_batch_retry.group(2))
+            batch_index = int(m_prompt_batch_retry.group(3))
+            conn = db_conn()
+            chapter_row = conn.execute(
+                "SELECT id FROM chapters WHERE novel_id=? AND chapter_num=?",
+                (novel_id, chapter_num),
+            ).fetchone()
+            conn.close()
+            if not chapter_row:
+                self.send_json({"error": "chapter not found"}, 404)
+                return
+            ok, msg = retry_prompt_batch(novel_id, int(chapter_row["id"]), batch_index)
+            if not ok:
+                self.send_json({"error": msg}, 409)
+                return
+            self.send_json({"status": "queued"})
+            return
+
+        m_prompt_output_save = re.match(
+            r"^/api/novels/(\d+)/chapters/(\d+)/illustration/prompt/output/save$", route
+        )
+        if m_prompt_output_save:
+            novel_id = int(m_prompt_output_save.group(1))
+            chapter_num = int(m_prompt_output_save.group(2))
+            conn = db_conn()
+            chapter_row = conn.execute(
+                "SELECT id FROM chapters WHERE novel_id=? AND chapter_num=?",
+                (novel_id, chapter_num),
+            ).fetchone()
+            conn.close()
+            if not chapter_row:
+                self.send_json({"error": "chapter not found"}, 404)
+                return
+            payload = self.read_json()
+            try:
+                data = save_illustration_prompt_output(novel_id, int(chapter_row["id"]), str(payload.get("jsonText") or ""))
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, 400)
+                return
+            self.send_json({"status": "saved", **data})
             return
 
         m_illustration_images = re.match(
