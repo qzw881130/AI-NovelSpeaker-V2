@@ -4,6 +4,7 @@ import json
 import random
 import shutil
 import subprocess
+import threading
 import time
 from pathlib import Path
 
@@ -18,6 +19,7 @@ from .services import (
     fetch_settings,
     load_prompt_llm_settings,
     read_chapter_text,
+    touch_illustration_image_worker_heartbeat,
     workflow_json_to_prompt_json,
 )
 
@@ -29,6 +31,7 @@ STAGE_PROMPT_CATEGORY = {
     "shot": "illustration_shot",
     "prompt": "illustration_prompt",
 }
+ILLUSTRATION_IMAGE_QUEUE_LOCK = threading.Lock()
 
 
 def _status_value(value: str | None) -> str:
@@ -482,6 +485,7 @@ def list_illustration_chapters(novel_id: int) -> list[dict]:
         image_queued = int(r["image_queued"] or 0)
         image_unqueued = int(r["image_unqueued"] or 0)
         image_expected = max(prompt_count, image_total)
+        image_missing_records = max(0, image_expected - image_total)
         scene_result = str(r["scene_result_json"] or "") if _status_value(r["scene_status"]) == "completed" else ""
         scene_count = _scene_grid_count(scene_result)
         shot_result = str(r["shot_result_json"] or "") if _status_value(r["shot_status"]) == "completed" else ""
@@ -497,7 +501,7 @@ def list_illustration_chapters(novel_id: int) -> list[dict]:
                 "expected": image_expected,
                 "generated": image_generated,
                 "queued": image_queued,
-                "unqueued": image_unqueued,
+                "unqueued": image_unqueued + image_missing_records,
                 "missing": max(0, image_expected - image_generated),
             },
             "sceneTimingWarning": _scene_timing_warning(scene_result, float(r["audio_duration_seconds"] or 0)),
@@ -1149,6 +1153,7 @@ def _process_prompt_task_batches(conn, row, prompt_id: int, system_prompt: str, 
     )
     conn.commit()
     conn.close()
+    sync_prompt_images(int(row["novel_id"]), int(row["chapter_id"]))
 
 
 def process_illustration_image(image_id: int) -> None:
@@ -1195,6 +1200,7 @@ def process_illustration_image(image_id: int) -> None:
             raise RuntimeError("ComfyUI prompt_id missing")
         output = None
         for _ in range(240):
+            touch_illustration_image_worker_heartbeat(made_progress=True)
             history = comfy_request_json(comfy_url=comfy_url, path=f"/history/{prompt_id}")
             output = _extract_image_output(history, prompt_id)
             if output:
@@ -1241,6 +1247,15 @@ def process_illustration_image(image_id: int) -> None:
 
 
 def run_illustration_image_queue_once() -> bool:
+    if not ILLUSTRATION_IMAGE_QUEUE_LOCK.acquire(blocking=False):
+        return False
+    try:
+        return _run_illustration_image_queue_once_locked()
+    finally:
+        ILLUSTRATION_IMAGE_QUEUE_LOCK.release()
+
+
+def _run_illustration_image_queue_once_locked() -> bool:
     conn = db_conn()
     image_running = conn.execute(
         "SELECT id FROM chapter_illustration_images WHERE status IN ('running','processing') ORDER BY id ASC LIMIT 1"
