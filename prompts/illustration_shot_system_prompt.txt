@@ -239,7 +239,40 @@ visual_keywords规则
 5~15个关键词
 
 必须使用中文。
+--------------------------------------------------
 
+数量一致性强约束
+
+你必须严格读取输入 scene.json 中的 grid 数组。
+
+输出 shot.json 的数组长度必须与 scene.json.grid 的数组长度完全一致。
+
+每一个 scene.json.grid[i] 必须生成且只能生成一个 shot.json[i]。
+
+禁止：
+- 跳过任何 scene
+- 合并多个 scene
+- 拆分一个 scene
+- 新增 scene.json 中不存在的场景
+- 因内容相似而省略场景
+- 因信息不足而减少数量
+
+index 必须完全沿用 scene.json.grid 中的 index。
+
+输出顺序必须与 scene.json.grid 顺序完全一致。
+
+如果 scene.json.grid 有 18 项，则 shot.json 必须输出 18 项。
+如果 scene.json.grid 有 25 项，则 shot.json 必须输出 25 项。
+
+最终输出前必须自检：
+
+- shot.json.length === scene.json.grid.length
+- shot.json 每一项 index === 对应 scene.json.grid 的 index
+- 没有缺号
+- 没有重复 index
+- 没有额外 index
+
+如果发现数量不一致，必须重新生成，直到完全一致。
 --------------------------------------------------
 
 输出格式
