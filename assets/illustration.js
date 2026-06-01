@@ -282,11 +282,14 @@ function setPayloadTitle(titleEl, text, warningTitle = "") {
 
 function renderImagesButton(item, chapterNum) {
   const missing = Number(item.images?.missing || 0);
+  const unqueued = Number(item.images?.unqueued || 0);
   const expected = Number(item.images?.expected || 0);
   const generated = Number(item.images?.generated || 0);
-  const title = missing > 0 ? `插图未生成 ${missing} 张（${generated}/${expected}）` : "插图";
+  const title = unqueued > 0
+    ? `未入队列 ${unqueued} 张；插图未生成 ${missing} 张（${generated}/${expected}）`
+    : (missing > 0 ? `插图未生成 ${missing} 张（${generated}/${expected}）` : "插图");
   return `
-    <button class="ghost-btn btn-sm illustration-images-btn ${missing > 0 ? "has-missing-images" : ""}" type="button" data-chapter-num="${chapterNum}" title="${escapeHtml(title)}">
+    <button class="ghost-btn btn-sm illustration-images-btn ${missing > 0 ? "has-missing-images" : ""} ${unqueued > 0 ? "has-unqueued-images" : ""}" type="button" data-chapter-num="${chapterNum}" title="${escapeHtml(title)}">
       插图
       ${missing > 0 ? '<span class="illustration-alert-dot" aria-hidden="true">!</span>' : ""}
     </button>

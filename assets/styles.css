@@ -3781,6 +3781,14 @@ body.is-illustration-drag-selecting {
   position: relative;
 }
 
+.illustration-images-btn.has-unqueued-images {
+  border-color: rgba(138, 79, 184, 0.55);
+  color: #6f3a9a;
+  background: #f5ecff;
+  box-shadow: 0 0 0 2px rgba(138, 79, 184, 0.12);
+  font-weight: 700;
+}
+
 .illustration-alert-dot {
   position: absolute;
   top: -7px;
