@@ -440,6 +440,20 @@ async function restartIllustrationImageWorker() {
   });
 }
 
+async function cancelPendingIllustrationTasks(novelId) {
+  return api(`/api/novels/${Number(novelId)}/illustration/cancel-pending-tasks`, {
+    method: "POST",
+    body: "{}",
+  });
+}
+
+async function cancelPendingIllustrationImages(novelId) {
+  return api(`/api/novels/${Number(novelId)}/illustration/cancel-pending-images`, {
+    method: "POST",
+    body: "{}",
+  });
+}
+
 async function searchNovelText(novelId, searchText) {
   return api(`/api/novels/${Number(novelId)}/text-fix/search`, {
     method: "POST",
@@ -906,6 +920,8 @@ export {
   downloadChapterAudio,
   enqueueChapterAudioAsr,
   cancelChapterAudioAsr,
+  cancelPendingIllustrationImages,
+  cancelPendingIllustrationTasks,
   enqueueBatchAudioAsr,
   enqueueChapterNsfwReview,
   enqueueBatchNsfwReview,

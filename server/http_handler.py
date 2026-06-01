@@ -46,6 +46,8 @@ from .nsfw_review import (
     list_nsfw_review_chapters,
 )
 from .illustration import (
+    cancel_pending_illustration_images,
+    cancel_pending_illustration_tasks,
     enqueue_illustration_task,
     enqueue_all_illustration_images,
     enqueue_illustration_image,
@@ -2575,6 +2577,22 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": msg}, 409)
                 return
             self.send_json({"status": "queued"})
+            return
+
+        m_illustration_cancel_tasks = re.match(
+            r"^/api/novels/(\d+)/illustration/cancel-pending-tasks$", route
+        )
+        if m_illustration_cancel_tasks:
+            novel_id = int(m_illustration_cancel_tasks.group(1))
+            self.send_json({"status": "cancelled", **cancel_pending_illustration_tasks(novel_id)})
+            return
+
+        m_illustration_cancel_images = re.match(
+            r"^/api/novels/(\d+)/illustration/cancel-pending-images$", route
+        )
+        if m_illustration_cancel_images:
+            novel_id = int(m_illustration_cancel_images.group(1))
+            self.send_json({"status": "cancelled", **cancel_pending_illustration_images(novel_id)})
             return
 
         m_illustration_view = re.match(

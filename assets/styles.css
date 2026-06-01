@@ -605,6 +605,11 @@ a.ghost-btn {
   background: #fff9f1;
 }
 
+.ghost-btn.danger-btn {
+  border-color: rgba(168, 54, 47, 0.38);
+  color: var(--danger);
+}
+
 .hero-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

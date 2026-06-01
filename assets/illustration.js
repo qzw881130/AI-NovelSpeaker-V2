@@ -1,4 +1,6 @@
 import {
+  cancelPendingIllustrationImages,
+  cancelPendingIllustrationTasks,
   enqueueChapterIllustration,
   enqueueAllIllustrationImages,
   enqueueIllustrationImage,
@@ -98,6 +100,7 @@ function statusLabel(status) {
     failed: "失败",
     timeout: "超时",
     completed: "完成",
+    cancelled: "已取消",
   };
   return mapping[String(status || "idle")] || String(status || "-");
 }
@@ -934,6 +937,19 @@ function bindEvents() {
   document.getElementById("batchIllustrationPromptBtn").addEventListener("click", () => enqueueSelectedStage("prompt"));
   document.getElementById("batchIllustrationAllStagesBtn").addEventListener("click", () => enqueueSelectedAllStages());
   document.getElementById("batchIllustrationImagesBtn").addEventListener("click", () => enqueueSelectedImages());
+  document.getElementById("cancelPendingIllustrationTasksBtn").addEventListener("click", async () => {
+    if (!activeNovel || !window.confirm("确定终止所有待处理的解析任务？正在执行中的任务不会被中断。")) return;
+    const data = await cancelPendingIllustrationTasks(activeNovel.id);
+    toast(`已取消 ${data.cancelled || 0} 个解析任务`);
+    await refreshPage();
+  });
+  document.getElementById("cancelPendingIllustrationImagesBtn").addEventListener("click", async () => {
+    if (!activeNovel || !window.confirm("确定取消所有待处理的生插图任务？正在生成中的任务不会被中断。")) return;
+    const data = await cancelPendingIllustrationImages(activeNovel.id);
+    toast(`已移出 ${data.cancelled || 0} 个生插图任务`);
+    await refreshPage();
+    await refreshImagesModal().catch(() => {});
+  });
   document.getElementById("illustrationTableBody").addEventListener("click", async (event) => {
     const checkbox = event.target.closest(".illustration-row-select");
     if (checkbox) {

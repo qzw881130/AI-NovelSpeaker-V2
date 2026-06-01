@@ -978,6 +978,40 @@ def enqueue_all_illustration_images(novel_id: int, chapter_id: int) -> dict:
     return {"queued": queued, "skipped": skipped, "total": len(items)}
 
 
+def cancel_pending_illustration_tasks(novel_id: int) -> dict:
+    conn = db_conn()
+    rows = conn.execute(
+        "SELECT id FROM chapter_illustration_tasks WHERE novel_id=? AND stage IN ('scene','shot','prompt') AND status='pending'",
+        (novel_id,),
+    ).fetchall()
+    ids = [int(row["id"]) for row in rows]
+    if ids:
+        placeholders = ",".join("?" for _ in ids)
+        conn.execute(
+            f"UPDATE chapter_illustration_tasks SET status='cancelled',progress=0,error_message='已取消',updated_at=CURRENT_TIMESTAMP WHERE id IN ({placeholders})",
+            ids,
+        )
+        conn.execute(
+            f"UPDATE chapter_illustration_prompt_batches SET status='cancelled',progress=0,error_message='已取消',updated_at=CURRENT_TIMESTAMP WHERE task_id IN ({placeholders}) AND status='pending'",
+            ids,
+        )
+    conn.commit()
+    conn.close()
+    return {"cancelled": len(ids)}
+
+
+def cancel_pending_illustration_images(novel_id: int) -> dict:
+    conn = db_conn()
+    cur = conn.execute(
+        "UPDATE chapter_illustration_images SET status='idle',progress=0,error_message='',started_at=NULL,updated_at=CURRENT_TIMESTAMP WHERE novel_id=? AND status='pending'",
+        (novel_id,),
+    )
+    conn.commit()
+    cancelled = int(cur.rowcount or 0)
+    conn.close()
+    return {"cancelled": cancelled}
+
+
 def process_illustration_task(task_id: int) -> None:
     conn = db_conn()
     conn_closed = False
