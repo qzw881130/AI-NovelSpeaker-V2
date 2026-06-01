@@ -6,7 +6,7 @@
 
 ## 小說轉有聲小說流程
 
-![Novel to audiobook flow](docs/flow-en.jpg)
+![Novel to audiobook flow](docs/flow2.jpeg)
 
 ## 影片介紹
 

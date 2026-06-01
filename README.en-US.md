@@ -6,7 +6,7 @@ Multi-novel management and audio generation toolkit (SQLite + local file storage
 
 ## Novel To Audiobook Flow
 
-![Novel to audiobook flow](docs/flow-en.jpg)
+![Novel to audiobook flow](docs/flow-en2.jpeg)
 
 ## Video Introduction
 

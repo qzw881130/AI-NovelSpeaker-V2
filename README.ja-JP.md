@@ -6,7 +6,7 @@
 
 ## 小説を音声化する流れ
 
-![Novel to audiobook flow](docs/flow-en.jpg)
+![Novel to audiobook flow](docs/flow-en2.jpeg)
 
 ## 動画紹介
 

@@ -6,7 +6,7 @@
 
 ## 소설을 오디오북으로 만드는 흐름
 
-![Novel to audiobook flow](docs/flow-en.jpg)
+![Novel to audiobook flow](docs/flow-en2.jpeg)
 
 ## 영상 소개
 
