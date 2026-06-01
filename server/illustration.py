@@ -23,6 +23,7 @@ from .services import (
 
 ILLUSTRATION_STAGES = {"scene", "shot", "prompt"}
 PROMPT_BATCH_SIZE = 10
+SCENE_AUDIO_DIFF_WARNING_SECONDS = 8
 STAGE_PROMPT_CATEGORY = {
     "scene": "illustration_scene",
     "shot": "illustration_shot",
@@ -403,7 +404,7 @@ def _scene_timing_warning(result_json_text: str, audio_duration_seconds: float) 
         return {"hasWarning": False}
     diff = abs(end - duration)
     return {
-        "hasWarning": duration > 0 and diff >= 5,
+        "hasWarning": duration > 0 and diff >= SCENE_AUDIO_DIFF_WARNING_SECONDS,
         "lastEndSeconds": end,
         "audioDurationSeconds": duration,
         "diffSeconds": diff,
@@ -427,6 +428,14 @@ def _scene_grid_count(result_json_text: str) -> int:
     return len(grid) if isinstance(grid, list) else 0
 
 
+def _shot_item_count(result_json_text: str) -> int:
+    try:
+        parsed = _parse_json_any(str(result_json_text or ""))
+    except Exception:
+        return 0
+    return len(_shot_items(parsed))
+
+
 def list_illustration_chapters(novel_id: int) -> list[dict]:
     conn = db_conn()
     rows = conn.execute(
@@ -437,6 +446,7 @@ def list_illustration_chapters(novel_id: int) -> list[dict]:
                s.result_json_text AS scene_result_json,
                h.status AS shot_status, h.progress AS shot_progress, h.error_message AS shot_error,
                h.started_at AS shot_started_at, h.updated_at AS shot_updated_at,
+               h.result_json_text AS shot_result_json,
                p.status AS prompt_status, p.progress AS prompt_progress, p.error_message AS prompt_error,
                p.started_at AS prompt_started_at, p.updated_at AS prompt_updated_at,
                p.result_json_text AS prompt_result_json,
@@ -473,13 +483,16 @@ def list_illustration_chapters(novel_id: int) -> list[dict]:
         image_unqueued = int(r["image_unqueued"] or 0)
         image_expected = max(prompt_count, image_total)
         scene_result = str(r["scene_result_json"] or "") if _status_value(r["scene_status"]) == "completed" else ""
+        scene_count = _scene_grid_count(scene_result)
+        shot_result = str(r["shot_result_json"] or "") if _status_value(r["shot_status"]) == "completed" else ""
+        shot_count = _shot_item_count(shot_result) if shot_result else 0
         items.append({
             "chapterId": int(r["id"]),
             "chapterNum": int(r["chapter_num"] or 0),
             "title": str(r["title"] or ""),
             "wordCount": int(r["word_count"] or 0),
             "audioDurationSeconds": float(r["audio_duration_seconds"] or 0),
-            "illustrationCount": _scene_grid_count(scene_result),
+            "illustrationCount": scene_count,
             "images": {
                 "expected": image_expected,
                 "generated": image_generated,
@@ -488,6 +501,11 @@ def list_illustration_chapters(novel_id: int) -> list[dict]:
                 "missing": max(0, image_expected - image_generated),
             },
             "sceneTimingWarning": _scene_timing_warning(scene_result, float(r["audio_duration_seconds"] or 0)),
+            "shotCountWarning": {
+                "hasWarning": scene_count > 0 and shot_count > 0 and scene_count != shot_count,
+                "sceneCount": scene_count,
+                "shotCount": shot_count,
+            },
             "stages": {
                 "scene": {"status": _status_value(r["scene_status"]), "progress": int(r["scene_progress"] or 0), "errorMessage": str(r["scene_error"] or ""), "startedAt": str(r["scene_started_at"] or ""), "updatedAt": str(r["scene_updated_at"] or "")},
                 "shot": {"status": _status_value(r["shot_status"]), "progress": int(r["shot_progress"] or 0), "errorMessage": str(r["shot_error"] or ""), "startedAt": str(r["shot_started_at"] or ""), "updatedAt": str(r["shot_updated_at"] or "")},
@@ -664,12 +682,6 @@ def _prepare_prompt_batches(conn, row, prompt_id: int, reset: bool = False) -> l
     task_id = int(row["id"])
     if reset:
         conn.execute("DELETE FROM chapter_illustration_prompt_batches WHERE task_id=?", (task_id,))
-    existing = conn.execute(
-        "SELECT * FROM chapter_illustration_prompt_batches WHERE task_id=? ORDER BY batch_index ASC",
-        (task_id,),
-    ).fetchall()
-    if existing:
-        return existing
     scene_raw = _get_completed_result(conn, int(row["novel_id"]), int(row["chapter_id"]), "scene")
     shot_raw = _get_completed_result(conn, int(row["novel_id"]), int(row["chapter_id"]), "shot")
     scene_parsed = _parse_json_any(scene_raw)
@@ -678,6 +690,15 @@ def _prepare_prompt_batches(conn, row, prompt_id: int, reset: bool = False) -> l
     shot_grid = _shot_items(shot_parsed)
     if not isinstance(scene_grid, list) or not scene_grid:
         raise RuntimeError("scene grid is empty")
+    scene_count = _scene_grid_count(scene_raw)
+    if len(shot_grid) != scene_count:
+        raise RuntimeError(f"Shot输出数量 {len(shot_grid)} 与 Scene grid_count {scene_count} 不一致")
+    existing = conn.execute(
+        "SELECT * FROM chapter_illustration_prompt_batches WHERE task_id=? ORDER BY batch_index ASC",
+        (task_id,),
+    ).fetchall()
+    if existing:
+        return existing
     scene_chunks = _chunked(scene_grid, PROMPT_BATCH_SIZE)
     shot_by_index = {
         int(item.get("index") or 0): item

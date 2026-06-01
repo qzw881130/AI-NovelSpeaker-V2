@@ -3772,7 +3772,7 @@ body.is-illustration-drag-selecting {
 }
 
 .illustration-images-btn,
-.illustration-view-btn.has-scene-timing-warning {
+.illustration-view-btn.has-illustration-warning {
   position: relative;
 }
 

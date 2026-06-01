@@ -49,7 +49,7 @@ const STAGE_LABELS = {
   prompt: "Prompt",
 };
 
-const SCENE_AUDIO_DIFF_WARNING_SECONDS = 5;
+const SCENE_AUDIO_DIFF_WARNING_SECONDS = 8;
 
 function escapeHtml(text) {
   const div = document.createElement("div");
@@ -202,6 +202,7 @@ function renderStageCell(item, stage) {
   const progress = Number(data.progress || 0);
   const disabled = ["pending", "running", "processing"].includes(String(data.status || ""));
   const sceneWarning = stage === "scene" ? sceneTimingWarningFromChapter(item) : null;
+  const shotWarning = stage === "shot" ? shotCountWarningFromChapter(item) : null;
   const actionButtons = stage === "prompt"
     ? `
         <button class="ghost-btn btn-sm illustration-run-btn" type="button" data-stage="${stage}" data-chapter-num="${chapterNum}" ${disabled ? "disabled" : ""}>解析插画${STAGE_LABELS[stage].toLowerCase()}</button>
@@ -213,7 +214,7 @@ function renderStageCell(item, stage) {
         <button class="ghost-btn btn-sm illustration-run-btn" type="button" data-stage="${stage}" data-chapter-num="${chapterNum}" ${disabled ? "disabled" : ""}>解析插画${STAGE_LABELS[stage].toLowerCase()}</button>
         <button class="ghost-btn btn-sm illustration-llm-params-btn" type="button" data-stage="${stage}" data-chapter-num="${chapterNum}">LLM参数</button>
         <button class="ghost-btn btn-sm illustration-view-btn" type="button" data-kind="input" data-stage="${stage}" data-chapter-num="${chapterNum}">输入</button>
-        <button class="ghost-btn btn-sm illustration-view-btn ${sceneWarning ? "has-scene-timing-warning" : ""}" type="button" data-kind="output" data-stage="${stage}" data-chapter-num="${chapterNum}" ${sceneWarning ? `title="${escapeHtml(sceneWarning)}"` : ""}>输出${sceneWarning ? '<span class="illustration-alert-dot" aria-hidden="true">!</span>' : ""}</button>
+        <button class="ghost-btn btn-sm illustration-view-btn ${sceneWarning || shotWarning ? "has-illustration-warning" : ""}" type="button" data-kind="output" data-stage="${stage}" data-chapter-num="${chapterNum}" ${sceneWarning || shotWarning ? `title="${escapeHtml(sceneWarning || shotWarning)}"` : ""}>输出${sceneWarning || shotWarning ? '<span class="illustration-alert-dot" aria-hidden="true">!</span>' : ""}</button>
       `;
   return `
     <div class="stage-cell">
@@ -226,6 +227,12 @@ function renderStageCell(item, stage) {
       </div>
     </div>
   `;
+}
+
+function shotCountWarningFromChapter(item) {
+  const warning = item?.shotCountWarning;
+  if (!warning?.hasWarning) return "";
+  return `Shot输出数量 ${Number(warning.shotCount || 0)} 与插图数 ${Number(warning.sceneCount || 0)} 不一致`;
 }
 
 function sceneTimingWarningFromChapter(item) {
