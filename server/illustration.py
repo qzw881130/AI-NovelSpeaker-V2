@@ -452,8 +452,8 @@ def list_illustration_chapters(novel_id: int) -> list[dict]:
             SELECT chapter_id,
                    COUNT(*) AS image_total,
                    SUM(CASE WHEN status='completed' AND COALESCE(image_file_path, '')<>'' THEN 1 ELSE 0 END) AS image_generated,
-                   SUM(CASE WHEN status IN ('pending','running','processing') THEN 1 ELSE 0 END) AS image_queued,
-                   SUM(CASE WHEN status NOT IN ('pending','running','processing') AND NOT (status='completed' AND COALESCE(image_file_path, '')<>'') THEN 1 ELSE 0 END) AS image_unqueued
+                   SUM(CASE WHEN status<>'idle' AND NOT (status='completed' AND COALESCE(image_file_path, '')<>'') THEN 1 ELSE 0 END) AS image_queued,
+                   SUM(CASE WHEN status='idle' THEN 1 ELSE 0 END) AS image_unqueued
             FROM chapter_illustration_images
             WHERE novel_id=?
             GROUP BY chapter_id

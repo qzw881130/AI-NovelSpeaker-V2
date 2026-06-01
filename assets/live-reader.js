@@ -586,7 +586,10 @@ function updateLiveIllustration(force = false) {
     return;
   }
   const currentTime = Number(player.currentTime || 0);
-  const nextIndex = liveIllustrationItems.findIndex((item) => currentTime >= Number(item.start || 0) && currentTime <= Number(item.end || 0));
+  let nextIndex = liveIllustrationItems.findIndex((item) => currentTime >= Number(item.start || 0) && currentTime <= Number(item.end || 0));
+  if (nextIndex < 0) {
+    nextIndex = liveIllustrationItems.findIndex((item) => Number(item.start || 0) > currentTime);
+  }
   if (nextIndex < 0) {
     if (!img.getAttribute("src")) clearLiveIllustration("当前时间暂无匹配插画");
     return;

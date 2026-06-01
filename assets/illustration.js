@@ -727,7 +727,9 @@ function renderImages(items) {
   const summary = document.getElementById("illustrationImagesQueueSummary");
   if (summary) {
     const generated = currentPreviewItems.length;
-    summary.textContent = `已生成: ${generated}　待生成：${Math.max(0, items.length - generated)}`;
+    const queued = items.filter((item) => String(item.status || "idle") !== "idle" && !item.imageUrl).length;
+    const unqueued = items.filter((item) => String(item.status || "idle") === "idle").length;
+    summary.textContent = `已生成: ${generated}　待生成：${queued}　未入队列：${unqueued}`;
   }
   const root = document.getElementById("illustrationImagesList");
   if (!items.length) {
