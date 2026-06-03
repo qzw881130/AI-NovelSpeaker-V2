@@ -974,7 +974,8 @@ def fetch_novels(conn: sqlite3.Connection) -> list[dict]:
     rows = conn.execute(
         """
         SELECT n.id,n.name,n.author,n.english_dir,n.intro,n.chapter_count,n.total_words,
-               n.prompt_id,n.nsfw_prompt_id,n.workflow_id,n.voice_sample_workflow_id,n.line_audio_workflow_id,n.voice_transcribe_workflow_id,
+               n.prompt_id,n.nsfw_prompt_id,n.illustration_scene_prompt_id,n.illustration_shot_prompt_id,n.illustration_prompt_prompt_id,
+               n.workflow_id,n.voice_sample_workflow_id,n.line_audio_workflow_id,n.voice_transcribe_workflow_id,
                n.audio_asr_workflow_id,n.total_audio_duration_seconds,n.total_audio_non_ver_duration_seconds,n.created_at,n.updated_at,
                COALESCE(SUM(CASE WHEN c.has_audio=1 THEN 1 ELSE 0 END),0) AS audio_done,
                COALESCE(COUNT(c.id),0) AS chapter_total,
@@ -1038,6 +1039,9 @@ def fetch_novels(conn: sqlite3.Connection) -> list[dict]:
                 "totalWords": total_words,
                 "promptId": int(r["prompt_id"]) if r["prompt_id"] is not None else None,
                 "nsfwPromptId": int(r["nsfw_prompt_id"]) if r["nsfw_prompt_id"] is not None else None,
+                "illustrationScenePromptId": int(r["illustration_scene_prompt_id"]) if r["illustration_scene_prompt_id"] is not None else None,
+                "illustrationShotPromptId": int(r["illustration_shot_prompt_id"]) if r["illustration_shot_prompt_id"] is not None else None,
+                "illustrationPromptPromptId": int(r["illustration_prompt_prompt_id"]) if r["illustration_prompt_prompt_id"] is not None else None,
                 "workflowId": int(r["workflow_id"])
                 if r["workflow_id"] is not None
                 else None,
@@ -1079,7 +1083,8 @@ def fetch_novels_light(conn: sqlite3.Connection) -> list[dict]:
     rows = conn.execute(
         """
         SELECT n.id,n.name,n.author,n.english_dir,n.intro,n.chapter_count,n.total_words,
-               n.prompt_id,n.nsfw_prompt_id,n.workflow_id,n.voice_sample_workflow_id,n.line_audio_workflow_id,n.voice_transcribe_workflow_id,
+               n.prompt_id,n.nsfw_prompt_id,n.illustration_scene_prompt_id,n.illustration_shot_prompt_id,n.illustration_prompt_prompt_id,
+               n.workflow_id,n.voice_sample_workflow_id,n.line_audio_workflow_id,n.voice_transcribe_workflow_id,
                n.audio_asr_workflow_id,n.total_audio_duration_seconds,n.total_audio_non_ver_duration_seconds,n.created_at,n.updated_at,
                COALESCE(SUM(CASE WHEN c.has_audio=1 THEN 1 ELSE 0 END),0) AS audio_done,
                COALESCE(SUM(CASE WHEN c.has_json=1 THEN 1 ELSE 0 END),0) AS json_done,
@@ -1114,6 +1119,9 @@ def fetch_novels_light(conn: sqlite3.Connection) -> list[dict]:
                 "totalWords": total_words,
                 "promptId": int(r["prompt_id"]) if r["prompt_id"] is not None else None,
                 "nsfwPromptId": int(r["nsfw_prompt_id"]) if r["nsfw_prompt_id"] is not None else None,
+                "illustrationScenePromptId": int(r["illustration_scene_prompt_id"]) if r["illustration_scene_prompt_id"] is not None else None,
+                "illustrationShotPromptId": int(r["illustration_shot_prompt_id"]) if r["illustration_shot_prompt_id"] is not None else None,
+                "illustrationPromptPromptId": int(r["illustration_prompt_prompt_id"]) if r["illustration_prompt_prompt_id"] is not None else None,
                 "workflowId": int(r["workflow_id"]) if r["workflow_id"] is not None else None,
                 "voiceSampleWorkflowId": int(r["voice_sample_workflow_id"]) if r["voice_sample_workflow_id"] is not None else None,
                 "lineAudioWorkflowId": int(r["line_audio_workflow_id"]) if r["line_audio_workflow_id"] is not None else None,

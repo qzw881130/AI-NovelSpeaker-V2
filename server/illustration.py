@@ -31,6 +31,11 @@ STAGE_PROMPT_CATEGORY = {
     "shot": "illustration_shot",
     "prompt": "illustration_prompt",
 }
+STAGE_NOVEL_PROMPT_COLUMN = {
+    "scene": "illustration_scene_prompt_id",
+    "shot": "illustration_shot_prompt_id",
+    "prompt": "illustration_prompt_prompt_id",
+}
 ILLUSTRATION_IMAGE_QUEUE_LOCK = threading.Lock()
 
 
@@ -45,6 +50,15 @@ def _lookup_stage_prompt(conn, stage: str) -> int | None:
         (STAGE_PROMPT_CATEGORY[stage],),
     ).fetchone()
     return int(row["id"]) if row else None
+
+
+def _lookup_novel_stage_prompt(conn, novel_id: int, stage: str) -> int | None:
+    column = STAGE_NOVEL_PROMPT_COLUMN.get(stage)
+    if column:
+        row = conn.execute(f"SELECT {column} AS prompt_id FROM novels WHERE id=?", (novel_id,)).fetchone()
+        if row and row["prompt_id"] is not None:
+            return int(row["prompt_id"])
+    return _lookup_stage_prompt(conn, stage)
 
 
 def _read_asr_text(conn, novel_id: int, chapter_num: int) -> str:
@@ -545,7 +559,7 @@ def enqueue_illustration_task(novel_id: int, chapter_id: int, stage: str, allow_
     if not allow_waiting and stage == "prompt" and (not _get_completed_result(conn, novel_id, chapter_id, "scene") or not _get_completed_result(conn, novel_id, chapter_id, "shot")):
         conn.close()
         return False, "scene/shot json not completed"
-    prompt_id = _lookup_stage_prompt(conn, stage)
+    prompt_id = _lookup_novel_stage_prompt(conn, novel_id, stage)
     if not prompt_id:
         conn.close()
         return False, "prompt not found"
@@ -650,7 +664,7 @@ def get_illustration_llm_request_preview(novel_id: int, chapter_id: int, stage: 
     if not row:
         conn.close()
         raise RuntimeError("chapter not found")
-    prompt_id = int(row["prompt_id"] or 0) or (_lookup_stage_prompt(conn, stage) or 0)
+    prompt_id = int(row["prompt_id"] or 0) or (_lookup_novel_stage_prompt(conn, novel_id, stage) or 0)
     if not prompt_id:
         conn.close()
         raise RuntimeError("prompt not found")

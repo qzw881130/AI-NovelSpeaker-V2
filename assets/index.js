@@ -166,6 +166,9 @@ function renderNovelCards() {
           <span class="chip">字数 ${fmtNumber(n.totalWords)}</span>
           <span class="chip">英文目录: ${n.englishDir || "-"}</span>
           <span class="chip">提示词: ${promptMap[String(n.promptId)] || "-"}</span>
+          <span class="chip">插画Scene提示词: ${promptMap[String(n.illustrationScenePromptId)] || "-"}</span>
+          <span class="chip">插画Shot提示词: ${promptMap[String(n.illustrationShotPromptId)] || "-"}</span>
+          <span class="chip">插画Prompt提示词: ${promptMap[String(n.illustrationPromptPromptId)] || "-"}</span>
           <span class="chip">示例音频工作流: ${workflowMap[String(n.voiceSampleWorkflowId)] || "-"}</span>
           <span class="chip">台词音频工作流: ${workflowMap[String(n.lineAudioWorkflowId)] || "-"}</span>
           <span class="chip">提取文本工作流: ${workflowMap[String(n.voiceTranscribeWorkflowId)] || "-"}</span>
@@ -222,11 +225,29 @@ function openNovelModal(novel) {
   const nsfwPrompts = currentData.prompts.filter(
     (p) => String(p.category || "json_parse").trim() === "nsfw_review"
   );
+  const illustrationScenePrompts = currentData.prompts.filter(
+    (p) => String(p.category || "json_parse").trim() === "illustration_scene"
+  );
+  const illustrationShotPrompts = currentData.prompts.filter(
+    (p) => String(p.category || "json_parse").trim() === "illustration_shot"
+  );
+  const illustrationPromptPrompts = currentData.prompts.filter(
+    (p) => String(p.category || "json_parse").trim() === "illustration_prompt"
+  );
 
   document.getElementById("novelPromptSelect").innerHTML = jsonParsePrompts
     .map((p) => `<option value="${p.id}">${p.name}</option>`)
     .join("");
   document.getElementById("novelNsfwPromptSelect").innerHTML = nsfwPrompts
+    .map((p) => `<option value="${p.id}">${p.name}</option>`)
+    .join("");
+  document.getElementById("novelIllustrationScenePromptSelect").innerHTML = illustrationScenePrompts
+    .map((p) => `<option value="${p.id}">${p.name}</option>`)
+    .join("");
+  document.getElementById("novelIllustrationShotPromptSelect").innerHTML = illustrationShotPrompts
+    .map((p) => `<option value="${p.id}">${p.name}</option>`)
+    .join("");
+  document.getElementById("novelIllustrationPromptPromptSelect").innerHTML = illustrationPromptPrompts
     .map((p) => `<option value="${p.id}">${p.name}</option>`)
     .join("");
   
@@ -263,6 +284,9 @@ function openNovelModal(novel) {
   form.intro.value = novel?.intro || "";
   form.promptId.value = novel?.promptId || jsonParsePrompts[0]?.id || "";
   form.nsfwPromptId.value = novel?.nsfwPromptId || nsfwPrompts.find((p) => p.name === "NSFW审查提示词")?.id || nsfwPrompts[0]?.id || "";
+  form.illustrationScenePromptId.value = novel?.illustrationScenePromptId || illustrationScenePrompts.find((p) => p.name === "插画-scene提示词")?.id || illustrationScenePrompts[0]?.id || "";
+  form.illustrationShotPromptId.value = novel?.illustrationShotPromptId || illustrationShotPrompts.find((p) => p.name === "插画-shot提示词")?.id || illustrationShotPrompts[0]?.id || "";
+  form.illustrationPromptPromptId.value = novel?.illustrationPromptPromptId || illustrationPromptPrompts.find((p) => p.name === "插画-prompt提示词")?.id || illustrationPromptPrompts[0]?.id || "";
   form.voiceSampleWorkflowId.value = novel?.voiceSampleWorkflowId || voiceSampleWorkflows[0]?.id || "";
   form.lineAudioWorkflowId.value = novel?.lineAudioWorkflowId || lineAudioWorkflows[0]?.id || "";
   form.voiceTranscribeWorkflowId.value = novel?.voiceTranscribeWorkflowId || voiceTranscribeWorkflows[0]?.id || "";

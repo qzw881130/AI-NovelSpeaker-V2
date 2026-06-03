@@ -252,6 +252,21 @@ def migrate_novels_table(conn: sqlite3.Connection) -> None:
             "ALTER TABLE novels ADD COLUMN nsfw_prompt_id INTEGER REFERENCES json_prompts(id)"
         )
 
+    if "illustration_scene_prompt_id" not in column_names:
+        conn.execute(
+            "ALTER TABLE novels ADD COLUMN illustration_scene_prompt_id INTEGER REFERENCES json_prompts(id)"
+        )
+
+    if "illustration_shot_prompt_id" not in column_names:
+        conn.execute(
+            "ALTER TABLE novels ADD COLUMN illustration_shot_prompt_id INTEGER REFERENCES json_prompts(id)"
+        )
+
+    if "illustration_prompt_prompt_id" not in column_names:
+        conn.execute(
+            "ALTER TABLE novels ADD COLUMN illustration_prompt_prompt_id INTEGER REFERENCES json_prompts(id)"
+        )
+
     # 添加总音频时长缓存字段（秒）
     if "total_audio_duration_seconds" not in column_names:
         conn.execute(
