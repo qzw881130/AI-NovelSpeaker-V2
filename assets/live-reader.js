@@ -105,8 +105,14 @@ let currentAsrMode = false;
 let activeParagraphElement = null;
 let targetReaderScrollTop = null;
 let readerScrollAnimationId = 0;
+let readerScrollFallbackTimer = 0;
 let segmentElementMap = new Map();
 let pendingTimeUpdate = false;
+let pendingTimeUpdateFallbackTimer = 0;
+let liveReaderSyncTimer = 0;
+let liveReaderSyncWorker = null;
+let liveReaderSyncWorkerUrl = "";
+let lastLiveReaderSyncAt = 0;
 let lastMatchStatusText = "";
 let lastTimeUpdateAt = 0;
 let chapterLoadToken = 0;
@@ -118,6 +124,7 @@ let pendingIllustrationIndex = -1;
 let liveIllustrationLoadToken = 0;
 const preloadedAudioMap = new Map();
 const TIMEUPDATE_MIN_INTERVAL_MS = 120;
+const LIVE_READER_SYNC_INTERVAL_MS = 500;
 const CHAPTER_RENDER_CACHE_LIMIT = 8;
 const chapterRenderCache = new Map();
 const AUDIO_PRELOAD_CACHE_LIMIT = 6;
@@ -1271,6 +1278,28 @@ function cancelReaderScrollAnimation() {
     window.cancelAnimationFrame(readerScrollAnimationId);
     readerScrollAnimationId = 0;
   }
+  if (readerScrollFallbackTimer) {
+    window.clearTimeout(readerScrollFallbackTimer);
+    readerScrollFallbackTimer = 0;
+  }
+}
+
+function scheduleReaderScrollStep(step) {
+  readerScrollAnimationId = window.requestAnimationFrame(() => {
+    if (readerScrollFallbackTimer) {
+      window.clearTimeout(readerScrollFallbackTimer);
+      readerScrollFallbackTimer = 0;
+    }
+    step();
+  });
+  readerScrollFallbackTimer = window.setTimeout(() => {
+    if (readerScrollAnimationId) {
+      window.cancelAnimationFrame(readerScrollAnimationId);
+      readerScrollAnimationId = 0;
+    }
+    readerScrollFallbackTimer = 0;
+    step();
+  }, 250);
 }
 
 function runReaderScrollAnimation() {
@@ -1290,9 +1319,9 @@ function runReaderScrollAnimation() {
     const smoothness = getFollowSmoothnessFactor();
     const easing = 0.06 + smoothness * 0.18;
     wrap.scrollTop += distance * easing;
-    readerScrollAnimationId = window.requestAnimationFrame(step);
+    scheduleReaderScrollStep(step);
   };
-  readerScrollAnimationId = window.requestAnimationFrame(step);
+  scheduleReaderScrollStep(step);
 }
 
 function getActiveAsrSegmentIndex(currentTime) {
@@ -1496,6 +1525,10 @@ function clearSegmentHighlight() {
 }
 
 function flushTimeUpdate() {
+  if (pendingTimeUpdateFallbackTimer) {
+    window.clearTimeout(pendingTimeUpdateFallbackTimer);
+    pendingTimeUpdateFallbackTimer = 0;
+  }
   pendingTimeUpdate = false;
   updateSegmentHighlight(false);
 }
@@ -1507,6 +1540,62 @@ function scheduleTimeUpdate() {
   lastTimeUpdateAt = now;
   pendingTimeUpdate = true;
   window.requestAnimationFrame(flushTimeUpdate);
+  pendingTimeUpdateFallbackTimer = window.setTimeout(flushTimeUpdate, 250);
+}
+
+function forceLiveReaderSync() {
+  if (pendingTimeUpdateFallbackTimer) {
+    window.clearTimeout(pendingTimeUpdateFallbackTimer);
+    pendingTimeUpdateFallbackTimer = 0;
+  }
+  pendingTimeUpdate = false;
+  updateSegmentHighlight(true);
+  updateReaderProgressBar();
+  updateLiveIllustration(true);
+}
+
+function runLiveReaderSyncTick(force = false) {
+  const player = document.getElementById("liveReaderAudioPlayer");
+  if (!player) return;
+  if (!force && player.paused) return;
+  const now = Date.now();
+  if (!force && now - lastLiveReaderSyncAt < Math.max(120, LIVE_READER_SYNC_INTERVAL_MS / 2)) return;
+  lastLiveReaderSyncAt = now;
+  pendingTimeUpdate = false;
+  updateSegmentHighlight(force);
+  updateReaderProgressBar();
+  updateLiveIllustration(force);
+}
+
+function stopLiveReaderSyncLoop() {
+  if (liveReaderSyncTimer) {
+    window.clearInterval(liveReaderSyncTimer);
+    liveReaderSyncTimer = 0;
+  }
+  if (liveReaderSyncWorker) {
+    liveReaderSyncWorker.terminate();
+    liveReaderSyncWorker = null;
+  }
+  if (liveReaderSyncWorkerUrl) {
+    URL.revokeObjectURL(liveReaderSyncWorkerUrl);
+    liveReaderSyncWorkerUrl = "";
+  }
+}
+
+function startLiveReaderSyncLoop() {
+  stopLiveReaderSyncLoop();
+  liveReaderSyncTimer = window.setInterval(() => runLiveReaderSyncTick(false), LIVE_READER_SYNC_INTERVAL_MS);
+  try {
+    const blob = new Blob([
+      `let timer=0;self.onmessage=(event)=>{if(event.data==='start'){clearInterval(timer);timer=setInterval(()=>self.postMessage('tick'),${LIVE_READER_SYNC_INTERVAL_MS});}else if(event.data==='stop'){clearInterval(timer);timer=0;}};`,
+    ], { type: "application/javascript" });
+    liveReaderSyncWorkerUrl = URL.createObjectURL(blob);
+    liveReaderSyncWorker = new Worker(liveReaderSyncWorkerUrl);
+    liveReaderSyncWorker.onmessage = () => runLiveReaderSyncTick(false);
+    liveReaderSyncWorker.postMessage("start");
+  } catch {
+    liveReaderSyncWorker = null;
+  }
 }
 
 function resetReaderScroll() {
@@ -1752,15 +1841,18 @@ function bindEvents() {
   player?.addEventListener("timeupdate", updateReaderProgressBar);
   player?.addEventListener("loadedmetadata", updateReaderProgressBar);
   player?.addEventListener("play", () => {
+    startLiveReaderSyncLoop();
     setStatus("播放中");
     updateReaderProgressBar();
     updateSegmentHighlight(true);
   });
   player?.addEventListener("pause", () => {
+    stopLiveReaderSyncLoop();
     setStatus("已暂停");
     updateReaderProgressBar();
   });
   player?.addEventListener("ended", async () => {
+    stopLiveReaderSyncLoop();
     updateReaderProgressBar();
     updateSegmentHighlight(true);
     setStatus("播放结束");
@@ -1768,6 +1860,11 @@ function bindEvents() {
       await playAdjacentChapter(1, { wrap: true });
     }
   });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") forceLiveReaderSync();
+  });
+  window.addEventListener("focus", forceLiveReaderSync);
+  window.addEventListener("pageshow", forceLiveReaderSync);
 }
 
 async function init() {

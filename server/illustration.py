@@ -373,7 +373,20 @@ def _extract_image_output(history: dict, prompt_id: str) -> tuple[str, str, str]
     return None
 
 
-def _apply_workflow_inputs(workflow: dict, prompt_text: str, width: int = 1536, height: int = 864) -> dict:
+def _safe_filename_part(value: str, fallback: str = "novel") -> str:
+    text = str(value or "").strip()
+    safe = "".join(ch for ch in text if ch.isalnum() or ch in {"_", "-"})
+    return safe or fallback
+
+
+def _apply_workflow_inputs(
+    workflow: dict,
+    prompt_text: str,
+    width: int = 1536,
+    height: int = 864,
+    filename_prefix: str = "",
+    output_node_id: str = "",
+) -> dict:
     patched = json.loads(json.dumps(workflow, ensure_ascii=False))
     if "12" in patched:
         patched["12"].setdefault("inputs", {})["value"] = prompt_text
@@ -391,6 +404,16 @@ def _apply_workflow_inputs(workflow: dict, prompt_text: str, width: int = 1536, 
             inputs["Number"] = str(height)
     if "8" in patched:
         patched["8"].setdefault("inputs", {})["seed"] = random.SystemRandom().randint(0, 2**63 - 1)
+    if filename_prefix:
+        output_key = str(output_node_id or "").strip()
+        save_node = patched.get(output_key) if output_key and isinstance(patched.get(output_key), dict) else None
+        if not save_node:
+            save_node = next(
+                (node for node in patched.values() if isinstance(node, dict) and str(node.get("class_type") or "") == "SaveImage"),
+                None,
+            )
+        if save_node:
+            save_node.setdefault("inputs", {})["filename_prefix"] = filename_prefix
     return patched
 
 
@@ -1191,12 +1214,28 @@ def process_illustration_image(image_id: int) -> None:
         if not comfy_url:
             raise RuntimeError("ComfyUI URL is not configured")
         wf = conn.execute(
-            "SELECT json_text FROM comfy_workflows WHERE workflow_type='illustration' ORDER BY CASE WHEN name='生成插画' THEN 0 ELSE 1 END, id DESC LIMIT 1"
+            "SELECT json_text,workflow_io_config FROM comfy_workflows WHERE workflow_type='illustration' ORDER BY CASE WHEN name='生成插画' THEN 0 ELSE 1 END, id DESC LIMIT 1"
         ).fetchone()
         if not wf:
             raise RuntimeError("illustration workflow not found")
         workflow = workflow_json_to_prompt_json(json.loads(str(wf["json_text"] or "{}")))
-        prompt = _apply_workflow_inputs(workflow, str(row["prompt_text"] or ""))
+        workflow_io_config = json.loads(str(wf["workflow_io_config"] or "{}") or "{}")
+        outputs_config = workflow_io_config.get("outputs") if isinstance(workflow_io_config, dict) else {}
+        image_output_config = (outputs_config or {}).get("imageFile") if isinstance(outputs_config, dict) else {}
+        output_node_id = str((image_output_config or {}).get("nodeId") or "").strip() if isinstance(image_output_config, dict) else ""
+        filename_prefix = "/".join(
+            [
+                _safe_filename_part(str(row["english_dir"] or "")),
+                f"ch{int(row['chapter_num']):03d}",
+                str(int(row["item_index"] or 0)),
+            ]
+        )
+        prompt = _apply_workflow_inputs(
+            workflow,
+            str(row["prompt_text"] or ""),
+            filename_prefix=filename_prefix,
+            output_node_id=output_node_id,
+        )
         conn.execute(
             "INSERT INTO comfy_workflow_logs(workflow_category,workflow_name,workflow_json,error_log) VALUES(?,?,?,?)",
             ("生成插画", f"第{int(row['chapter_num']):03d}回 #{int(row['item_index'])}", json.dumps(prompt, ensure_ascii=False, indent=2), ""),

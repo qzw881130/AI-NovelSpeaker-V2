@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import time
 from copy import deepcopy
@@ -181,7 +182,10 @@ def _parse_line_list(text: str) -> list[str]:
 
 
 def _split_audio_for_alignment(audio_path: Path, *, chunk_seconds: int = 60) -> list[tuple[Path, float]]:
-    temp_dir = ROOT_DIR / "temp" / "audio_asr_chunks" / audio_path.stem
+    audio_key = file_md5_hex(audio_path)[:12]
+    temp_dir = ROOT_DIR / "temp" / "audio_asr_chunks" / f"{audio_path.stem}_{audio_key}"
+    if temp_dir.exists():
+        shutil.rmtree(temp_dir)
     temp_dir.mkdir(parents=True, exist_ok=True)
     output_pattern = temp_dir / "chunk_%03d.wav"
     subprocess.run(
@@ -312,7 +316,7 @@ def _run_asr_workflow_on_audio(
     workflow_log_id: int,
     task_id: int,
 ) -> tuple[str, str, str, str, str, str]:
-    upload_info = comfy_upload_input_file(audio_path.name, audio_path.read_bytes())
+    upload_info = comfy_upload_input_file(f"audio_asr_task{task_id}_{audio_path.name}", audio_path.read_bytes())
     filename = str(upload_info.get("name") or audio_path.name).strip() or audio_path.name
     subfolder = str(upload_info.get("subfolder") or "").strip()
     file_type = str(upload_info.get("type") or "input").strip() or "input"
