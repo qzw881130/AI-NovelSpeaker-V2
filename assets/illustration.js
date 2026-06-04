@@ -640,6 +640,45 @@ async function savePromptOutput() {
   await refreshPage();
 }
 
+function findPromptOutputText() {
+  const editor = document.getElementById("promptOutputEditor");
+  const input = document.getElementById("promptOutputFindInput");
+  const query = String(input?.value || "");
+  if (!editor || !query) {
+    toast("请输入查找内容");
+    return false;
+  }
+  const text = String(editor.value || "");
+  const start = Math.max(editor.selectionEnd || 0, 0);
+  let index = text.indexOf(query, start);
+  if (index < 0 && start > 0) index = text.indexOf(query, 0);
+  if (index < 0) {
+    toast("未找到匹配内容");
+    return false;
+  }
+  editor.focus();
+  editor.setSelectionRange(index, index + query.length);
+  return true;
+}
+
+function replacePromptOutputText() {
+  const editor = document.getElementById("promptOutputEditor");
+  const findInput = document.getElementById("promptOutputFindInput");
+  const replaceInput = document.getElementById("promptOutputReplaceInput");
+  const query = String(findInput?.value || "");
+  const replacement = String(replaceInput?.value || "");
+  if (!editor || !query) {
+    toast("请输入查找内容");
+    return;
+  }
+  const selected = String(editor.value || "").slice(editor.selectionStart || 0, editor.selectionEnd || 0);
+  if (selected !== query && !findPromptOutputText()) return;
+  const start = editor.selectionStart || 0;
+  const end = editor.selectionEnd || 0;
+  editor.setRangeText(replacement, start, end, "end");
+  editor.focus();
+}
+
 async function openLlmParams(chapterNum, stage) {
   const dialog = document.getElementById("illustrationLlmParamsDialog");
   const title = document.getElementById("illustrationLlmParamsTitle");
@@ -1029,6 +1068,14 @@ function bindEvents() {
       toast(`复制失败：${err.message}`);
     });
   });
+  document.getElementById("promptOutputFindBtn").addEventListener("click", findPromptOutputText);
+  document.getElementById("promptOutputReplaceBtn").addEventListener("click", replacePromptOutputText);
+  document.getElementById("promptOutputFindInput").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      findPromptOutputText();
+    }
+  });
   document.getElementById("savePromptOutputBtn").addEventListener("click", async () => {
     try {
       await savePromptOutput();
@@ -1038,6 +1085,16 @@ function bindEvents() {
   });
   document.getElementById("promptOutputDialog").addEventListener("close", () => {
     activePromptOutputChapterNum = 0;
+  });
+  document.getElementById("promptOutputDialog").addEventListener("keydown", async (event) => {
+    if ((event.ctrlKey || event.metaKey) && String(event.key || "").toLowerCase() === "s") {
+      event.preventDefault();
+      try {
+        await savePromptOutput();
+      } catch (err) {
+        toast(`保存失败：${err.message}`);
+      }
+    }
   });
   document.getElementById("promptBatchList").addEventListener("click", (event) => {
     const btn = event.target.closest(".prompt-batch-item");

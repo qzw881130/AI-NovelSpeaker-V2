@@ -3928,6 +3928,29 @@ body.is-illustration-drag-selecting {
   white-space: pre;
 }
 
+.prompt-output-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.prompt-output-tools input {
+  width: 180px;
+  padding: 6px 10px;
+}
+
+@media (max-width: 900px) {
+  .prompt-output-tools {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .prompt-output-tools input {
+    width: 140px;
+  }
+}
+
 .payload-scroll-bottom-btn {
   position: absolute;
   right: 18px;
