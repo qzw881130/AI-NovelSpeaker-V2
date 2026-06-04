@@ -85,6 +85,14 @@ def _format_asr_time(value: str) -> str:
     return main
 
 
+def _format_asr_seconds(value: str) -> str:
+    seconds = max(0, int(float(str(value or "0").strip())))
+    h = seconds // 3600
+    m = (seconds % 3600) // 60
+    s = seconds % 60
+    return f"{h:02d}:{m:02d}:{s:02d}"
+
+
 def _preprocess_asr_timeline(raw: str) -> str:
     lines = [line.strip() for line in str(raw or "").splitlines()]
     items = []
@@ -114,13 +122,29 @@ def _preprocess_asr_timeline(raw: str) -> str:
         text = "".join(text_parts).strip()
         if text:
             items.append(f"[{_format_asr_time(start_raw)}-{_format_asr_time(end_raw)}] {text}")
-    return "\n".join(items) if items else str(raw or "").strip()
+    if items:
+        return "\n".join(items)
+    for line in lines:
+        parts = [part.strip() for part in line.split("\t")]
+        if len(parts) < 3:
+            continue
+        text = "\t".join(parts[:-2]).strip()
+        try:
+            start = _format_asr_seconds(parts[-2])
+            end = _format_asr_seconds(parts[-1])
+        except ValueError:
+            continue
+        if text:
+            items.append(f"[{start}-{end}] {text}")
+    return "\n".join(items)
 
 
 def _build_user_input(conn, stage: str, row) -> str:
     if stage == "scene":
         chapter_text = read_chapter_text(str(row["text_file_path"] or ""))
         asr_text = _preprocess_asr_timeline(_read_asr_text(conn, int(row["novel_id"]), int(row["chapter_num"])))
+        if not asr_text.strip():
+            raise RuntimeError("缺少ASR时间轴，请先完成音频ASR")
         return (
             f"章节名称：\n{str(row['chapter_title'] or '')}\n\n"
             f"小说章节内容：\n{chapter_text}\n\n"
