@@ -24,6 +24,7 @@ from .line_audio import (
     get_line_audio_task,
     get_chapter_line_audio_entries,
     list_role_line_audio_entries,
+    list_role_line_counts,
     is_chapter_merged_audio_stale,
     invalidate_obsolete_chapter_line_audio_tasks,
     enqueue_line_audio_task,
@@ -1422,6 +1423,12 @@ class Handler(BaseHTTPRequestHandler):
                 novel_id, role_name=role_name, page=page, page_size=page_size
             )
             self.send_json(data)
+            return
+
+        m_role_line_counts = re.match(r"^/api/novels/(\d+)/role-line-counts$", route)
+        if m_role_line_counts:
+            novel_id = int(m_role_line_counts.group(1))
+            self.send_json({"counts": list_role_line_counts(novel_id)})
             return
 
         m_line_audio_task_detail = re.match(r"^/api/line-audio-tasks/(\d+)$", route)

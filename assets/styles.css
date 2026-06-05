@@ -3299,6 +3299,7 @@ body.is-batch-role-drag-selecting .batch-role-lines-table {
 .role-name-option {
   display: flex;
   justify-content: space-between;
+  gap: 12px;
   width: 100%;
   padding: 8px 12px;
   border: none;
@@ -3306,6 +3307,11 @@ body.is-batch-role-drag-selecting .batch-role-lines-table {
   text-align: left;
   cursor: pointer;
   font-size: 14px;
+}
+
+.role-name-option span:last-child {
+  color: var(--muted);
+  white-space: nowrap;
 }
 
 .role-name-option:hover,

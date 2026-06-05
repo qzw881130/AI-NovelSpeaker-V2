@@ -524,6 +524,40 @@ def list_role_line_audio_entries(
     }
 
 
+def list_role_line_counts(novel_id: int) -> dict[str, int]:
+    """统计全书每个角色在最新已完成 JSON 中的台词数。"""
+    conn = db_conn()
+    chapter_rows = conn.execute(
+        """
+        SELECT (
+          SELECT jt.merged_result_json
+          FROM json_tasks jt
+          WHERE jt.novel_id = c.novel_id
+            AND jt.chapter_num = c.chapter_num
+            AND jt.status = 'completed'
+            AND jt.merged_result_json IS NOT NULL
+          ORDER BY jt.id DESC
+          LIMIT 1
+        ) AS merged_result_json
+        FROM chapters c
+        WHERE c.novel_id = ?
+        ORDER BY c.chapter_num ASC, c.id ASC
+        """,
+        (novel_id,),
+    ).fetchall()
+    conn.close()
+    counts: dict[str, int] = {}
+    for chapter in chapter_rows:
+        merged_json = str(chapter["merged_result_json"] or "").strip()
+        if not merged_json:
+            continue
+        for line in parse_juben_lines_from_json_text(merged_json):
+            role_name = _normalize_role_name(line.get("role_name"))
+            if role_name:
+                counts[role_name] = counts.get(role_name, 0) + 1
+    return counts
+
+
 def invalidate_obsolete_chapter_line_audio_tasks(
     novel_id: int, chapter_id: int, json_text: str
 ) -> int:

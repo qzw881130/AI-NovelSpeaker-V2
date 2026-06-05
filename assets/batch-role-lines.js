@@ -1,5 +1,6 @@
 import {
   enqueueLineAudio,
+  fetchRoleLineCounts,
   fetchRoleLineAudios,
   fetchRoles,
   getActiveNovelId,
@@ -14,6 +15,7 @@ const PAGE_SIZE = 50;
 let allNovels = [];
 let activeNovel = null;
 let roleItems = [];
+let roleLineCounts = {};
 let currentSettings = null;
 let currentPage = 1;
 let currentItems = [];
@@ -74,6 +76,10 @@ function getAllRoleNames() {
   return roleItems.map((item) => String(item.name || "").trim()).filter(Boolean).sort((a, b) => a.localeCompare(b, "zh-CN"));
 }
 
+function getRoleLineCount(name) {
+  return Number(roleLineCounts[String(name || "").trim()] || 0);
+}
+
 function openRoleFilterDropdown() {
   roleFilterDropdownShouldStayOpen = true;
   document.getElementById("batchRoleFilterDropdown")?.classList.remove("hidden");
@@ -114,7 +120,7 @@ function renderRoleSelect() {
       return `
         <button class="role-name-option${active ? " active" : ""}" data-role-name="${escapeHtml(name)}" type="button">
           <span>${escapeHtml(name)}</span>
-          <span>${active ? translateText("已选") : translateText("选择")}</span>
+          <span>${getRoleLineCount(name).toLocaleString()} 条 · ${active ? translateText("已选") : translateText("选择")}</span>
         </button>
       `;
     }).join("");
@@ -484,6 +490,7 @@ async function loadRoles() {
   if (!activeNovel) return;
   const result = await fetchRoles(activeNovel.id);
   roleItems = result.roles || [];
+  roleLineCounts = await fetchRoleLineCounts(activeNovel.id);
   if (selectedRoleName && !roleItems.some((item) => String(item.name || "").trim() === selectedRoleName)) {
     selectedRoleName = "";
   }

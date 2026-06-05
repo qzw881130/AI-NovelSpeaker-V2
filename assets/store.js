@@ -813,6 +813,11 @@ async function fetchRoleLineAudios(novelId, roleName, options = {}) {
   };
 }
 
+async function fetchRoleLineCounts(novelId) {
+  const data = await api(`/api/novels/${Number(novelId)}/role-line-counts`);
+  return data.counts || {};
+}
+
 async function fetchChapterLineAudioOverview(novelId, chapterNum) {
   const data = await api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/line-audios`);
   return {
@@ -978,6 +983,7 @@ export {
   // 台词音频
   fetchChapterLineAudios,
   fetchRoleLineAudios,
+  fetchRoleLineCounts,
   fetchChapterLineAudioOverview,
   enqueueLineAudio,
   enqueueAllLineAudios,
