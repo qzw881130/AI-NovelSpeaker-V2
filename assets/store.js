@@ -803,6 +803,9 @@ async function fetchRoleLineAudios(novelId, roleName, options = {}) {
     page: String(page),
     pageSize: String(pageSize),
   });
+  if (options.chapterNum) {
+    params.set("chapterNum", String(Number(options.chapterNum)));
+  }
   const data = await api(`/api/novels/${Number(novelId)}/role-line-audios?${params.toString()}`);
   return {
     items: data.items || [],
@@ -813,8 +816,13 @@ async function fetchRoleLineAudios(novelId, roleName, options = {}) {
   };
 }
 
-async function fetchRoleLineCounts(novelId) {
-  const data = await api(`/api/novels/${Number(novelId)}/role-line-counts`);
+async function fetchRoleLineCounts(novelId, options = {}) {
+  const params = new URLSearchParams();
+  if (options.chapterNum) {
+    params.set("chapterNum", String(Number(options.chapterNum)));
+  }
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  const data = await api(`/api/novels/${Number(novelId)}/role-line-counts${suffix}`);
   return data.counts || {};
 }
 

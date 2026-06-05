@@ -1419,8 +1419,10 @@ class Handler(BaseHTTPRequestHandler):
             role_name = str((query.get("roleName") or [""])[0] or "").strip()
             page = int((query.get("page") or ["1"])[0])
             page_size = int((query.get("pageSize") or ["50"])[0])
+            raw_chapter_num = str((query.get("chapterNum") or [""])[0] or "").strip()
+            chapter_num = int(raw_chapter_num) if raw_chapter_num else None
             data = list_role_line_audio_entries(
-                novel_id, role_name=role_name, page=page, page_size=page_size
+                novel_id, role_name=role_name, page=page, page_size=page_size, chapter_num=chapter_num
             )
             self.send_json(data)
             return
@@ -1428,7 +1430,10 @@ class Handler(BaseHTTPRequestHandler):
         m_role_line_counts = re.match(r"^/api/novels/(\d+)/role-line-counts$", route)
         if m_role_line_counts:
             novel_id = int(m_role_line_counts.group(1))
-            self.send_json({"counts": list_role_line_counts(novel_id)})
+            query = parse_qs(parsed.query or "")
+            raw_chapter_num = str((query.get("chapterNum") or [""])[0] or "").strip()
+            chapter_num = int(raw_chapter_num) if raw_chapter_num else None
+            self.send_json({"counts": list_role_line_counts(novel_id, chapter_num=chapter_num)})
             return
 
         m_line_audio_task_detail = re.match(r"^/api/line-audio-tasks/(\d+)$", route)

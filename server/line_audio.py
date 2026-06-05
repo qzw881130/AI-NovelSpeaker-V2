@@ -423,9 +423,9 @@ def get_chapter_line_audio_entries(novel_id: int, chapter_id: int) -> list[dict]
 
 
 def list_role_line_audio_entries(
-    novel_id: int, role_name: str, page: int = 1, page_size: int = 50
+    novel_id: int, role_name: str, page: int = 1, page_size: int = 50, chapter_num: int | None = None
 ) -> dict:
-    """按角色分页列出全书台词及其音频状态"""
+    """按角色分页列出指定范围内的台词及其音频状态"""
     target_role = _normalize_role_name(role_name)
     if not target_role:
         return {"items": [], "totalCount": 0, "page": 1, "pageSize": 50, "pageCount": 0}
@@ -434,6 +434,8 @@ def list_role_line_audio_entries(
     page_size = max(1, min(int(page_size or 50), 100))
 
     conn = db_conn()
+    chapter_filter = "AND c.chapter_num = ?" if chapter_num is not None else ""
+    chapter_params: tuple[int, ...] = (novel_id, int(chapter_num)) if chapter_num is not None else (novel_id,)
     chapter_rows = conn.execute(
         """
         SELECT c.id AS chapter_id, c.chapter_num, c.title AS chapter_title,
@@ -449,9 +451,10 @@ def list_role_line_audio_entries(
                ) AS merged_result_json
         FROM chapters c
         WHERE c.novel_id = ?
+        {chapter_filter}
         ORDER BY c.chapter_num ASC, c.id ASC
-        """,
-        (novel_id,),
+        """.format(chapter_filter=chapter_filter),
+        chapter_params,
     ).fetchall()
     task_rows = conn.execute(
         "SELECT * FROM line_audio_tasks WHERE novel_id = ? ORDER BY id DESC",
@@ -524,9 +527,11 @@ def list_role_line_audio_entries(
     }
 
 
-def list_role_line_counts(novel_id: int) -> dict[str, int]:
-    """统计全书每个角色在最新已完成 JSON 中的台词数。"""
+def list_role_line_counts(novel_id: int, chapter_num: int | None = None) -> dict[str, int]:
+    """统计指定范围内每个角色在最新已完成 JSON 中的台词数。"""
     conn = db_conn()
+    chapter_filter = "AND c.chapter_num = ?" if chapter_num is not None else ""
+    chapter_params: tuple[int, ...] = (novel_id, int(chapter_num)) if chapter_num is not None else (novel_id,)
     chapter_rows = conn.execute(
         """
         SELECT (
@@ -541,9 +546,10 @@ def list_role_line_counts(novel_id: int) -> dict[str, int]:
         ) AS merged_result_json
         FROM chapters c
         WHERE c.novel_id = ?
+        {chapter_filter}
         ORDER BY c.chapter_num ASC, c.id ASC
-        """,
-        (novel_id,),
+        """.format(chapter_filter=chapter_filter),
+        chapter_params,
     ).fetchall()
     conn.close()
     counts: dict[str, int] = {}

@@ -2,6 +2,7 @@ import {
   enqueueLineAudio,
   fetchRoleLineCounts,
   fetchRoleLineAudios,
+  fetchNovelChapters,
   fetchRoles,
   getActiveNovelId,
   getData,
@@ -14,6 +15,7 @@ const PAGE_SIZE = 50;
 
 let allNovels = [];
 let activeNovel = null;
+let chapterItems = [];
 let roleItems = [];
 let roleLineCounts = {};
 let currentSettings = null;
@@ -23,6 +25,7 @@ let currentPageCount = 0;
 let currentTotalCount = 0;
 const selectedRows = new Map();
 let selectedRoleName = "";
+let selectedChapterNum = "";
 let roleFilterKeyword = "";
 let roleFilterDropdownShouldStayOpen = false;
 let dragSelectState = null;
@@ -61,6 +64,10 @@ function getSearchKeyword() {
   return String(document.getElementById("batchRoleSearchInput")?.value || "").trim().toLowerCase();
 }
 
+function getSelectedChapterNum() {
+  return Number(selectedChapterNum || 0) || 0;
+}
+
 function rowKey(item) {
   return `${Number(item.chapterNum || 0)}:${Number(item.lineIndex || 0)}`;
 }
@@ -72,8 +79,27 @@ function renderNovelSelect() {
   if (activeNovel) select.value = String(activeNovel.id);
 }
 
+function renderChapterSelect() {
+  const select = document.getElementById("batchRoleChapterSelect");
+  if (!select) return;
+  const options = [
+    `<option value="">全部</option>`,
+    ...chapterItems.map((item) => {
+      const chapterNum = Number(item.chapter_num ?? item.chapterNum ?? 0);
+      const title = String(item.title || "").trim();
+      const label = title ? `第${chapterNum}回 ${title}` : `第${chapterNum}回`;
+      return `<option value="${chapterNum}">${escapeHtml(label)}</option>`;
+    }),
+  ];
+  select.innerHTML = options.join("");
+  select.value = String(selectedChapterNum || "");
+}
+
 function getAllRoleNames() {
-  return roleItems.map((item) => String(item.name || "").trim()).filter(Boolean).sort((a, b) => a.localeCompare(b, "zh-CN"));
+  return roleItems
+    .map((item) => String(item.name || "").trim())
+    .filter((name) => name && (!getSelectedChapterNum() || getRoleLineCount(name) > 0))
+    .sort((a, b) => a.localeCompare(b, "zh-CN"));
 }
 
 function getRoleLineCount(name) {
@@ -429,6 +455,7 @@ async function generateAll() {
     const data = await fetchRoleLineAudios(activeNovel.id, roleName, {
       page,
       pageSize: PAGE_SIZE,
+      chapterNum: getSelectedChapterNum(),
     });
     pageCount = Number(data.pageCount || 0);
     for (const item of data.items || []) {
@@ -473,6 +500,7 @@ async function loadLines(options = {}) {
   const data = await fetchRoleLineAudios(activeNovel.id, roleName, {
     page: options.keepPage ? currentPage : 1,
     pageSize: PAGE_SIZE,
+    chapterNum: getSelectedChapterNum(),
   });
   currentPage = Number(data.page || 1);
   currentItems = data.items || [];
@@ -490,11 +518,20 @@ async function loadRoles() {
   if (!activeNovel) return;
   const result = await fetchRoles(activeNovel.id);
   roleItems = result.roles || [];
-  roleLineCounts = await fetchRoleLineCounts(activeNovel.id);
-  if (selectedRoleName && !roleItems.some((item) => String(item.name || "").trim() === selectedRoleName)) {
+  roleLineCounts = await fetchRoleLineCounts(activeNovel.id, { chapterNum: getSelectedChapterNum() });
+  if (selectedRoleName && !getAllRoleNames().includes(selectedRoleName)) {
     selectedRoleName = "";
   }
   renderRoleSelect();
+}
+
+async function loadChapters() {
+  if (!activeNovel) return;
+  chapterItems = await fetchNovelChapters(activeNovel.id);
+  if (selectedChapterNum && !chapterItems.some((item) => String(item.chapter_num ?? item.chapterNum ?? "") === String(selectedChapterNum))) {
+    selectedChapterNum = "";
+  }
+  renderChapterSelect();
 }
 
 function setHeader() {
@@ -507,9 +544,11 @@ async function switchNovel(novelId) {
   if (!activeNovel) return;
   setActiveNovelId(activeNovel.id);
   selectedRows.clear();
+  selectedChapterNum = "";
   currentPage = 1;
   setHeader();
   renderNovelSelect();
+  await loadChapters();
   await loadRoles();
   await loadLines();
 }
@@ -517,6 +556,13 @@ async function switchNovel(novelId) {
 function bindEvents() {
   document.getElementById("batchRoleNovelSelect")?.addEventListener("change", async (event) => {
     await switchNovel(event.target.value);
+  });
+  document.getElementById("batchRoleChapterSelect")?.addEventListener("change", async (event) => {
+    selectedChapterNum = String(event.target.value || "");
+    selectedRows.clear();
+    currentPage = 1;
+    await loadRoles();
+    await loadLines();
   });
   const roleFilterInputEl = document.getElementById("batchRoleFilterInput");
   roleFilterInputEl?.addEventListener("focus", () => {
@@ -545,6 +591,7 @@ function bindEvents() {
     renderTable();
   });
   document.getElementById("refreshBatchRoleLinesBtn")?.addEventListener("click", async () => {
+    await loadChapters();
     await loadRoles();
     await loadLines({ keepPage: true });
     toast("已刷新");
@@ -590,7 +637,8 @@ function bindEvents() {
       toast("请先选择角色");
       return;
     }
-    if (!window.confirm(`确认将角色「${roleName}」的全部台词加入生成队列吗？`)) {
+    const chapterLabel = getSelectedChapterNum() ? `第${getSelectedChapterNum()}回` : "全部章回";
+    if (!window.confirm(`确认将角色「${roleName}」在${chapterLabel}的台词加入生成队列吗？`)) {
       return;
     }
     await generateAll();
@@ -631,6 +679,7 @@ async function init() {
   renderNovelSelect();
   setHeader();
   bindEvents();
+  await loadChapters();
   await loadRoles();
   await loadLines();
   localizeDocumentText(document);
