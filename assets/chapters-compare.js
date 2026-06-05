@@ -84,7 +84,7 @@ function parseJubenLines(jsonText) {
 function tokenizeCompareText(text) {
   return Array.from(String(text || "")).map((char) => ({
     char,
-    comparable: /[“”‘’"'，。！？、；：,.!?;:（）()《》〈〉【】\[\]…—\-]/.test(char) || /\s/.test(char) ? null : char,
+    comparable: /[“”‘’"'，。！？、；：,.!?;:（）()《》〈〉【】『』「」\[\]…—\-]/.test(char) || /\s/.test(char) ? null : char,
   }));
 }
 
@@ -187,7 +187,7 @@ function hideSelectionBubble() {
 
 function normalizeSelectedText(text) {
   return String(text || "")
-    .replace(/[“”‘’"']/g, "")
+    .replace(/[“”‘’"'『』「」]/g, "")
     .replace(/\s+/g, "")
     .trim();
 }
