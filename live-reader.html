@@ -66,8 +66,13 @@
               <span id="liveReaderHeightValue" class="reader-status">820px</span>
             </label>
             <label class="live-reader-slider-control">
+              插图宽度
+              <input id="liveReaderIllustrationWidthRange" type="range" min="240" max="1000" step="10" value="620" />
+              <span id="liveReaderIllustrationWidthValue" class="reader-status">620px</span>
+            </label>
+            <label class="live-reader-slider-control">
               字号
-              <input id="liveReaderFontSizeRange" type="range" min="18" max="42" step="1" value="28" />
+              <input id="liveReaderFontSizeRange" type="range" min="12" max="42" step="1" value="28" />
               <span id="liveReaderFontSizeValue" class="reader-status">28px</span>
             </label>
             <label class="live-reader-slider-control">
@@ -90,6 +95,16 @@
               <input id="liveReaderTopSafeOffsetRange" type="range" min="0" max="360" step="4" value="72" />
               <span id="liveReaderTopSafeOffsetValue" class="reader-status">72px</span>
             </label>
+            <div class="live-reader-theme-control">
+              <span>阅读布局</span>
+              <div class="live-reader-theme-row">
+                <select id="liveReaderLayoutSelect">
+                  <option value="vertical">纵向：正文在上，插画在下</option>
+                  <option value="horizontal">横向：插画在左，正文在右</option>
+                </select>
+              </div>
+              <span id="liveReaderLayoutValue" class="reader-status">纵向</span>
+            </div>
             <div class="live-reader-theme-control">
               <span>阅读配色</span>
               <div class="live-reader-theme-row">
@@ -147,19 +162,25 @@
               <audio id="liveReaderAudioPlayer" controls preload="metadata"></audio>
               <audio id="liveEndingAudioPlayer" class="hidden" preload="auto"></audio>
             </div>
-            <div id="liveReaderFrameTitle" class="live-reader-frame-title">-</div>
-            <div id="liveReaderProgressTrack" class="live-reader-progress-track" aria-hidden="true">
-              <div id="liveReaderProgressFill" class="live-reader-progress-fill"></div>
-            </div>
-            <div class="live-reader-reader-wrap">
-              <article id="liveReaderContent" class="live-reader-content">请先选择章回。</article>
-            </div>
-            <div id="liveReaderIllustrationBox" class="live-reader-illustration-box hidden">
-              <div id="liveReaderIllustrationMeta" class="meta">插画未开启</div>
-              <div class="live-reader-illustration-stage">
-                <img id="liveReaderIllustrationImage" alt="章节插画" />
-                <span id="liveReaderIllustrationTime" class="live-reader-illustration-badge live-reader-illustration-time"></span>
-                <span id="liveReaderIllustrationTitle" class="live-reader-illustration-badge live-reader-illustration-title"></span>
+            <div id="liveReaderStage" class="live-reader-stage live-reader-stage-vertical">
+              <div class="live-reader-frame-block">
+                <div id="liveReaderFrameTitle" class="live-reader-frame-title">-</div>
+                <div id="liveReaderProgressTrack" class="live-reader-progress-track" aria-hidden="true">
+                  <div id="liveReaderProgressFill" class="live-reader-progress-fill"></div>
+                </div>
+              </div>
+              <div class="live-reader-media-block">
+                <div id="liveReaderIllustrationBox" class="live-reader-illustration-box hidden">
+                  <div id="liveReaderIllustrationMeta" class="meta">插画未开启</div>
+                  <div class="live-reader-illustration-stage">
+                    <img id="liveReaderIllustrationImage" alt="章节插画" />
+                    <span id="liveReaderIllustrationTime" class="live-reader-illustration-badge live-reader-illustration-time"></span>
+                    <span id="liveReaderIllustrationTitle" class="live-reader-illustration-badge live-reader-illustration-title"></span>
+                  </div>
+                </div>
+                <div class="live-reader-reader-wrap">
+                  <article id="liveReaderContent" class="live-reader-content">请先选择章回。</article>
+                </div>
               </div>
             </div>
           </section>

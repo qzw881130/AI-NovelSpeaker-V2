@@ -1007,6 +1007,7 @@ def list_illustration_images(novel_id: int, chapter_id: int, conn=None) -> list[
             "status": str(r["status"] or "idle"),
             "progress": int(r["progress"] or 0),
             "imageUrl": f"/api/illustration-images/{int(r['id'])}/file" if str(r["image_file_path"] or "").strip() else "",
+            "updatedAt": str(r["updated_at"] or ""),
             "errorMessage": str(r["error_message"] or ""),
         })
     return items
