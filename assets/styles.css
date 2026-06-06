@@ -2977,6 +2977,79 @@ menu {
   min-width: 280px;
 }
 
+.live-reader-stage {
+  max-width: 100%;
+  margin: 0 auto;
+}
+
+.live-reader-frame-block {
+  width: 100%;
+}
+
+.live-reader-media-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+#liveReaderIllustrationMeta:empty {
+  display: none;
+}
+
+.live-reader-reader-wrap {
+  order: 1;
+}
+
+.live-reader-illustration-box {
+  order: 2;
+}
+
+.live-reader-stage-horizontal .live-reader-media-block {
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) auto;
+  align-items: stretch;
+  gap: 0;
+}
+
+.live-reader-stage-horizontal .live-reader-illustration-box {
+  order: 1;
+  align-self: stretch;
+  margin: 0;
+  height: 100%;
+  gap: 0;
+}
+
+.live-reader-stage-horizontal .live-reader-reader-wrap {
+  order: 2;
+  margin: 0;
+  border-radius: 0 4px 4px 0;
+}
+
+.live-reader-stage-horizontal .live-reader-illustration-stage {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.live-reader-stage-horizontal .live-reader-illustration-box img {
+  max-height: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 4px 0 0 4px;
+}
+
+.live-reader-stage-horizontal .live-reader-illustration-box.hidden {
+  display: none;
+}
+
+.live-reader-stage-horizontal .live-reader-media-block:has(.live-reader-illustration-box.hidden) {
+  display: flex;
+  align-items: center;
+}
+
 .live-reader-reader-wrap {
   overflow: auto;
   border: 1px solid var(--line);
@@ -3378,6 +3451,11 @@ body.is-batch-role-drag-selecting .batch-role-lines-table {
 
 body.is-novel-download-drag-selecting,
 body.is-novel-download-drag-selecting .novel-download-table {
+  user-select: none;
+}
+
+body.is-nsfw-review-drag-selecting,
+body.is-nsfw-review-drag-selecting .novel-download-table {
   user-select: none;
 }
 
@@ -4231,6 +4309,25 @@ body.is-illustration-drag-selecting {
 
   .live-reader-reader-wrap {
     height: min(62vh, 780px) !important;
+  }
+
+  .live-reader-stage-horizontal .live-reader-media-block {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .live-reader-stage-horizontal .live-reader-illustration-box {
+    width: 100% !important;
+  }
+
+  .live-reader-stage-horizontal .live-reader-illustration-stage {
+    height: auto;
+    min-height: 0;
+  }
+
+  .live-reader-stage-horizontal .live-reader-illustration-box img {
+    height: auto;
   }
 
   .live-reader-content {

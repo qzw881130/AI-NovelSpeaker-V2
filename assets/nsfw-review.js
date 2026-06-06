@@ -16,6 +16,8 @@ let chapterItems = [];
 const selectedChapterNums = new Set();
 let autoRefreshTimer = 0;
 const enqueuingChapterNums = new Set();
+let dragSelecting = false;
+let dragSelectValue = false;
 
 function renderTaskWorkerStatus(status) {
   const el = document.getElementById("nsfwReviewWorkerStatus");
@@ -124,12 +126,26 @@ function updateSelectionControls() {
   selectAll.indeterminate = selectedCount > 0 && selectedCount < items.length;
 }
 
-function toggleChapterSelection(chapterNum, checked) {
+function setChapterSelected(chapterNum, checked) {
   const safeChapterNum = Number(chapterNum || 0);
   if (!safeChapterNum) return;
   if (checked) selectedChapterNums.add(safeChapterNum);
   else selectedChapterNums.delete(safeChapterNum);
+  const row = document.querySelector(`.nsfw-review-row[data-chapter-num="${safeChapterNum}"]`);
+  const checkbox = document.querySelector(`.nsfw-review-item-check[data-chapter-num="${safeChapterNum}"]`);
+  if (row) row.classList.toggle("is-selected", selectedChapterNums.has(safeChapterNum));
+  if (checkbox) checkbox.checked = selectedChapterNums.has(safeChapterNum);
   updateSelectionControls();
+}
+
+function isInteractiveTarget(target) {
+  return Boolean(target?.closest?.("button,a,input,select,textarea,label,dialog"));
+}
+
+function stopDragSelection() {
+  if (!dragSelecting) return;
+  dragSelecting = false;
+  document.body.classList.remove("is-nsfw-review-drag-selecting");
 }
 
 function clearSelection() {
@@ -169,7 +185,7 @@ function renderTable() {
     const isEnqueuing = enqueuingChapterNums.has(Number(item.chapterNum || 0));
     const status = isEnqueuing ? "pending" : item.status;
     return `
-    <tr>
+    <tr class="novel-download-row nsfw-review-row${selectedChapterNums.has(Number(item.chapterNum || 0)) ? " is-selected" : ""}" data-chapter-num="${Number(item.chapterNum || 0)}">
       <td>
         <label class="novel-download-checkbox-cell" aria-label="选择第 ${String(item.chapterNum).padStart(3, "0")} 回">
           <input class="nsfw-review-item-check" type="checkbox" data-chapter-num="${Number(item.chapterNum || 0)}" ${selectedChapterNums.has(Number(item.chapterNum || 0)) ? "checked" : ""} />
@@ -266,7 +282,23 @@ function bindEvents() {
   document.getElementById("nsfwReviewTableBody").addEventListener("change", (event) => {
     const checkbox = event.target.closest(".nsfw-review-item-check");
     if (!checkbox) return;
-    toggleChapterSelection(checkbox.dataset.chapterNum, checkbox.checked);
+    setChapterSelected(checkbox.dataset.chapterNum, checkbox.checked);
+  });
+  document.getElementById("nsfwReviewTableBody").addEventListener("mousedown", (event) => {
+    if (event.button !== 0 || isInteractiveTarget(event.target)) return;
+    const row = event.target.closest(".nsfw-review-row");
+    if (!row) return;
+    event.preventDefault();
+    const chapterNum = Number(row.dataset.chapterNum || 0);
+    dragSelecting = true;
+    dragSelectValue = !selectedChapterNums.has(chapterNum);
+    setChapterSelected(chapterNum, dragSelectValue);
+    document.body.classList.add("is-nsfw-review-drag-selecting");
+  });
+  document.getElementById("nsfwReviewTableBody").addEventListener("mouseover", (event) => {
+    if (!dragSelecting) return;
+    const row = event.target.closest(".nsfw-review-row");
+    if (row) setChapterSelected(Number(row.dataset.chapterNum || 0), dragSelectValue);
   });
   document.getElementById("nsfwReviewTableBody").addEventListener("click", async (event) => {
     const viewBtn = event.target.closest(".nsfw-review-view-btn");
@@ -286,6 +318,8 @@ function bindEvents() {
     const all = chapterItems.map((item) => Number(item.chapterNum || 0));
     await enqueueBatch(all);
   });
+  document.addEventListener("mouseup", stopDragSelection);
+  window.addEventListener("blur", stopDragSelection);
 }
 
 async function init() {
