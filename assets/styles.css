@@ -3055,7 +3055,7 @@ menu {
   border: 1px solid var(--line);
   border-radius: 4px;
   background: var(--live-reader-bg, #fffef7);
-  padding: 18px;
+  padding: 18px 18px 96px;
   margin: 0 auto;
   box-sizing: border-box;
   scrollbar-width: none;
