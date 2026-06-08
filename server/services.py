@@ -1143,11 +1143,11 @@ def fetch_json_tasks(conn: sqlite3.Connection) -> list[dict]:
         """
         SELECT t.id,t.novel_id,t.chapter_num,t.chapter_title,t.prompt_id,t.model_name,t.think_enabled,t.status,t.progress,t.updated_at,
                t.created_at,t.started_at,t.error_message,
-               (SELECT COUNT(1) FROM task_batches b WHERE b.task_id=t.id) AS batch_total,
-               (SELECT COUNT(1) FROM task_batches b WHERE b.task_id=t.id AND b.status='completed') AS batch_done,
-               (SELECT COUNT(1) FROM task_batches b WHERE b.task_id=t.id AND b.status='failed') AS batch_failed,
-               (SELECT COUNT(1) FROM task_batches b WHERE b.task_id=t.id AND b.status='cancelled') AS batch_cancelled,
-               (SELECT COUNT(1) FROM task_batches b WHERE b.task_id=t.id AND b.status='timeout') AS batch_timeout,
+               COALESCE(bs.batch_total, 0) AS batch_total,
+               COALESCE(bs.batch_done, 0) AS batch_done,
+               COALESCE(bs.batch_failed, 0) AS batch_failed,
+               COALESCE(bs.batch_cancelled, 0) AS batch_cancelled,
+               COALESCE(bs.batch_timeout, 0) AS batch_timeout,
                n.name AS novel_name,
                COALESCE(
                    c.word_count,
@@ -1163,6 +1163,16 @@ def fetch_json_tasks(conn: sqlite3.Connection) -> list[dict]:
         FROM json_tasks t
         JOIN novels n ON n.id=t.novel_id
         LEFT JOIN chapters c ON c.id=t.chapter_id
+        LEFT JOIN (
+            SELECT task_id,
+                   COUNT(1) AS batch_total,
+                   SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) AS batch_done,
+                   SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) AS batch_failed,
+                   SUM(CASE WHEN status='cancelled' THEN 1 ELSE 0 END) AS batch_cancelled,
+                   SUM(CASE WHEN status='timeout' THEN 1 ELSE 0 END) AS batch_timeout
+            FROM task_batches
+            GROUP BY task_id
+        ) bs ON bs.task_id=t.id
         ORDER BY t.id DESC
         """
     ).fetchall()

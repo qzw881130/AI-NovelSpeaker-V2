@@ -11,6 +11,8 @@ function statusLabel(status) {
 let currentData = { novels: [], prompts: [], jsonTasks: [] };
 let refreshTimer = null;
 let clockTimer = null;
+let reloadPromise = null;
+let operationInFlight = false;
 const taskDetails = new Map();
 const loadingDetails = new Set();
 const batchOpenStates = new Map();
@@ -251,6 +253,36 @@ function render() {
   localizeDocumentText(document);
 }
 
+async function applyReloadData(data, options = {}) {
+  const novelValue = options.keepFilters ? document.getElementById("taskNovelSelect")?.value || "" : "";
+  const statusValue = options.keepFilters ? document.getElementById("taskStatusSelect")?.value || "all" : "all";
+  currentData = data;
+  const alive = new Set((currentData.jsonTasks || []).map((x) => String(x.id)));
+  for (const key of Array.from(taskDetails.keys())) {
+    if (!alive.has(key)) taskDetails.delete(key);
+  }
+  for (const key of Array.from(batchOpenStates.keys())) {
+    if (!alive.has(key)) batchOpenStates.delete(key);
+  }
+  const expandedTaskIds = Array.from(taskDetails.keys()).filter((key) => alive.has(key));
+  if (expandedTaskIds.length) {
+    await Promise.all(
+      expandedTaskIds.map(async (key) => {
+        try {
+          const detail = await fetchJsonTaskDetail(Number(key));
+          taskDetails.set(key, detail);
+        } catch {
+          // keep existing cached details when refresh fails
+        }
+      })
+    );
+  }
+  renderNovelSelector();
+  document.getElementById("taskNovelSelect").value = novelValue;
+  document.getElementById("taskStatusSelect").value = statusValue;
+  render();
+}
+
 async function onBatchAction(action, taskId, batchIndex) {
   try {
     if (action !== "retry") return;
@@ -269,11 +301,13 @@ async function onBatchAction(action, taskId, batchIndex) {
 async function onTaskAction(action, id) {
   const task = currentData.jsonTasks.find((x) => String(x.id) === String(id));
   if (!task) return;
+  if (operationInFlight) return;
   try {
     if (action === "retry") {
-      await retryJsonTask(task.id);
+      operationInFlight = true;
+      const data = await retryJsonTask(task.id);
       toast(t("common.retry"));
-      await reload();
+      await applyReloadData(data, { keepFilters: true });
       return;
     }
     if (action === "delete") {
@@ -282,18 +316,20 @@ async function onTaskAction(action, id) {
         return;
       }
       if (!window.confirm(t("confirm.deleteTask", { title: task.title }))) return;
-      await deleteJsonTask(task.id);
+      operationInFlight = true;
+      const data = await deleteJsonTask(task.id);
       taskDetails.delete(String(task.id));
       batchOpenStates.delete(String(task.id));
       toast(t("toast.deleted"));
-      await reload();
+      await applyReloadData(data, { keepFilters: true });
       return;
     }
     if (action === "cancel") {
       if (!window.confirm(t("confirm.cancelJsonTask", { title: task.title }))) return;
-      await cancelJsonTask(task.id);
+      operationInFlight = true;
+      const data = await cancelJsonTask(task.id);
       toast(t("toast.terminated"));
-      await reload();
+      await applyReloadData(data, { keepFilters: true });
       return;
     }
     if (action === "compare") {
@@ -324,37 +360,22 @@ async function onTaskAction(action, id) {
     }
   } catch (err) {
     toast(t("error.operationFailed", { msg: err.message }));
+  } finally {
+    operationInFlight = false;
   }
 }
 
 async function reload() {
-  const novelValue = document.getElementById("taskNovelSelect")?.value || "";
-  const statusValue = document.getElementById("taskStatusSelect")?.value || "all";
-  currentData = await getData({ include: ["novels", "jsonTasks"] });
-  const alive = new Set((currentData.jsonTasks || []).map((x) => String(x.id)));
-  for (const key of Array.from(taskDetails.keys())) {
-    if (!alive.has(key)) taskDetails.delete(key);
+  if (reloadPromise) return reloadPromise;
+  reloadPromise = (async () => {
+    const data = await getData({ include: ["novels", "jsonTasks"] });
+    await applyReloadData(data, { keepFilters: true });
+  })();
+  try {
+    await reloadPromise;
+  } finally {
+    reloadPromise = null;
   }
-  for (const key of Array.from(batchOpenStates.keys())) {
-    if (!alive.has(key)) batchOpenStates.delete(key);
-  }
-  const expandedTaskIds = Array.from(taskDetails.keys()).filter((key) => alive.has(key));
-  if (expandedTaskIds.length) {
-    await Promise.all(
-      expandedTaskIds.map(async (key) => {
-        try {
-          const detail = await fetchJsonTaskDetail(Number(key));
-          taskDetails.set(key, detail);
-        } catch {
-          // keep existing cached details when refresh fails
-        }
-      })
-    );
-  }
-  renderNovelSelector();
-  document.getElementById("taskNovelSelect").value = novelValue;
-  document.getElementById("taskStatusSelect").value = statusValue;
-  render();
 }
 
 function bindEvents() {
@@ -379,6 +400,7 @@ function applyAutoRefresh() {
   localStorage.setItem(REFRESH_INTERVAL_KEY, String(seconds));
   if (!Number.isFinite(seconds) || seconds <= 0) return;
   refreshTimer = window.setInterval(() => {
+    if (operationInFlight || reloadPromise) return;
     reload().catch(() => {
       // ignore
     });

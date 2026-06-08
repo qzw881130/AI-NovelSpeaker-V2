@@ -372,6 +372,12 @@ def migrate_json_tasks_table(conn: sqlite3.Connection) -> None:
         conn.execute(
             "ALTER TABLE json_tasks ADD COLUMN think_enabled INTEGER NOT NULL DEFAULT 1"
         )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_json_tasks_id_desc ON json_tasks(id DESC)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_chapters_novel_chapter_id ON chapters(novel_id, chapter_num, id DESC)"
+    )
 
 
 def migrate_task_batches_table(conn: sqlite3.Connection) -> None:
@@ -385,6 +391,9 @@ def migrate_task_batches_table(conn: sqlite3.Connection) -> None:
         conn.execute(
             "ALTER TABLE task_batches ADD COLUMN auto_retry_count INTEGER NOT NULL DEFAULT 0"
         )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_task_batches_task_status ON task_batches(task_id, status)"
+    )
 
 
 def migrate_chapter_asr_tasks_table(conn: sqlite3.Connection) -> None:
