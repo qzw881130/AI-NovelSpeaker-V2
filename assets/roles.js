@@ -33,6 +33,8 @@ let chapterRoleNamesCache = new Map();
 let roleNameDropdownShouldStayOpen = false;
 const generatingSampleRoleIds = new Set();
 let activeRoleVoiceBundleNovelId = "";
+const ROLES_STATS_COLLAPSED_KEY = "ai_novel_roles_stats_collapsed";
+const ROLES_FILTER_COLLAPSED_KEY = "ai_novel_roles_filter_collapsed";
 
 const rolesFilterState = {
   chapter: "all",
@@ -94,6 +96,37 @@ function renderRoleStats(stats) {
   document.getElementById("roleLevel2Count").textContent = String(stats?.level_2 || 0);
   document.getElementById("roleLevel3Count").textContent = String(stats?.level_3 || 0);
   document.getElementById("roleNoSampleCount").textContent = String(stats?.without_sample || 0);
+}
+
+function getSavedCollapsed(key) {
+  return String(localStorage.getItem(key) || "0") === "1";
+}
+
+function setSavedCollapsed(key, collapsed) {
+  localStorage.setItem(key, collapsed ? "1" : "0");
+}
+
+function applyCollapsiblePanel(panelId, bodyId, buttonId, collapsed) {
+  const panel = document.getElementById(panelId);
+  const body = document.getElementById(bodyId);
+  const button = document.getElementById(buttonId);
+  panel?.classList.toggle("is-collapsed", collapsed);
+  body?.classList.toggle("hidden", collapsed);
+  if (button) {
+    button.textContent = collapsed ? translateText("展开") : translateText("收起");
+    button.setAttribute("aria-expanded", collapsed ? "false" : "true");
+  }
+}
+
+function applyRolesPanelCollapsedStates() {
+  applyCollapsiblePanel("rolesStatsCard", "rolesStatsBody", "toggleRolesStatsBtn", getSavedCollapsed(ROLES_STATS_COLLAPSED_KEY));
+  applyCollapsiblePanel("rolesFilterPanel", "rolesFilterBody", "toggleRolesFilterBtn", getSavedCollapsed(ROLES_FILTER_COLLAPSED_KEY));
+}
+
+function toggleRolesPanel(panelId, bodyId, buttonId, storageKey) {
+  const nextCollapsed = !getSavedCollapsed(storageKey);
+  setSavedCollapsed(storageKey, nextCollapsed);
+  applyCollapsiblePanel(panelId, bodyId, buttonId, nextCollapsed);
 }
 
 function syncRoleStatsFromItems() {
@@ -717,6 +750,13 @@ async function saveRoleFromForm() {
 }
 
 function bindActions() {
+  document.getElementById("toggleRolesStatsBtn")?.addEventListener("click", () => {
+    toggleRolesPanel("rolesStatsCard", "rolesStatsBody", "toggleRolesStatsBtn", ROLES_STATS_COLLAPSED_KEY);
+  });
+  document.getElementById("toggleRolesFilterBtn")?.addEventListener("click", () => {
+    toggleRolesPanel("rolesFilterPanel", "rolesFilterBody", "toggleRolesFilterBtn", ROLES_FILTER_COLLAPSED_KEY);
+  });
+
   document.getElementById("refreshRolesBtn").addEventListener("click", async () => {
     setRolesPageStatus("");
     try {
@@ -992,6 +1032,7 @@ async function init() {
   setActiveNovelId(activeNovel.id);
   setHeader(activeNovel);
   renderNovelSelect();
+  applyRolesPanelCollapsedStates();
   bindActions();
   await refreshRolesPage();
   localizeDocumentText(document);

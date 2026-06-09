@@ -27,9 +27,12 @@
         </header>
 
         <section class="hero-grid roles-hero-grid">
-          <article class="hero-card">
-            <h2>角色统计</h2>
-            <div class="hero-metrics" id="rolesStats">
+          <article id="rolesStatsCard" class="hero-card collapsible-panel">
+            <div class="collapsible-panel-head">
+              <h2>角色统计</h2>
+              <button id="toggleRolesStatsBtn" class="ghost-btn btn-sm" type="button" aria-expanded="true">收起</button>
+            </div>
+            <div id="rolesStatsBody" class="hero-metrics collapsible-panel-body">
               <div class="metric"><span class="label">角色数</span><strong id="roleTotalCount">0</strong></div>
               <div class="metric"><span class="label">一等角色</span><strong id="roleLevel1Count">0</strong></div>
               <div class="metric"><span class="label">二等角色</span><strong id="roleLevel2Count">0</strong></div>
@@ -39,11 +42,14 @@
           </article>
         </section>
 
-        <section class="panel roles-filter-panel">
+        <section id="rolesFilterPanel" class="panel roles-filter-panel collapsible-panel">
           <div class="panel-head">
             <h2>过滤器</h2>
+            <div class="panel-head-actions">
+              <button id="toggleRolesFilterBtn" class="ghost-btn btn-sm" type="button" aria-expanded="true">收起</button>
+            </div>
           </div>
-          <div class="roles-filters">
+          <div id="rolesFilterBody" class="roles-filters collapsible-panel-body">
             <div class="filter-group">
               <label for="chapterFilterSelect">章回筛选</label>
               <select id="chapterFilterSelect">

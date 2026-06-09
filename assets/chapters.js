@@ -1867,6 +1867,42 @@ function updateRolesToolbarState() {
   document.getElementById("editRolesBtn").classList.toggle("hidden", isRolesEditing);
   document.getElementById("saveRolesBtn").classList.toggle("hidden", !isRolesEditing);
   document.getElementById("cancelRolesEditBtn").classList.toggle("hidden", !isRolesEditing);
+  document.getElementById("addRemainingRolesBtn")?.classList.toggle("hidden", isRolesEditing);
+}
+
+function isRoleInLibrary(role) {
+  const roleName = String(role?.name || "").trim();
+  if (!roleName) return true;
+  return globalRoleDefaults.some((item) => String(item.name || "").trim() === roleName);
+}
+
+function getMissingChapterRoles() {
+  return chapterRoles.filter((role) => String(role?.name || "").trim() && !isRoleInLibrary(role));
+}
+
+async function saveRoleToLibrary(role) {
+  const res = await fetch(`/api/novels/${activeNovel.id}/roles`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: role.name,
+      instruct: role.instruct,
+      sampleText: role.text,
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(translateText("保存失败"));
+  }
+}
+
+function updateAddRemainingRolesButton() {
+  const btn = document.getElementById("addRemainingRolesBtn");
+  if (!btn) return;
+  const missingCount = getMissingChapterRoles().length;
+  btn.disabled = isRolesEditing || missingCount <= 0;
+  btn.textContent = missingCount > 0
+    ? `${translateText("将剩余加入角色")} (${missingCount})`
+    : translateText("已全部加入角色库");
 }
 
 function renderRolesTable() {
@@ -1943,23 +1979,11 @@ function renderRolesTable() {
 
         btn.disabled = true;
         try {
-          const res = await fetch(`/api/novels/${activeNovel.id}/roles`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              name: role.name,
-              instruct: role.instruct,
-              sampleText: role.text,
-            }),
-          });
-          if (res.ok) {
-            toast(translateText("已保存到角色库"));
-            await loadGlobalRoleDefaults();
-            renderRolesTable();
-            await updateChapterActionWarnings();
-          } else {
-            toast(translateText("保存失败"));
-          }
+          await saveRoleToLibrary(role);
+          toast(translateText("已保存到角色库"));
+          await loadGlobalRoleDefaults();
+          renderRolesTable();
+          await updateChapterActionWarnings();
         } catch {
           toast(translateText("保存失败"));
         } finally {
@@ -1968,7 +1992,46 @@ function renderRolesTable() {
       });
     });
   }
+  updateAddRemainingRolesButton();
   localizeDocumentText(document);
+}
+
+async function addRemainingRolesToLibrary() {
+  if (!activeNovel || isRolesEditing) return;
+  const btn = document.getElementById("addRemainingRolesBtn");
+  const missingRoles = getMissingChapterRoles();
+  if (!missingRoles.length) {
+    toast(translateText("已全部加入角色库"));
+    return;
+  }
+  if (!window.confirm(`确认将剩余 ${missingRoles.length} 个角色加入角色库吗？`)) return;
+  const previousText = btn?.textContent || "";
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = translateText("保存中...");
+  }
+  let saved = 0;
+  let failed = 0;
+  try {
+    for (const role of missingRoles) {
+      try {
+        await saveRoleToLibrary(role);
+        saved += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+    await loadGlobalRoleDefaults();
+    renderRolesTable();
+    await updateChapterActionWarnings();
+    toast(failed ? `已加入 ${saved} 个，失败 ${failed} 个` : `已加入 ${saved} 个角色`);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = previousText;
+    }
+    updateAddRemainingRolesButton();
+  }
 }
 
 async function openRolesDialog() {
@@ -2165,7 +2228,9 @@ function bindRolesEvents() {
     filterRolesMissingOnly = Boolean(event.target.checked);
     renderRolesTable();
   });
-  
+
+  document.getElementById("addRemainingRolesBtn")?.addEventListener("click", addRemainingRolesToLibrary);
+
   document.getElementById("editRolesBtn")?.addEventListener("click", () => {
     isRolesEditing = true;
     updateRolesToolbarState();

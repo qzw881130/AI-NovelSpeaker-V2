@@ -628,6 +628,21 @@ a.ghost-btn {
   grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
+.collapsible-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.collapsible-panel-head h2 {
+  margin: 0;
+}
+
+.collapsible-panel.is-collapsed {
+  padding-bottom: 14px;
+}
+
 .project-metrics {
   grid-template-columns: repeat(5, minmax(0, 1fr));
 }
