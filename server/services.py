@@ -3261,9 +3261,10 @@ def comfy_request_json(
     path: str,
     method: str = "GET",
     payload: dict | None = None,
+    timeout: float = 120.0,
 ) -> dict:
     url = f"{comfy_url.rstrip('/')}{path}"
-    code, body = http_json_request(method, url, payload=payload, timeout=120.0)
+    code, body = http_json_request(method, url, payload=payload, timeout=timeout)
     if not (200 <= code < 300):
         raise RuntimeError(f"ComfyUI request failed (HTTP {code})")
     parsed = json.loads(body or "{}")

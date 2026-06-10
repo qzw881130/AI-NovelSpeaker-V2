@@ -375,14 +375,20 @@ def _write_optimized_illustration_image(data: bytes, source_filename: str, out_d
             pass
 
 
-def _extract_image_output(history: dict, prompt_id: str) -> tuple[str, str, str] | None:
+def _extract_image_output(history: dict, prompt_id: str, output_node_id: str = "") -> tuple[str, str, str] | None:
     job = history.get(prompt_id) if isinstance(history, dict) else None
     if job is None and isinstance(history, dict) and history:
         job = next(iter(history.values()))
     outputs = job.get("outputs") if isinstance(job, dict) else None
     if not isinstance(outputs, dict):
         return None
-    for node in outputs.values():
+
+    output_key = str(output_node_id or "").strip()
+    nodes = []
+    if output_key and isinstance(outputs.get(output_key), dict):
+        nodes.append(outputs[output_key])
+    nodes.extend(node for key, node in outputs.items() if str(key) != output_key)
+    for node in nodes:
         if not isinstance(node, dict):
             continue
         images = node.get("images")
@@ -403,31 +409,55 @@ def _safe_filename_part(value: str, fallback: str = "novel") -> str:
     return safe or fallback
 
 
+def _set_workflow_node_input(workflow: dict, node_id: str, value, preferred_keys: tuple[str, ...]) -> None:
+    node_key = str(node_id or "").strip()
+    if not node_key or not isinstance(workflow.get(node_key), dict):
+        return
+    inputs = workflow[node_key].setdefault("inputs", {})
+    if not isinstance(inputs, dict):
+        return
+    for key in preferred_keys:
+        if key in inputs:
+            inputs[key] = value
+            return
+    if preferred_keys:
+        inputs[preferred_keys[0]] = value
+
+
+def _randomize_workflow_seeds(workflow: dict) -> None:
+    rng = random.SystemRandom()
+    for node in workflow.values():
+        if not isinstance(node, dict):
+            continue
+        inputs = node.get("inputs")
+        if not isinstance(inputs, dict):
+            continue
+        for key in ("seed", "noise_seed"):
+            if key in inputs:
+                inputs[key] = rng.randint(0, 2**31 - 1)
+        if "control_after_generate" in inputs:
+            inputs["control_after_generate"] = "randomize"
+
+
 def _apply_workflow_inputs(
     workflow: dict,
     prompt_text: str,
     width: int = 1536,
     height: int = 864,
     filename_prefix: str = "",
+    prompt_node_id: str = "",
+    width_node_id: str = "",
+    height_node_id: str = "",
     output_node_id: str = "",
 ) -> dict:
     patched = json.loads(json.dumps(workflow, ensure_ascii=False))
-    if "12" in patched:
-        patched["12"].setdefault("inputs", {})["value"] = prompt_text
-    if "13" in patched:
-        inputs = patched["13"].setdefault("inputs", {})
-        if "Number" in inputs:
-            inputs["Number"] = str(width)
-        else:
-            inputs["value"] = width
-    if "14" in patched:
-        inputs = patched["14"].setdefault("inputs", {})
-        if "value" in inputs:
-            inputs["value"] = height
-        else:
-            inputs["Number"] = str(height)
-    if "8" in patched:
-        patched["8"].setdefault("inputs", {})["seed"] = random.SystemRandom().randint(0, 2**63 - 1)
+    prompt_key = str(prompt_node_id or "").strip() or ("12" if "12" in patched else "")
+    width_key = str(width_node_id or "").strip() or ("13" if "13" in patched else "")
+    height_key = str(height_node_id or "").strip() or ("14" if "14" in patched else "")
+    _set_workflow_node_input(patched, prompt_key, prompt_text, ("prompt", "text", "value"))
+    _set_workflow_node_input(patched, width_key, str(width), ("Number", "value", "width"))
+    _set_workflow_node_input(patched, height_key, str(height), ("Number", "value", "height"))
+    _randomize_workflow_seeds(patched)
     if filename_prefix:
         output_key = str(output_node_id or "").strip()
         save_node = patched.get(output_key) if output_key and isinstance(patched.get(output_key), dict) else None
@@ -1221,9 +1251,10 @@ def _process_prompt_task_batches(conn, row, prompt_id: int, system_prompt: str, 
 def process_illustration_image(image_id: int) -> None:
     conn = db_conn()
     conn_closed = False
+    workflow_log_id = 0
     row = conn.execute(
         """
-        SELECT i.*, n.english_dir
+        SELECT i.*, n.english_dir, n.workflow_id
         FROM chapter_illustration_images i
         JOIN novels n ON n.id=i.novel_id
         WHERE i.id=?
@@ -1238,15 +1269,30 @@ def process_illustration_image(image_id: int) -> None:
         comfy_url = str(settings.get("comfyUrl") or "").strip()
         if not comfy_url:
             raise RuntimeError("ComfyUI URL is not configured")
-        wf = conn.execute(
-            "SELECT json_text,workflow_io_config FROM comfy_workflows WHERE workflow_type='illustration' ORDER BY CASE WHEN name='生成插画' THEN 0 ELSE 1 END, id DESC LIMIT 1"
-        ).fetchone()
+        workflow_id = int(row["workflow_id"] or 0)
+        wf = None
+        if workflow_id:
+            wf = conn.execute(
+                "SELECT name,json_text,workflow_io_config FROM comfy_workflows WHERE id=? AND workflow_type='illustration'",
+                (workflow_id,),
+            ).fetchone()
+        if not wf:
+            wf = conn.execute(
+                "SELECT name,json_text,workflow_io_config FROM comfy_workflows WHERE workflow_type='illustration' ORDER BY CASE WHEN name='生成插画' THEN 0 ELSE 1 END, id DESC LIMIT 1"
+            ).fetchone()
         if not wf:
             raise RuntimeError("illustration workflow not found")
         workflow = workflow_json_to_prompt_json(json.loads(str(wf["json_text"] or "{}")))
         workflow_io_config = json.loads(str(wf["workflow_io_config"] or "{}") or "{}")
+        inputs_config = workflow_io_config.get("inputs") if isinstance(workflow_io_config, dict) else {}
         outputs_config = workflow_io_config.get("outputs") if isinstance(workflow_io_config, dict) else {}
+        prompt_input_config = (inputs_config or {}).get("promptText") if isinstance(inputs_config, dict) else {}
+        width_input_config = (inputs_config or {}).get("width") if isinstance(inputs_config, dict) else {}
+        height_input_config = (inputs_config or {}).get("height") if isinstance(inputs_config, dict) else {}
         image_output_config = (outputs_config or {}).get("imageFile") if isinstance(outputs_config, dict) else {}
+        prompt_node_id = str((prompt_input_config or {}).get("nodeId") or "").strip() if isinstance(prompt_input_config, dict) else ""
+        width_node_id = str((width_input_config or {}).get("nodeId") or "").strip() if isinstance(width_input_config, dict) else ""
+        height_node_id = str((height_input_config or {}).get("nodeId") or "").strip() if isinstance(height_input_config, dict) else ""
         output_node_id = str((image_output_config or {}).get("nodeId") or "").strip() if isinstance(image_output_config, dict) else ""
         filename_prefix = "/".join(
             [
@@ -1259,12 +1305,16 @@ def process_illustration_image(image_id: int) -> None:
             workflow,
             str(row["prompt_text"] or ""),
             filename_prefix=filename_prefix,
+            prompt_node_id=prompt_node_id,
+            width_node_id=width_node_id,
+            height_node_id=height_node_id,
             output_node_id=output_node_id,
         )
-        conn.execute(
+        log_cursor = conn.execute(
             "INSERT INTO comfy_workflow_logs(workflow_category,workflow_name,workflow_json,error_log) VALUES(?,?,?,?)",
-            ("生成插画", f"第{int(row['chapter_num']):03d}回 #{int(row['item_index'])}", json.dumps(prompt, ensure_ascii=False, indent=2), ""),
+            ("生成插画", f"{str(wf['name'] or '生成插画')} 第{int(row['chapter_num']):03d}回 #{int(row['item_index'])}", json.dumps(prompt, ensure_ascii=False, indent=2), ""),
         )
+        workflow_log_id = int(log_cursor.lastrowid or 0)
         conn.execute(
             "UPDATE chapter_illustration_images SET status='processing',progress=10,started_at=COALESCE(started_at,CURRENT_TIMESTAMP),updated_at=CURRENT_TIMESTAMP WHERE id=?",
             (image_id,),
@@ -1272,15 +1322,22 @@ def process_illustration_image(image_id: int) -> None:
         conn.commit()
         conn.close()
         conn_closed = True
-        resp = comfy_request_json(comfy_url=comfy_url, path="/prompt", method="POST", payload={"prompt": prompt})
+        resp = comfy_request_json(comfy_url=comfy_url, path="/prompt", method="POST", payload={"prompt": prompt}, timeout=30.0)
         prompt_id = str(resp.get("prompt_id") or "").strip()
         if not prompt_id:
             raise RuntimeError("ComfyUI prompt_id missing")
+        conn = db_conn()
+        conn.execute(
+            "UPDATE chapter_illustration_images SET progress=20,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            (image_id,),
+        )
+        conn.commit()
+        conn.close()
         output = None
         for _ in range(240):
             touch_illustration_image_worker_heartbeat(made_progress=True)
             history = comfy_request_json(comfy_url=comfy_url, path=f"/history/{prompt_id}")
-            output = _extract_image_output(history, prompt_id)
+            output = _extract_image_output(history, prompt_id, output_node_id=output_node_id)
             if output:
                 break
             time.sleep(2)
@@ -1313,6 +1370,17 @@ def process_illustration_image(image_id: int) -> None:
                 )
                 conn.commit()
                 conn.close()
+            except Exception:
+                pass
+        elif workflow_log_id:
+            try:
+                log_conn = db_conn()
+                log_conn.execute(
+                    "UPDATE comfy_workflow_logs SET error_log=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                    (str(exc), workflow_log_id),
+                )
+                log_conn.commit()
+                log_conn.close()
             except Exception:
                 pass
         conn = db_conn()

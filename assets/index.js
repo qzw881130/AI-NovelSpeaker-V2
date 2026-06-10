@@ -169,9 +169,11 @@ function renderNovelCards() {
           <span class="chip">插画Scene提示词: ${promptMap[String(n.illustrationScenePromptId)] || "-"}</span>
           <span class="chip">插画Shot提示词: ${promptMap[String(n.illustrationShotPromptId)] || "-"}</span>
           <span class="chip">插画Prompt提示词: ${promptMap[String(n.illustrationPromptPromptId)] || "-"}</span>
+          <span class="chip">插画工作流: ${workflowMap[String(n.workflowId)] || "-"}</span>
           <span class="chip">示例音频工作流: ${workflowMap[String(n.voiceSampleWorkflowId)] || "-"}</span>
           <span class="chip">台词音频工作流: ${workflowMap[String(n.lineAudioWorkflowId)] || "-"}</span>
           <span class="chip">提取文本工作流: ${workflowMap[String(n.voiceTranscribeWorkflowId)] || "-"}</span>
+          <span class="chip">音频ASR工作流: ${workflowMap[String(n.audioAsrWorkflowId)] || "-"}</span>
         </div>
         <div><p class="meta">JSON处理 ${n.jsonProgress}%</p>${progressBar(n.jsonProgress)}</div>
         <div><p class="meta">音频生成 ${n.audioProgress}%</p>${progressBar(n.audioProgress)}</div>
@@ -264,7 +266,13 @@ function openNovelModal(novel) {
   const audioAsrWorkflows = currentData.workflows.filter(
     (w) => String(w.workflowType || "").trim() === "audio_asr"
   );
+  const illustrationWorkflows = currentData.workflows.filter(
+    (w) => String(w.workflowType || "").trim() === "illustration"
+  );
   
+  document.getElementById("illustrationWorkflowSelect").innerHTML = illustrationWorkflows
+    .map((w) => `<option value="${w.id}">${w.name}</option>`)
+    .join("");
   document.getElementById("voiceSampleWorkflowSelect").innerHTML = voiceSampleWorkflows
     .map((w) => `<option value="${w.id}">${w.name}</option>`)
     .join("");
@@ -287,6 +295,7 @@ function openNovelModal(novel) {
   form.illustrationScenePromptId.value = novel?.illustrationScenePromptId || illustrationScenePrompts.find((p) => p.name === "插画-scene提示词")?.id || illustrationScenePrompts[0]?.id || "";
   form.illustrationShotPromptId.value = novel?.illustrationShotPromptId || illustrationShotPrompts.find((p) => p.name === "插画-shot提示词")?.id || illustrationShotPrompts[0]?.id || "";
   form.illustrationPromptPromptId.value = novel?.illustrationPromptPromptId || illustrationPromptPrompts.find((p) => p.name === "插画-prompt提示词")?.id || illustrationPromptPrompts[0]?.id || "";
+  form.workflowId.value = novel?.workflowId || illustrationWorkflows.find((w) => w.name === "生成插画")?.id || illustrationWorkflows[0]?.id || "";
   form.voiceSampleWorkflowId.value = novel?.voiceSampleWorkflowId || voiceSampleWorkflows[0]?.id || "";
   form.lineAudioWorkflowId.value = novel?.lineAudioWorkflowId || lineAudioWorkflows[0]?.id || "";
   form.voiceTranscribeWorkflowId.value = novel?.voiceTranscribeWorkflowId || voiceTranscribeWorkflows[0]?.id || "";
@@ -619,6 +628,10 @@ function bindEvents() {
           intro: form.intro.value,
           promptId: form.promptId.value,
           nsfwPromptId: form.nsfwPromptId.value,
+          illustrationScenePromptId: form.illustrationScenePromptId.value,
+          illustrationShotPromptId: form.illustrationShotPromptId.value,
+          illustrationPromptPromptId: form.illustrationPromptPromptId.value,
+          workflowId: form.workflowId.value,
           voiceSampleWorkflowId: form.voiceSampleWorkflowId.value,
           lineAudioWorkflowId: form.lineAudioWorkflowId.value,
           voiceTranscribeWorkflowId: form.voiceTranscribeWorkflowId.value,

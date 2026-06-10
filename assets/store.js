@@ -155,6 +155,7 @@ async function saveNovel(input, id) {
     illustrationScenePromptId: input.illustrationScenePromptId ? Number(input.illustrationScenePromptId) : null,
     illustrationShotPromptId: input.illustrationShotPromptId ? Number(input.illustrationShotPromptId) : null,
     illustrationPromptPromptId: input.illustrationPromptPromptId ? Number(input.illustrationPromptPromptId) : null,
+    workflowId: input.workflowId ? Number(input.workflowId) : null,
     voiceSampleWorkflowId: input.voiceSampleWorkflowId ? Number(input.voiceSampleWorkflowId) : null,
     lineAudioWorkflowId: input.lineAudioWorkflowId ? Number(input.lineAudioWorkflowId) : null,
     voiceTranscribeWorkflowId: input.voiceTranscribeWorkflowId ? Number(input.voiceTranscribeWorkflowId) : null,
