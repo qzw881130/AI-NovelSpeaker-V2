@@ -82,6 +82,27 @@ function copyText(text) {
   return Promise.resolve();
 }
 
+function safeDownloadFilename(value, fallback = "prompt-output") {
+  return String(value || "")
+    .trim()
+    .replace(/[\\/:*?"<>|\x00-\x1f]/g, "_")
+    .replace(/\s+/g, " ")
+    .replace(/[. ]+$/g, "")
+    || fallback;
+}
+
+function downloadTextFile(filename, content, type = "application/json;charset=utf-8") {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 function getNovelByQueryOrActive() {
   const url = new URL(window.location.href);
   const queryId = String(url.searchParams.get("novelId") || "");
@@ -640,6 +661,28 @@ async function savePromptOutput() {
   await refreshPage();
 }
 
+function downloadPromptOutput() {
+  if (!activePromptOutputChapterNum) return;
+  const editor = document.getElementById("promptOutputEditor");
+  const text = String(editor?.value || "").trim();
+  if (!text || text === "加载中...") {
+    toast("暂无可下载内容");
+    return;
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch (err) {
+    toast(`JSON 格式错误：${err.message}`);
+    return;
+  }
+  const chapter = chapterItems.find((item) => Number(item.chapterNum || 0) === Number(activePromptOutputChapterNum));
+  const title = String(chapter?.title || `第${String(activePromptOutputChapterNum).padStart(3, "0")}回`).trim();
+  const filename = `${safeDownloadFilename(title)}-prompt-output.json`;
+  downloadTextFile(filename, `${JSON.stringify(parsed, null, 2)}\n`);
+  toast("Prompt 输出已下载");
+}
+
 function findPromptOutputText() {
   const editor = document.getElementById("promptOutputEditor");
   const input = document.getElementById("promptOutputFindInput");
@@ -1083,6 +1126,7 @@ function bindEvents() {
       toast(`保存失败：${err.message}`);
     }
   });
+  document.getElementById("downloadPromptOutputBtn").addEventListener("click", downloadPromptOutput);
   document.getElementById("promptOutputDialog").addEventListener("close", () => {
     activePromptOutputChapterNum = 0;
   });
