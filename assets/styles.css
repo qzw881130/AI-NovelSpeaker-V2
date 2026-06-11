@@ -3047,12 +3047,13 @@ menu {
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
 }
 
 .live-reader-stage-horizontal .live-reader-illustration-box img {
   max-height: 100%;
   height: 100%;
-  object-fit: contain;
+  object-fit: cover;
   border-radius: 4px 0 0 4px;
 }
 
@@ -3087,6 +3088,8 @@ menu {
 
 .live-reader-illustration-stage {
   position: relative;
+  overflow: hidden;
+  border-radius: 4px;
 }
 
 .live-reader-illustration-box img {
@@ -3098,9 +3101,11 @@ menu {
   border: 0;
   border-radius: 4px;
   background: #111;
-  object-fit: contain;
+  object-fit: cover;
   opacity: 1;
   transform: none;
+  transform-origin: center center;
+  will-change: transform;
   filter: none;
   transition: opacity 0.28s ease, transform 0.28s ease, filter 0.28s ease;
 }

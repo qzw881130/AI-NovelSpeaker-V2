@@ -176,6 +176,7 @@ let activeIllustrationIndex = -1;
 let pendingIllustrationIndex = -1;
 let liveIllustrationLoadToken = 0;
 let activeIllustrationUrl = "";
+let cleanupLiveIllustrationKenBurns = null;
 let liveReaderSessionStartedAt = Date.now();
 let lastLiveReaderHealthLogAt = 0;
 let longSessionNoticeShown = false;
@@ -661,8 +662,84 @@ function getIllustrationStableUrl(item) {
 
 function releaseImageElement(img) {
   if (!img) return;
+  stopLiveIllustrationKenBurns();
   img.removeAttribute("src");
   img.removeAttribute("srcset");
+}
+
+function stopLiveIllustrationKenBurns() {
+  if (typeof cleanupLiveIllustrationKenBurns === "function") {
+    cleanupLiveIllustrationKenBurns();
+    cleanupLiveIllustrationKenBurns = null;
+  }
+}
+
+function getIllustrationDisplayDurationMs(item, currentTime) {
+  const end = Number(item?.end);
+  const start = Number(item?.start);
+  if (Number.isFinite(end)) {
+    return Math.max(1000, Math.round((end - Number(currentTime || 0)) * 1000));
+  }
+  if (Number.isFinite(start) && Number.isFinite(Number(item?.duration))) {
+    return Math.max(1000, Math.round(Number(item.duration) * 1000));
+  }
+  return 30000;
+}
+
+function applyKenBurns(imgElement, durationMs) {
+  if (!imgElement) return () => {};
+  const minSegmentMs = 15000;
+  const maxSegmentMs = 30000;
+  const totalMs = Math.max(1000, Number(durationMs) || maxSegmentMs);
+  const segmentCount = Math.max(1, Math.ceil(totalMs / maxSegmentMs));
+  const segmentMs = totalMs < minSegmentMs ? totalMs : Math.max(minSegmentMs, totalMs / segmentCount);
+  const transforms = [
+    "scale(1.08) translate(-2%, -1%)",
+    "scale(1.10) translate(2%, -1%)",
+    "scale(1.09) translate(-1%, 2%)",
+    "scale(1.12) translate(1%, 1%)",
+    "scale(1.07) translate(0%, -2%)",
+    "scale(1.11) translate(-2%, 0%)",
+    "scale(1.06) translate(2%, 2%)",
+    "scale(1.10) translate(-2.5%, 1%)",
+  ];
+  const timers = [];
+  let cancelled = false;
+  let previousIndex = Math.floor(Math.random() * transforms.length);
+  let previousTransform = transforms[previousIndex];
+
+  const pickNextTransform = () => {
+    let nextIndex = previousIndex;
+    if (transforms.length > 1) {
+      while (nextIndex === previousIndex) {
+        nextIndex = Math.floor(Math.random() * transforms.length);
+      }
+    }
+    previousIndex = nextIndex;
+    return transforms[nextIndex];
+  };
+
+  const runSegment = (index) => {
+    if (cancelled || index >= segmentCount) return;
+    const nextTransform = pickNextTransform();
+    imgElement.style.transition = "none";
+    imgElement.style.transform = previousTransform;
+    void imgElement.offsetWidth;
+    imgElement.style.transition = `transform ${segmentMs}ms ease-in-out`;
+    imgElement.style.transform = nextTransform;
+    previousTransform = nextTransform;
+    if (index + 1 < segmentCount) {
+      timers.push(window.setTimeout(() => runSegment(index + 1), segmentMs));
+    }
+  };
+
+  runSegment(0);
+  return () => {
+    cancelled = true;
+    timers.forEach((timerId) => window.clearTimeout(timerId));
+    imgElement.style.transition = "";
+    imgElement.style.transform = "";
+  };
 }
 
 function clearLiveIllustration(message = "暂无匹配插画") {
@@ -743,6 +820,7 @@ function updateLiveIllustration(force = false) {
   }
   pendingIllustrationIndex = nextIndex;
   const loadToken = ++liveIllustrationLoadToken;
+  stopLiveIllustrationKenBurns();
   box.classList.add("is-loading");
   if (!img.getAttribute("src")) box.classList.add("is-empty");
   const preloader = new Image();
@@ -758,6 +836,12 @@ function updateLiveIllustration(force = false) {
     img.src = url;
     void img.offsetWidth;
     box.classList.add("is-switching");
+    const displayDurationMs = getIllustrationDisplayDurationMs(item, Number(player.currentTime || currentTime));
+    window.setTimeout(() => {
+      if (loadToken !== liveIllustrationLoadToken || activeIllustrationUrl !== url) return;
+      stopLiveIllustrationKenBurns();
+      cleanupLiveIllustrationKenBurns = applyKenBurns(img, displayDurationMs);
+    }, 430);
   };
   preloader.onerror = () => {
     if (loadToken !== liveIllustrationLoadToken) return;
