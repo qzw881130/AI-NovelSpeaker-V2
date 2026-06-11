@@ -58,8 +58,19 @@
 
 ### 通用前置
 
-- Python 3.10+（建议 3.11/3.12/3.13）
+- Python 3.10+（建议 3.11/3.12/3.13/3.14）
+- FFmpeg（用于音频处理和章回视频导出）
 - 可选：ComfyUI（用于音频生成）
+
+`start.sh` / `start.bat` 会自动创建项目内虚拟环境 `.venv`，并安装 `requirements.txt` 中的 Python 依赖。不要直接向 Homebrew / 系统 Python 安装依赖。
+
+macOS 可用 Homebrew 安装 FFmpeg：
+
+```bash
+brew install ffmpeg
+```
+
+Windows 请安装 FFmpeg 并确保 `ffmpeg.exe` 已加入 `PATH`。
 
 ### 获取代码
 
@@ -113,8 +124,10 @@ start.bat --port=8081
 `start.sh` / `start.bat` 会自动：
 
 1. 检查并结束占用 `8080` 端口的旧进程
-2. 若 `data/novels.db` 不存在，先执行初始化
-3. 启动服务并打印可访问地址：
+2. 创建 `.venv`（如不存在）
+3. 使用 `.venv` 安装/更新 `requirements.txt` 依赖
+4. 若 `data/novels.db` 不存在，先执行初始化
+5. 启动服务并打印可访问地址：
    - 本地地址：`http://127.0.0.1:8080/index.html`
    - 局域网地址：`http://<LAN_IP>:8080/index.html`
 
@@ -123,14 +136,27 @@ start.bat --port=8081
 首次初始化：
 
 ```bash
-python3 scripts/init_storage.py
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python scripts/init_storage.py
 ```
 
 启动服务：
 
 ```bash
-python3 app_server.py
+source .venv/bin/activate
+python app_server.py
 ```
+
+Windows 手动启动请使用 `.venv\Scripts\python.exe` 或先激活 `.venv\Scripts\activate`。
+
+## 章回视频导出依赖
+
+- 后端使用 Pillow + FFmpeg 离线渲染 MP4。
+- Pillow 由 `requirements.txt` 安装到 `.venv`。
+- FFmpeg 是系统命令，需要可通过 `ffmpeg` 直接调用。
+- 导出过程中会启动独立子进程，停止服务时 `stop.sh` / `stop.bat` 会同时清理视频导出子进程。
 
 ## 打包下载规则（Download Bundle）
 

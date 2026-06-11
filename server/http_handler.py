@@ -1,7 +1,7 @@
 import zipfile
 import base64
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import parse_qs, quote
 
 from .services import *  # noqa: F401,F403
 from .services import normalize_live_ending_audio_items
@@ -60,6 +60,14 @@ from .illustration import (
     retry_prompt_batch,
     save_illustration_prompt_output,
     sync_prompt_images,
+)
+from .video_export import (
+    cancel_video_export_task,
+    enqueue_video_export_task,
+    get_video_export_file_path,
+    get_video_export_task,
+    list_video_export_tasks,
+    retry_video_export_task,
 )
 
 
@@ -661,6 +669,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         route = parsed.path
+        query = parse_qs(parsed.query or "")
 
         if route == "/api/capture-service/status":
             self.send_json(capture_service_status())
@@ -1187,6 +1196,44 @@ class Handler(BaseHTTPRequestHandler):
 
         if route == "/api/illustration-image-worker/status":
             self.send_json(get_illustration_image_worker_status())
+            return
+
+        if route == "/api/video-export-worker/status":
+            self.send_json(get_video_export_worker_status())
+            return
+
+        if route == "/api/video-export-tasks":
+            novel_id = int(query.get("novelId", [0])[0] or 0)
+            self.send_json({"tasks": list_video_export_tasks(novel_id or None)})
+            return
+
+        m_video_export_status = re.match(r"^/api/novels/(\d+)/chapters/(\d+)/video-export/status$", route)
+        if m_video_export_status:
+            novel_id = int(m_video_export_status.group(1))
+            chapter_num = int(m_video_export_status.group(2))
+            conn = db_conn()
+            row = conn.execute(
+                """
+                SELECT t.id
+                FROM chapter_video_export_tasks t
+                JOIN chapters c ON c.id=t.chapter_id
+                WHERE t.novel_id=? AND c.chapter_num=?
+                ORDER BY t.id DESC LIMIT 1
+                """,
+                (novel_id, chapter_num),
+            ).fetchone()
+            conn.close()
+            self.send_json({"task": get_video_export_task(int(row["id"])) if row else None})
+            return
+
+        m_video_export_file = re.match(r"^/api/video-export-tasks/(\d+)/file$", route)
+        if m_video_export_file:
+            task_id = int(m_video_export_file.group(1))
+            path, filename = get_video_export_file_path(task_id)
+            if not path:
+                self.send_json({"error": "video file not found"}, 404)
+                return
+            self.send_file_response(path, "video/mp4", download_name=filename, cache_control="no-store")
             return
 
         if route == "/api/settings":
@@ -2167,6 +2214,50 @@ class Handler(BaseHTTPRequestHandler):
 
         if route == "/api/illustration-image-worker/restart":
             restart_illustration_image_worker()
+            self.send_json({"status": "ok"})
+            return
+
+        if route == "/api/video-export-worker/restart":
+            restart_video_export_worker()
+            self.send_json({"status": "ok"})
+            return
+
+        m_video_export_enqueue = re.match(r"^/api/novels/(\d+)/chapters/(\d+)/video-export/enqueue$", route)
+        if m_video_export_enqueue:
+            novel_id = int(m_video_export_enqueue.group(1))
+            chapter_num = int(m_video_export_enqueue.group(2))
+            body = self.read_json()
+            try:
+                width = int(body.get("width") or 1080)
+                height = int(body.get("height") or 1920)
+                fps = int(body.get("fps") or 30)
+            except (TypeError, ValueError):
+                self.send_json({"error": "invalid video size"}, 400)
+                return
+            ok, msg, task_id = enqueue_video_export_task(novel_id, chapter_num, width=width, height=height, fps=fps)
+            if not ok:
+                self.send_json({"error": msg}, 400)
+                return
+            ensure_video_export_worker()
+            self.send_json({"status": "ok", "message": msg, "taskId": task_id})
+            return
+
+        m_video_export_retry = re.match(r"^/api/video-export-tasks/(\d+)/retry$", route)
+        if m_video_export_retry:
+            ok, msg = retry_video_export_task(int(m_video_export_retry.group(1)))
+            if not ok:
+                self.send_json({"error": msg}, 409)
+                return
+            ensure_video_export_worker()
+            self.send_json({"status": "ok"})
+            return
+
+        m_video_export_cancel = re.match(r"^/api/video-export-tasks/(\d+)/cancel$", route)
+        if m_video_export_cancel:
+            ok, msg = cancel_video_export_task(int(m_video_export_cancel.group(1)))
+            if not ok:
+                self.send_json({"error": msg}, 409)
+                return
             self.send_json({"status": "ok"})
             return
 

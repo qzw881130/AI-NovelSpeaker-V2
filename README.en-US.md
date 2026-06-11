@@ -52,8 +52,19 @@ If this project helps you, donations are welcome to support continued developmen
 
 ### Prerequisites
 
-- Python 3.10+ (3.11/3.12/3.13 recommended)
+- Python 3.10+ (3.11/3.12/3.13/3.14 recommended)
+- FFmpeg (required for audio processing and chapter video export)
 - Optional: ComfyUI (for audio generation)
+
+`start.sh` / `start.bat` automatically creates the project-local virtual environment `.venv` and installs Python dependencies from `requirements.txt`. Do not install project dependencies into Homebrew/system Python directly.
+
+On macOS, install FFmpeg with Homebrew:
+
+```bash
+brew install ffmpeg
+```
+
+On Windows, install FFmpeg and make sure `ffmpeg.exe` is available in `PATH`.
 
 ### Clone Repository
 
@@ -84,6 +95,15 @@ start.bat
 start.bat --help
 start.bat --port=8081
 ```
+
+The startup scripts automatically create `.venv`, install `requirements.txt`, initialize `data/novels.db` if needed, and print local/LAN URLs.
+
+## Chapter Video Export Dependencies
+
+- MP4 export uses Pillow + FFmpeg on the backend.
+- Pillow is installed into `.venv` from `requirements.txt`.
+- FFmpeg must be available as the `ffmpeg` command.
+- Video export runs in a separate subprocess; `stop.sh` / `stop.bat` also stops video export subprocesses.
 
 ## Bundle Export Rules (Download Bundle)
 

@@ -5,6 +5,8 @@ cd /d "%~dp0"
 set "PORT=8080"
 set "LOG_DIR=logs"
 set "LOG_FILE=%LOG_DIR%\server.log"
+set "VENV_DIR=.venv"
+set "VENV_PY=%VENV_DIR%\Scripts\python.exe"
 
 for %%A in (%*) do (
   set "ARG=%%~A"
@@ -32,6 +34,15 @@ if %errorlevel%==0 (
   set "PY_CMD=python"
 )
 
+if not exist "%VENV_PY%" (
+  echo [start] Virtual environment not found, creating .venv...
+  %PY_CMD% -m venv "%VENV_DIR%"
+)
+
+echo [start] Installing Python dependencies into .venv...
+"%VENV_PY%" -m pip install --upgrade pip >nul
+"%VENV_PY%" -m pip install -r requirements.txt
+
 echo [start] Checking old service on port %PORT%...
 for /f "tokens=5" %%P in ('netstat -ano ^| findstr /R /C:":%PORT% .*LISTENING"') do (
   echo [start] Stopping old process PID %%P
@@ -40,7 +51,7 @@ for /f "tokens=5" %%P in ('netstat -ano ^| findstr /R /C:":%PORT% .*LISTENING"')
 
 if not exist "data\novels.db" (
   echo [start] Database not found, initializing...
-  %PY_CMD% scripts\init_storage.py
+  "%VENV_PY%" scripts\init_storage.py
 )
 
 if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
@@ -71,7 +82,7 @@ if "%LAN_PRINTED%"=="0" (
 echo [start] Starting server...
 echo [start] Log file: %LOG_FILE%
 set "NOVELSPEAKER_PORT=%PORT%"
-%PY_CMD% app_server.py >> "%LOG_FILE%" 2>&1
+"%VENV_PY%" app_server.py >> "%LOG_FILE%" 2>&1
 
 endlocal
 goto :eof

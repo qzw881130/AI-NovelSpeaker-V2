@@ -65,6 +65,14 @@
 
 ### macOS / Linux
 
+`start.sh` / `start.bat`는 프로젝트 내부 가상환경 `.venv`를 자동으로 만들고 `requirements.txt`의 Python 의존성을 설치합니다. Homebrew / 시스템 Python에 직접 설치하지 마세요.
+
+챕터 비디오 내보내기에는 시스템에서 실행 가능한 FFmpeg가 필요합니다. macOS에서는:
+
+```bash
+brew install ffmpeg
+```
+
 ```bash
 chmod +x start.sh
 ./start.sh
@@ -84,6 +92,15 @@ start.bat
 start.bat --help
 start.bat --port=8081
 ```
+
+Windows에서는 FFmpeg를 설치하고 `ffmpeg.exe`가 `PATH`에 포함되어 있어야 합니다.
+
+## 챕터 비디오 내보내기 의존성
+
+- 백엔드는 Pillow + FFmpeg로 MP4를 오프라인 렌더링합니다.
+- Pillow는 `requirements.txt`를 통해 `.venv`에 설치됩니다.
+- FFmpeg는 `ffmpeg` 명령으로 실행 가능해야 합니다.
+- 비디오 내보내기는 별도 하위 프로세스에서 실행되며, `stop.sh` / `stop.bat`는 비디오 내보내기 하위 프로세스도 정리합니다.
 
 ## 번들 다운로드 규칙 (Download Bundle)
 

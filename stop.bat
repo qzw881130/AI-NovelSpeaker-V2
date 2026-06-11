@@ -38,12 +38,15 @@ if "%FOUND%"=="0" (
 )
 
 echo [stop] Service on port %PORT% stopped.
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*server.video_export_runner*' } | ForEach-Object { Write-Host '[stop] Stopping video export worker process PID' $_.ProcessId; Stop-Process -Id $_.ProcessId -Force }" >nul 2>&1
 endlocal
 goto :eof
 
 :usage
 echo Usage:
 echo   stop.bat [--port=PORT] [-h^|--help^|/h^|/?]
+echo.
+echo Stops the service started by start.bat; Python virtualenv is not required for stopping.
 echo.
 echo Options:
 echo   --port=PORT   Set HTTP port to stop ^(default: 8080^)

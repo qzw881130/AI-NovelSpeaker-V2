@@ -65,6 +65,14 @@
 
 ### macOS / Linux
 
+`start.sh` / `start.bat` 會自動建立專案內虛擬環境 `.venv`，並安裝 `requirements.txt` 中的 Python 依賴。請不要直接安裝到 Homebrew / 系統 Python。
+
+章回影片匯出需要系統可執行的 FFmpeg。macOS 可用：
+
+```bash
+brew install ffmpeg
+```
+
 ```bash
 chmod +x start.sh
 ./start.sh
@@ -84,6 +92,15 @@ start.bat
 start.bat --help
 start.bat --port=8081
 ```
+
+Windows 請安裝 FFmpeg，並確保 `ffmpeg.exe` 已加入 `PATH`。
+
+## 章回影片匯出依賴
+
+- 後端使用 Pillow + FFmpeg 離線輸出 MP4。
+- Pillow 會由 `requirements.txt` 安裝到 `.venv`。
+- FFmpeg 是系統命令，需可直接執行 `ffmpeg`。
+- 影片匯出會使用獨立子程序；`stop.sh` / `stop.bat` 會同時清理影片匯出子程序。
 
 ## 打包下載規則（Download Bundle）
 

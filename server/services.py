@@ -80,6 +80,12 @@ ILLUSTRATION_IMAGE_WORKER_HEARTBEAT_TS = 0.0
 ILLUSTRATION_IMAGE_WORKER_LAST_PROGRESS_TS = 0.0
 ILLUSTRATION_IMAGE_WORKER_GENERATION = 0
 ILLUSTRATION_IMAGE_WORKER_STALE_SECONDS = 90.0
+VIDEO_EXPORT_WORKER_THREAD: threading.Thread | None = None
+VIDEO_EXPORT_WORKER_STOP = threading.Event()
+VIDEO_EXPORT_WORKER_HEARTBEAT_TS = 0.0
+VIDEO_EXPORT_WORKER_LAST_PROGRESS_TS = 0.0
+VIDEO_EXPORT_WORKER_GENERATION = 0
+VIDEO_EXPORT_WORKER_STALE_SECONDS = 300.0
 DURATION_CACHE_LOCK = threading.Lock()
 DURATION_CACHE_PENDING: set[int] = set()
 JSON_LLM_THROTTLE_LOCK = threading.Lock()
@@ -168,6 +174,14 @@ def touch_illustration_image_worker_heartbeat(*, made_progress: bool = False) ->
     ILLUSTRATION_IMAGE_WORKER_HEARTBEAT_TS = now
     if made_progress:
         ILLUSTRATION_IMAGE_WORKER_LAST_PROGRESS_TS = now
+
+
+def touch_video_export_worker_heartbeat(*, made_progress: bool = False) -> None:
+    global VIDEO_EXPORT_WORKER_HEARTBEAT_TS, VIDEO_EXPORT_WORKER_LAST_PROGRESS_TS
+    now = time.time()
+    VIDEO_EXPORT_WORKER_HEARTBEAT_TS = now
+    if made_progress:
+        VIDEO_EXPORT_WORKER_LAST_PROGRESS_TS = now
 
 
 def probe_audio_duration_seconds(file_path: Path) -> float:
@@ -3645,6 +3659,21 @@ def illustration_image_worker_loop() -> None:
         ILLUSTRATION_IMAGE_WORKER_STOP.wait(1.0 if has_illustration_work else 3.0)
 
 
+def video_export_worker_loop() -> None:
+    from .video_export import run_video_export_queue_once
+
+    generation = VIDEO_EXPORT_WORKER_GENERATION
+    while not VIDEO_EXPORT_WORKER_STOP.is_set() and generation == VIDEO_EXPORT_WORKER_GENERATION:
+        touch_video_export_worker_heartbeat()
+        has_video_export_work = False
+        try:
+            has_video_export_work = run_video_export_queue_once(touch_video_export_worker_heartbeat)
+        except Exception as exc:
+            print(f"[video-export-worker] queue error: {exc}")
+        touch_video_export_worker_heartbeat(made_progress=has_video_export_work)
+        VIDEO_EXPORT_WORKER_STOP.wait(1.0 if has_video_export_work else 3.0)
+
+
 def ensure_line_audio_worker() -> None:
     global LINE_AUDIO_WORKER_THREAD, LINE_AUDIO_WORKER_GENERATION, LINE_AUDIO_WORKER_HEARTBEAT_TS
     now = time.time()
@@ -3752,6 +3781,23 @@ def ensure_task_worker() -> None:
     TASK_WORKER_THREAD.start()
 
 
+def ensure_video_export_worker() -> None:
+    global VIDEO_EXPORT_WORKER_THREAD, VIDEO_EXPORT_WORKER_GENERATION, VIDEO_EXPORT_WORKER_HEARTBEAT_TS
+    now = time.time()
+    if VIDEO_EXPORT_WORKER_THREAD and VIDEO_EXPORT_WORKER_THREAD.is_alive():
+        if VIDEO_EXPORT_WORKER_HEARTBEAT_TS > 0 and now - VIDEO_EXPORT_WORKER_HEARTBEAT_TS > VIDEO_EXPORT_WORKER_STALE_SECONDS:
+            print("[video-export-worker] heartbeat stale, restarting worker")
+            VIDEO_EXPORT_WORKER_GENERATION += 1
+            VIDEO_EXPORT_WORKER_STOP.clear()
+            VIDEO_EXPORT_WORKER_THREAD = threading.Thread(target=video_export_worker_loop, daemon=True)
+            VIDEO_EXPORT_WORKER_THREAD.start()
+        return
+    VIDEO_EXPORT_WORKER_STOP.clear()
+    VIDEO_EXPORT_WORKER_GENERATION += 1
+    VIDEO_EXPORT_WORKER_THREAD = threading.Thread(target=video_export_worker_loop, daemon=True)
+    VIDEO_EXPORT_WORKER_THREAD.start()
+
+
 def restart_task_worker() -> None:
     global TASK_WORKER_THREAD, TASK_WORKER_GENERATION, TASK_WORKER_HEARTBEAT_TS, TASK_WORKER_LAST_PROGRESS_TS
     TASK_WORKER_STOP.set()
@@ -3821,6 +3867,17 @@ def restart_illustration_image_worker() -> None:
 def restart_illustration_workers() -> None:
     restart_illustration_worker()
     restart_illustration_image_worker()
+
+
+def restart_video_export_worker() -> None:
+    global VIDEO_EXPORT_WORKER_THREAD, VIDEO_EXPORT_WORKER_GENERATION, VIDEO_EXPORT_WORKER_HEARTBEAT_TS, VIDEO_EXPORT_WORKER_LAST_PROGRESS_TS
+    VIDEO_EXPORT_WORKER_STOP.set()
+    VIDEO_EXPORT_WORKER_GENERATION += 1
+    VIDEO_EXPORT_WORKER_STOP.clear()
+    VIDEO_EXPORT_WORKER_HEARTBEAT_TS = 0.0
+    VIDEO_EXPORT_WORKER_LAST_PROGRESS_TS = 0.0
+    VIDEO_EXPORT_WORKER_THREAD = threading.Thread(target=video_export_worker_loop, daemon=True)
+    VIDEO_EXPORT_WORKER_THREAD.start()
 
 
 def get_task_worker_status() -> dict:
@@ -3917,6 +3974,21 @@ def get_illustration_workers_status() -> dict:
     return {
         "llm": get_illustration_worker_status(),
         "image": get_illustration_image_worker_status(),
+    }
+
+
+def get_video_export_worker_status() -> dict:
+    now = time.time()
+    heartbeat_age = max(0.0, now - VIDEO_EXPORT_WORKER_HEARTBEAT_TS) if VIDEO_EXPORT_WORKER_HEARTBEAT_TS > 0 else -1.0
+    progress_age = max(0.0, now - VIDEO_EXPORT_WORKER_LAST_PROGRESS_TS) if VIDEO_EXPORT_WORKER_LAST_PROGRESS_TS > 0 else -1.0
+    state = "stopped"
+    if VIDEO_EXPORT_WORKER_THREAD and VIDEO_EXPORT_WORKER_THREAD.is_alive():
+        state = "stale" if (VIDEO_EXPORT_WORKER_HEARTBEAT_TS > 0 and heartbeat_age > VIDEO_EXPORT_WORKER_STALE_SECONDS) else "running"
+    return {
+        "state": state,
+        "heartbeatAgeSeconds": round(heartbeat_age, 1) if heartbeat_age >= 0 else None,
+        "progressAgeSeconds": round(progress_age, 1) if progress_age >= 0 else None,
+        "generation": VIDEO_EXPORT_WORKER_GENERATION,
     }
 
 

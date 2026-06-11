@@ -897,6 +897,48 @@ function getMergedAudioUrl(novelId, chapterNum) {
   return `/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/merged-audio`;
 }
 
+async function fetchVideoExportTasks(novelId = "") {
+  const suffix = novelId ? `?novelId=${encodeURIComponent(String(novelId))}` : "";
+  const data = await api(`/api/video-export-tasks${suffix}`);
+  return data.tasks || [];
+}
+
+async function fetchVideoExportWorkerStatus() {
+  return await api("/api/video-export-worker/status");
+}
+
+async function restartVideoExportWorker() {
+  await api("/api/video-export-worker/restart", { method: "POST", body: "{}" });
+}
+
+async function enqueueChapterVideoExport(novelId, chapterNum, options = {}) {
+  return await api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/video-export/enqueue`, {
+    method: "POST",
+    body: JSON.stringify({
+      width: Number(options.width || 1080),
+      height: Number(options.height || 1920),
+      fps: Number(options.fps || 30),
+    }),
+  });
+}
+
+async function fetchChapterVideoExportStatus(novelId, chapterNum) {
+  const data = await api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/video-export/status`);
+  return data.task || null;
+}
+
+async function retryVideoExportTask(taskId) {
+  await api(`/api/video-export-tasks/${Number(taskId)}/retry`, { method: "POST", body: "{}" });
+}
+
+async function cancelVideoExportTask(taskId) {
+  await api(`/api/video-export-tasks/${Number(taskId)}/cancel`, { method: "POST", body: "{}" });
+}
+
+function getVideoExportFileUrl(taskId) {
+  return `/api/video-export-tasks/${Number(taskId)}/file`;
+}
+
 export {
   advanceJsonTasks,
   bytesToText,
@@ -1003,5 +1045,14 @@ export {
   retryLineAudioTask,
   getLineAudioFileUrl,
   getMergedAudioUrl,
+  // 视频导出
+  fetchVideoExportTasks,
+  fetchVideoExportWorkerStatus,
+  restartVideoExportWorker,
+  enqueueChapterVideoExport,
+  fetchChapterVideoExportStatus,
+  retryVideoExportTask,
+  cancelVideoExportTask,
+  getVideoExportFileUrl,
   downloadNovelBundleFile,
 };

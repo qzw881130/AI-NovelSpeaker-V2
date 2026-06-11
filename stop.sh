@@ -11,6 +11,8 @@ usage() {
 Usage:
   ./stop.sh [--port=PORT] [-h|--help]
 
+Stops the service started by ./start.sh; Python virtualenv is not required for stopping.
+
 Options:
   --port=PORT   Set HTTP port to stop (default: 8080)
   -h, --help    Show this help message and exit
@@ -52,3 +54,9 @@ if [[ -n "${STILL_PIDS}" ]]; then
 fi
 
 echo "[stop] Service on port ${PORT} stopped."
+
+VIDEO_EXPORT_PIDS="$(pgrep -f "server.video_export_runner" 2>/dev/null || true)"
+if [[ -n "${VIDEO_EXPORT_PIDS}" ]]; then
+  echo "[stop] Stopping video export worker process(es): ${VIDEO_EXPORT_PIDS}"
+  kill ${VIDEO_EXPORT_PIDS} 2>/dev/null || true
+fi

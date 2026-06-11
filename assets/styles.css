@@ -568,6 +568,14 @@ h1 {
   width: 200px;
 }
 
+.video-export-filter-label select {
+  width: 150px;
+}
+
+.video-export-size-filter-label select {
+  width: 260px;
+}
+
 button,
 select,
 input,
@@ -3711,6 +3719,88 @@ body.is-nsfw-review-drag-selecting .novel-download-table {
 
 .error-text {
   color: var(--danger);
+}
+
+.task-detail-block {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 16px;
+  margin-bottom: 14px;
+  background: var(--panel);
+}
+
+.task-detail-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.task-detail-head h3 {
+  margin: 0 0 6px;
+}
+
+.progress-row {
+  height: 10px;
+  margin: 14px 0 10px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.progress-row span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--running), var(--primary));
+}
+
+.actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.button-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.video-player-dialog {
+  width: min(92vw, 560px);
+  max-height: 92vh;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--panel-strong);
+  box-shadow: var(--shadow);
+}
+
+.video-player-dialog::backdrop {
+  background: rgba(26, 18, 10, 0.58);
+}
+
+.video-player-dialog-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+
+.video-player-dialog-head h2 {
+  margin: 0 0 6px;
+}
+
+.video-player-dialog video {
+  display: block;
+  width: 100%;
+  max-height: 72vh;
+  border-radius: 14px;
+  background: #100c08;
 }
 
 .task-audio-section {

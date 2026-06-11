@@ -2,6 +2,7 @@ __pycache__/
 *.py[cod]
 
 # Local Python/tool caches
+.venv/
 .ruff_cache/
 .pytest_cache/
 

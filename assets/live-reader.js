@@ -1,4 +1,4 @@
-import { fetchChapterAsrFile, fetchChapterDetail, fetchChapterIllustrationImages, fetchNovelChapters, getActiveNovelId, getData, setActiveNovelId } from "./store.js";
+import { enqueueChapterVideoExport, fetchChapterAsrFile, fetchChapterDetail, fetchChapterIllustrationImages, fetchNovelChapters, getActiveNovelId, getData, setActiveNovelId } from "./store.js";
 import { renderNav, showPageError, toast } from "./ui.js";
 import { localizeDocumentText, translateText } from "./i18n.js";
 
@@ -1984,6 +1984,19 @@ function bindEvents() {
     await loadNovelChapters();
     toast("已刷新");
   });
+  document.querySelectorAll("[data-video-export-size]").forEach((btn) => btn.addEventListener("click", async () => {
+    if (!activeNovel || !activeChapterNum) {
+      toast("请先选择章回");
+      return;
+    }
+    const [width, height] = String(btn.dataset.videoExportSize || "1080x1920").split("x").map((item) => Number(item));
+    try {
+      await enqueueChapterVideoExport(activeNovel.id, activeChapterNum, { width, height, fps: 30 });
+      toast(`已加入 ${width}x${height} 视频导出队列`);
+    } catch (err) {
+      toast(`视频导出排队失败：${err.message}`);
+    }
+  }));
   document.getElementById("toggleLiveReaderControlsBtn")?.addEventListener("click", () => {
     setControlsCollapsed(!isControlsCollapsed());
     applyControlsCollapsedState();

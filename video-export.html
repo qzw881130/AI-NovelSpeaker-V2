@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>视频导出 - AI NovelSpeaker V2</title>
+    <link rel="stylesheet" href="./assets/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="main-nav" id="mainNav"></aside>
+      <main class="page">
+        <header class="page-header">
+          <div>
+            <h1>章回视频导出</h1>
+            <p class="meta">后端离线渲染 9:16 竖屏或 16:9 横屏 / 30fps MP4，单 Worker 串行处理。</p>
+          </div>
+          <div class="header-actions">
+            <label class="header-novel-switch">切换小说
+              <select id="videoExportNovelSelect"></select>
+            </label>
+            <label class="header-novel-switch video-export-filter-label">状态
+              <select id="videoExportStatusFilter">
+                <option value="">全部</option>
+                <option value="pending">等待</option>
+                <option value="running">运行中</option>
+                <option value="completed">完成</option>
+                <option value="failed">失败</option>
+                <option value="cancelled">已取消</option>
+              </select>
+            </label>
+            <label class="header-novel-switch video-export-filter-label video-export-size-filter-label">画幅
+              <select id="videoExportSizeFilter">
+                <option value="">全部</option>
+                <option value="1080x1920">9:16竖屏1080x1920</option>
+                <option value="1920x1080">16:9横屏1920x1080</option>
+              </select>
+            </label>
+            <label class="header-novel-switch video-export-filter-label">自动刷新
+              <select id="videoExportRefreshIntervalSelect">
+                <option value="0">不刷新</option>
+                <option value="3">3秒</option>
+                <option value="5">5秒</option>
+                <option value="10">10秒</option>
+                <option value="30">30秒</option>
+              </select>
+            </label>
+            <span id="videoExportWorkerStatus" class="meta">Worker: -</span>
+            <button id="restartVideoExportWorkerBtn" class="ghost-btn" type="button">重启Worker</button>
+            <button id="refreshVideoExportTasksBtn" class="primary-btn" type="button">刷新队列</button>
+          </div>
+        </header>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>导出任务</h2>
+            <span id="videoExportSummary" class="queue-summary-badge">0 个任务</span>
+          </div>
+          <div id="videoExportTaskList" class="task-detail-content"></div>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="videoExportPlayerDialog" class="video-player-dialog">
+      <div class="video-player-dialog-head">
+        <div>
+          <h2 id="videoExportPlayerTitle">播放视频</h2>
+          <p id="videoExportPlayerMeta" class="meta"></p>
+        </div>
+        <button id="videoExportPlayerCloseBtn" class="ghost-btn" type="button">关闭</button>
+      </div>
+      <video id="videoExportPlayer" controls playsinline preload="metadata"></video>
+    </dialog>
+
+    <div id="toast" class="toast"></div>
+    <script type="module" src="./assets/video-export.js"></script>
+  </body>
+</html>

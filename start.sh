@@ -8,6 +8,8 @@ PORT="8080"
 HOST="0.0.0.0"
 LOG_DIR="$ROOT_DIR/logs"
 LOG_FILE="$LOG_DIR/server.log"
+VENV_DIR="$ROOT_DIR/.venv"
+PYTHON_BIN="$VENV_DIR/bin/python"
 
 usage() {
   cat <<'EOF'
@@ -46,6 +48,15 @@ if [[ -z "$HOST" ]]; then
   HOST="0.0.0.0"
 fi
 
+if [[ ! -x "$PYTHON_BIN" ]]; then
+  echo "[start] Virtual environment not found, creating .venv..."
+  python3 -m venv "$VENV_DIR"
+fi
+
+echo "[start] Installing Python dependencies into .venv..."
+"$PYTHON_BIN" -m pip install --upgrade pip >/dev/null
+"$PYTHON_BIN" -m pip install -r requirements.txt
+
 echo "[start] Checking old service on port ${PORT}..."
 OLD_PIDS="$(lsof -tiTCP:${PORT} -sTCP:LISTEN 2>/dev/null || true)"
 if [[ -n "${OLD_PIDS}" ]]; then
@@ -63,7 +74,7 @@ fi
 
 if [[ ! -f "data/novels.db" ]]; then
   echo "[start] Database not found, initializing..."
-  python3 scripts/init_storage.py
+  "$PYTHON_BIN" scripts/init_storage.py
 fi
 
 mkdir -p "$LOG_DIR"
@@ -101,5 +112,5 @@ fi
 echo "[start] Starting server..."
 echo "[start] Bind host: ${HOST}"
 echo "[start] Log file: ${LOG_FILE}"
-NOVELSPEAKER_HOST="$HOST" NOVELSPEAKER_PORT="$PORT" nohup python3 app_server.py >> "$LOG_FILE" 2>&1 &
+NOVELSPEAKER_HOST="$HOST" NOVELSPEAKER_PORT="$PORT" nohup "$PYTHON_BIN" app_server.py >> "$LOG_FILE" 2>&1 &
 echo "[start] Server started in background (PID: $!)"

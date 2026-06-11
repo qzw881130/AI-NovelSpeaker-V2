@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+import threading
 from pathlib import Path
 
 
@@ -216,6 +217,8 @@ SYSTEM_WORKFLOWS = [
         },
     },
 ]
+DB_INIT_LOCK = threading.Lock()
+DB_INIT_DONE = False
 
 
 def migrate_novels_table(conn: sqlite3.Connection) -> None:
@@ -571,38 +574,133 @@ def migrate_chapter_illustration_prompt_batches_table(conn: sqlite3.Connection) 
     )
 
 
-def db_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH, timeout=12.0)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA busy_timeout = 12000")
-    conn.execute("PRAGMA journal_mode = WAL")
-    conn.execute("PRAGMA synchronous = NORMAL")
-    conn.execute("PRAGMA foreign_keys = ON")
+def migrate_chapter_video_export_tasks_table(conn: sqlite3.Connection) -> None:
     conn.execute(
         """
-        CREATE TABLE IF NOT EXISTS capture_upload_logs (
+        CREATE TABLE IF NOT EXISTS chapter_video_export_tasks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             novel_id INTEGER NOT NULL,
+            chapter_id INTEGER NOT NULL,
             chapter_num INTEGER NOT NULL,
-            chapter_title TEXT NOT NULL,
-            word_count INTEGER NOT NULL DEFAULT 0,
+            chapter_title TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'pending',
+            progress INTEGER NOT NULL DEFAULT 0,
+            width INTEGER NOT NULL DEFAULT 1080,
+            height INTEGER NOT NULL DEFAULT 1920,
+            fps INTEGER NOT NULL DEFAULT 30,
+            duration_seconds REAL NOT NULL DEFAULT 0,
+            current_frame INTEGER NOT NULL DEFAULT 0,
+            total_frames INTEGER NOT NULL DEFAULT 0,
+            process_id INTEGER NOT NULL DEFAULT 0,
+            output_file_path TEXT NOT NULL DEFAULT '',
+            error_message TEXT NOT NULL DEFAULT '',
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY(novel_id) REFERENCES novels(id) ON DELETE CASCADE
+            started_at DATETIME,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(novel_id, chapter_id, width, height, fps),
+            FOREIGN KEY(novel_id) REFERENCES novels(id) ON DELETE CASCADE,
+            FOREIGN KEY(chapter_id) REFERENCES chapters(id) ON DELETE CASCADE
         )
         """
     )
-    # 执行迁移
-    migrate_novels_table(conn)
-    migrate_json_prompts_table(conn)
-    migrate_chapters_table(conn)
-    migrate_line_audio_tasks_table(conn)
-    migrate_json_tasks_table(conn)
-    migrate_task_batches_table(conn)
-    migrate_chapter_asr_tasks_table(conn)
-    migrate_chapter_nsfw_tasks_table(conn)
-    migrate_chapter_illustration_tasks_table(conn)
-    migrate_chapter_illustration_prompt_batches_table(conn)
-    migrate_chapter_illustration_images_table(conn)
-    migrate_workflow_io_config_column(conn)
-    migrate_workflow_logs_table(conn)
+    unique_columns = []
+    for idx in conn.execute("PRAGMA index_list(chapter_video_export_tasks)").fetchall():
+        if int(idx[2] or 0) != 1:
+            continue
+        cols = [str(col[2]) for col in conn.execute(f"PRAGMA index_info({idx[1]})").fetchall()]
+        unique_columns.append(cols)
+    if ["novel_id", "chapter_id"] in unique_columns and ["novel_id", "chapter_id", "width", "height", "fps"] not in unique_columns:
+        conn.execute("ALTER TABLE chapter_video_export_tasks RENAME TO chapter_video_export_tasks_old")
+        conn.execute(
+            """
+            CREATE TABLE chapter_video_export_tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                novel_id INTEGER NOT NULL,
+                chapter_id INTEGER NOT NULL,
+                chapter_num INTEGER NOT NULL,
+                chapter_title TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'pending',
+                progress INTEGER NOT NULL DEFAULT 0,
+                width INTEGER NOT NULL DEFAULT 1080,
+                height INTEGER NOT NULL DEFAULT 1920,
+                fps INTEGER NOT NULL DEFAULT 30,
+                duration_seconds REAL NOT NULL DEFAULT 0,
+                current_frame INTEGER NOT NULL DEFAULT 0,
+                total_frames INTEGER NOT NULL DEFAULT 0,
+                process_id INTEGER NOT NULL DEFAULT 0,
+                output_file_path TEXT NOT NULL DEFAULT '',
+                error_message TEXT NOT NULL DEFAULT '',
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                started_at DATETIME,
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(novel_id, chapter_id, width, height, fps),
+                FOREIGN KEY(novel_id) REFERENCES novels(id) ON DELETE CASCADE,
+                FOREIGN KEY(chapter_id) REFERENCES chapters(id) ON DELETE CASCADE
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO chapter_video_export_tasks(
+                id,novel_id,chapter_id,chapter_num,chapter_title,status,progress,width,height,fps,
+                duration_seconds,current_frame,total_frames,process_id,output_file_path,error_message,created_at,started_at,updated_at
+            )
+            SELECT id,novel_id,chapter_id,chapter_num,chapter_title,status,progress,width,height,fps,
+                   duration_seconds,current_frame,total_frames,0,output_file_path,error_message,created_at,started_at,updated_at
+            FROM chapter_video_export_tasks_old
+            """
+        )
+        conn.execute("DROP TABLE chapter_video_export_tasks_old")
+    columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(chapter_video_export_tasks)").fetchall()}
+    if "process_id" not in columns:
+        conn.execute("ALTER TABLE chapter_video_export_tasks ADD COLUMN process_id INTEGER NOT NULL DEFAULT 0")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_chapter_video_export_tasks_status_id ON chapter_video_export_tasks(status, id)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_chapter_video_export_tasks_updated ON chapter_video_export_tasks(updated_at)"
+    )
+
+
+def db_conn() -> sqlite3.Connection:
+    global DB_INIT_DONE
+    conn = sqlite3.connect(DB_PATH, timeout=30.0)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout = 30000")
+    conn.execute("PRAGMA synchronous = NORMAL")
+    conn.execute("PRAGMA foreign_keys = ON")
+    if not DB_INIT_DONE:
+        with DB_INIT_LOCK:
+            if not DB_INIT_DONE:
+                conn.execute("PRAGMA journal_mode = WAL")
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS capture_upload_logs (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        novel_id INTEGER NOT NULL,
+                        chapter_num INTEGER NOT NULL,
+                        chapter_title TEXT NOT NULL,
+                        word_count INTEGER NOT NULL DEFAULT 0,
+                        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY(novel_id) REFERENCES novels(id) ON DELETE CASCADE
+                    )
+                    """
+                )
+                # Migrations are startup work; running DDL on every request causes SQLite write locks.
+                migrate_novels_table(conn)
+                migrate_json_prompts_table(conn)
+                migrate_chapters_table(conn)
+                migrate_line_audio_tasks_table(conn)
+                migrate_json_tasks_table(conn)
+                migrate_task_batches_table(conn)
+                migrate_chapter_asr_tasks_table(conn)
+                migrate_chapter_nsfw_tasks_table(conn)
+                migrate_chapter_illustration_tasks_table(conn)
+                migrate_chapter_illustration_prompt_batches_table(conn)
+                migrate_chapter_illustration_images_table(conn)
+                migrate_chapter_video_export_tasks_table(conn)
+                migrate_workflow_io_config_column(conn)
+                migrate_workflow_logs_table(conn)
+                conn.commit()
+                DB_INIT_DONE = True
     return conn

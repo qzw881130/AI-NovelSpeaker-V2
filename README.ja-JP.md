@@ -65,6 +65,14 @@
 
 ### macOS / Linux
 
+`start.sh` / `start.bat` はプロジェクト内の仮想環境 `.venv` を自動作成し、`requirements.txt` の Python 依存をインストールします。Homebrew / システム Python へ直接インストールしないでください。
+
+章動画の書き出しにはシステムコマンドとして FFmpeg が必要です。macOS では：
+
+```bash
+brew install ffmpeg
+```
+
 ```bash
 chmod +x start.sh
 ./start.sh
@@ -84,6 +92,15 @@ start.bat
 start.bat --help
 start.bat --port=8081
 ```
+
+Windows では FFmpeg をインストールし、`ffmpeg.exe` を `PATH` に追加してください。
+
+## 章動画書き出しの依存関係
+
+- バックエンドは Pillow + FFmpeg で MP4 をオフライン生成します。
+- Pillow は `requirements.txt` から `.venv` にインストールされます。
+- FFmpeg は `ffmpeg` コマンドとして実行できる必要があります。
+- 動画書き出しは独立したサブプロセスで実行され、`stop.sh` / `stop.bat` は動画書き出しサブプロセスも停止します。
 
 ## バンドル出力ルール（Download Bundle）
 
