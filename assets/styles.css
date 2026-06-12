@@ -858,6 +858,18 @@ textarea {
   border: 1px solid var(--line);
 }
 
+.chip-toggle-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  font-size: 15px;
+}
+
 .chip.pending {
   background: #ece8de;
 }

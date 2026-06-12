@@ -73,6 +73,11 @@ function estimateRemainingText(task) {
   return `预计剩余 ${formatDuration(remainingSeconds)}`;
 }
 
+function videoMetaText(task) {
+  const sizeText = task.sizeBytes ? bytesToText(task.sizeBytes) : "-";
+  return `${task.width}x${task.height} · ${task.fps}fps · 时长 ${formatDuration(task.durationSeconds)} · 存储 ${sizeText}`;
+}
+
 function renderNovelSelect() {
   const select = document.getElementById("videoExportNovelSelect");
   select.innerHTML = novels.map((novel) => `<option value="${novel.id}">${escapeHtml(novel.name)}</option>`).join("");
@@ -128,7 +133,7 @@ function renderTasks() {
           <div class="task-detail-head">
             <div>
               <h3>#${task.id} | 第${String(task.chapterNum).padStart(3, "0")}回 ${escapeHtml(task.chapterTitle)}</h3>
-              <p class="meta">${escapeHtml(task.novelName)} · ${task.width}x${task.height} · ${task.fps}fps · ${formatDuration(task.durationSeconds)}</p>
+              <p class="meta">${escapeHtml(task.novelName)} · ${videoMetaText(task)}</p>
             </div>
             <span class="status-badge ${statusClass(task.status)}">${statusText(task.status)}</span>
           </div>
@@ -177,7 +182,7 @@ function openVideoPlayer(taskId) {
   const meta = document.getElementById("videoExportPlayerMeta");
   if (!dialog || !player) return;
   title.textContent = `第${String(task.chapterNum).padStart(3, "0")}回 ${task.chapterTitle || ""}`;
-  meta.textContent = `${task.width}x${task.height} · ${task.fps}fps · ${formatDuration(task.durationSeconds)} · ${task.sizeBytes ? bytesToText(task.sizeBytes) : ""}`;
+  meta.textContent = videoMetaText(task);
   player.src = getVideoExportFileUrl(task.id);
   dialog.showModal();
 }

@@ -21,20 +21,30 @@ let currentData = { novels: [], prompts: [], workflows: [] };
 const REFRESH_INTERVAL_KEY = "ai_novel_index_refresh_interval";
 const NOVEL_VISIBILITY_KEY = "ai_novel_index_visibility";
 const STORAGE_TABLE_COLLAPSED_KEY = "ai_novel_index_storage_table_collapsed";
+const DEFAULT_VISUAL_STYLE = "3D皮克斯动画电影风格";
+const NOVEL_CHIPS_EXPANDED_KEY = "ai_novel_index_chips_expanded";
 let activeBundleNovelId = "";
 let bundleTaskTimer = 0;
 
-function getNovelVisibilityMap() {
+function readJsonMap(key) {
   try {
-    const raw = JSON.parse(localStorage.getItem(NOVEL_VISIBILITY_KEY) || "{}");
+    const raw = JSON.parse(localStorage.getItem(key) || "{}");
     return raw && typeof raw === "object" ? raw : {};
   } catch {
     return {};
   }
 }
 
+function writeJsonMap(key, map) {
+  localStorage.setItem(key, JSON.stringify(map || {}));
+}
+
+function getNovelVisibilityMap() {
+  return readJsonMap(NOVEL_VISIBILITY_KEY);
+}
+
 function saveNovelVisibilityMap(map) {
-  localStorage.setItem(NOVEL_VISIBILITY_KEY, JSON.stringify(map || {}));
+  writeJsonMap(NOVEL_VISIBILITY_KEY, map);
 }
 
 function isNovelMasked(novelId) {
@@ -45,6 +55,21 @@ function setNovelMasked(novelId, masked) {
   const map = getNovelVisibilityMap();
   map[String(novelId)] = Boolean(masked);
   saveNovelVisibilityMap(map);
+}
+
+function getNovelChipsExpandedMap() {
+  return readJsonMap(NOVEL_CHIPS_EXPANDED_KEY);
+}
+
+function isNovelChipsExpanded(novelId) {
+  return Boolean(getNovelChipsExpandedMap()[String(novelId)]);
+}
+
+function setNovelChipsExpanded(novelId, expanded) {
+  const map = getNovelChipsExpandedMap();
+  if (expanded) map[String(novelId)] = true;
+  else delete map[String(novelId)];
+  writeJsonMap(NOVEL_CHIPS_EXPANDED_KEY, map);
 }
 
 function maskNovelText(value) {
@@ -135,6 +160,30 @@ function formatDuration(totalSeconds) {
   return parts.join("");
 }
 
+function renderNovelChips(novel, promptMap, workflowMap) {
+  const chips = [
+    `章节 ${fmtNumber(novel.chapterCount)}`,
+    `字数 ${fmtNumber(novel.totalWords)}`,
+    `英文目录: ${novel.englishDir || "-"}`,
+    `提示词: ${promptMap[String(novel.promptId)] || "-"}`,
+    `插画Scene提示词: ${promptMap[String(novel.illustrationScenePromptId)] || "-"}`,
+    `插画Shot提示词: ${promptMap[String(novel.illustrationShotPromptId)] || "-"}`,
+    `插画Prompt提示词: ${promptMap[String(novel.illustrationPromptPromptId)] || "-"}`,
+    `插图风格: ${novel.visualStyle || DEFAULT_VISUAL_STYLE}`,
+    `插画工作流: ${workflowMap[String(novel.workflowId)] || "-"}`,
+    `示例音频工作流: ${workflowMap[String(novel.voiceSampleWorkflowId)] || "-"}`,
+    `台词音频工作流: ${workflowMap[String(novel.lineAudioWorkflowId)] || "-"}`,
+    `提取文本工作流: ${workflowMap[String(novel.voiceTranscribeWorkflowId)] || "-"}`,
+    `音频ASR工作流: ${workflowMap[String(novel.audioAsrWorkflowId)] || "-"}`,
+  ];
+  const expanded = isNovelChipsExpanded(novel.id);
+  const visibleChips = expanded ? chips : chips.slice(0, 2);
+  const toggle = chips.length > 2
+    ? `<button class="ghost-btn chip-toggle-btn" data-action="toggle-chips" data-id="${novel.id}" title="${expanded ? "收起更多信息" : "展开更多信息"}" aria-label="${expanded ? "收起更多信息" : "展开更多信息"}" aria-expanded="${expanded ? "true" : "false"}" type="button">${expanded ? "⌃" : "⌄"}</button>`
+    : "";
+  return `<div class="chips">${visibleChips.map((text) => `<span class="chip">${text}</span>`).join("")}${toggle}</div>`;
+}
+
 function renderNovelCards() {
   const data = currentData;
   const keyword = document.getElementById("novelKeyword").value.trim().toLowerCase();
@@ -161,20 +210,7 @@ function renderNovelCards() {
         <button class="ghost-btn novel-delete-btn" data-action="delete" data-id="${n.id}" title="删除小说" aria-label="删除小说" type="button">✕</button>
         <div class="novel-card-head"><div class="novel-title-row"><h3>${displayName}</h3><button class="ghost-btn novel-edit-btn" data-action="edit" data-id="${n.id}" title="编辑小说" aria-label="编辑小说" type="button">✎</button><button class="ghost-btn novel-visibility-btn" data-action="toggle-visibility" data-id="${n.id}" title="${visibilityTitle}" aria-label="${visibilityTitle}" type="button">${visibilityIcon}</button></div><p class="meta">${displayAuthor}</p></div>
         <p class="novel-intro" title="${displayIntro}">${displayIntro}</p>
-        <div class="chips">
-          <span class="chip">章节 ${fmtNumber(n.chapterCount)}</span>
-          <span class="chip">字数 ${fmtNumber(n.totalWords)}</span>
-          <span class="chip">英文目录: ${n.englishDir || "-"}</span>
-          <span class="chip">提示词: ${promptMap[String(n.promptId)] || "-"}</span>
-          <span class="chip">插画Scene提示词: ${promptMap[String(n.illustrationScenePromptId)] || "-"}</span>
-          <span class="chip">插画Shot提示词: ${promptMap[String(n.illustrationShotPromptId)] || "-"}</span>
-          <span class="chip">插画Prompt提示词: ${promptMap[String(n.illustrationPromptPromptId)] || "-"}</span>
-          <span class="chip">插画工作流: ${workflowMap[String(n.workflowId)] || "-"}</span>
-          <span class="chip">示例音频工作流: ${workflowMap[String(n.voiceSampleWorkflowId)] || "-"}</span>
-          <span class="chip">台词音频工作流: ${workflowMap[String(n.lineAudioWorkflowId)] || "-"}</span>
-          <span class="chip">提取文本工作流: ${workflowMap[String(n.voiceTranscribeWorkflowId)] || "-"}</span>
-          <span class="chip">音频ASR工作流: ${workflowMap[String(n.audioAsrWorkflowId)] || "-"}</span>
-        </div>
+        ${renderNovelChips(n, promptMap, workflowMap)}
         <div><p class="meta">JSON处理 ${n.jsonProgress}%</p>${progressBar(n.jsonProgress)}</div>
         <div><p class="meta">音频生成 ${n.audioProgress}%</p>${progressBar(n.audioProgress)}</div>
         <div class="novel-duration-row">
@@ -295,6 +331,7 @@ function openNovelModal(novel) {
   form.illustrationScenePromptId.value = novel?.illustrationScenePromptId || illustrationScenePrompts.find((p) => p.name === "插画-scene提示词")?.id || illustrationScenePrompts[0]?.id || "";
   form.illustrationShotPromptId.value = novel?.illustrationShotPromptId || illustrationShotPrompts.find((p) => p.name === "插画-shot提示词")?.id || illustrationShotPrompts[0]?.id || "";
   form.illustrationPromptPromptId.value = novel?.illustrationPromptPromptId || illustrationPromptPrompts.find((p) => p.name === "插画-prompt提示词")?.id || illustrationPromptPrompts[0]?.id || "";
+  form.visualStyle.value = novel?.visualStyle || DEFAULT_VISUAL_STYLE;
   form.workflowId.value = novel?.workflowId || illustrationWorkflows.find((w) => w.name === "生成插画")?.id || illustrationWorkflows[0]?.id || "";
   form.voiceSampleWorkflowId.value = novel?.voiceSampleWorkflowId || voiceSampleWorkflows[0]?.id || "";
   form.lineAudioWorkflowId.value = novel?.lineAudioWorkflowId || lineAudioWorkflows[0]?.id || "";
@@ -504,6 +541,10 @@ async function onNovelAction(action, id) {
       setNovelMasked(id, !isNovelMasked(id));
       renderNovelCards();
     }
+    if (action === "toggle-chips") {
+      setNovelChipsExpanded(id, !isNovelChipsExpanded(id));
+      renderNovelCards();
+    }
     if (action === "download") {
       await openBundleModal(novel);
     }
@@ -631,6 +672,7 @@ function bindEvents() {
           illustrationScenePromptId: form.illustrationScenePromptId.value,
           illustrationShotPromptId: form.illustrationShotPromptId.value,
           illustrationPromptPromptId: form.illustrationPromptPromptId.value,
+          visualStyle: form.visualStyle.value,
           workflowId: form.workflowId.value,
           voiceSampleWorkflowId: form.voiceSampleWorkflowId.value,
           lineAudioWorkflowId: form.lineAudioWorkflowId.value,

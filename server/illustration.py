@@ -37,6 +37,7 @@ STAGE_NOVEL_PROMPT_COLUMN = {
     "prompt": "illustration_prompt_prompt_id",
 }
 ILLUSTRATION_IMAGE_QUEUE_LOCK = threading.Lock()
+DEFAULT_VISUAL_STYLE = "3D皮克斯动画电影风格"
 
 
 def _status_value(value: str | None) -> str:
@@ -145,7 +146,10 @@ def _build_user_input(conn, stage: str, row) -> str:
         asr_text = _preprocess_asr_timeline(_read_asr_text(conn, int(row["novel_id"]), int(row["chapter_num"])))
         if not asr_text.strip():
             raise RuntimeError("缺少ASR时间轴，请先完成音频ASR")
+        novel = conn.execute("SELECT visual_style FROM novels WHERE id=?", (int(row["novel_id"]),)).fetchone()
+        visual_style = str(novel["visual_style"] if novel else "" or DEFAULT_VISUAL_STYLE).strip() or DEFAULT_VISUAL_STYLE
         return (
+            f"插图风格（visual_style）：\n{visual_style}\n\n"
             f"章节名称：\n{str(row['chapter_title'] or '')}\n\n"
             f"小说章节内容：\n{chapter_text}\n\n"
             f"ASR时间轴：\n{asr_text}\n"

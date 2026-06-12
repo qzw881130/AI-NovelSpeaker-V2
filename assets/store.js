@@ -155,6 +155,7 @@ async function saveNovel(input, id) {
     illustrationScenePromptId: input.illustrationScenePromptId ? Number(input.illustrationScenePromptId) : null,
     illustrationShotPromptId: input.illustrationShotPromptId ? Number(input.illustrationShotPromptId) : null,
     illustrationPromptPromptId: input.illustrationPromptPromptId ? Number(input.illustrationPromptPromptId) : null,
+    visualStyle: String(input.visualStyle || "3D皮克斯动画电影风格").trim(),
     workflowId: input.workflowId ? Number(input.workflowId) : null,
     voiceSampleWorkflowId: input.voiceSampleWorkflowId ? Number(input.voiceSampleWorkflowId) : null,
     lineAudioWorkflowId: input.lineAudioWorkflowId ? Number(input.lineAudioWorkflowId) : null,

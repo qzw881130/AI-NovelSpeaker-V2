@@ -70,6 +70,14 @@ from .video_export import (
     retry_video_export_task,
 )
 
+VISUAL_STYLE_OPTIONS = {
+    "中国古典工笔画",
+    "法国现实主义文学插画",
+    "3D皮克斯动画电影风格",
+    "吉卜力动画风格",
+}
+DEFAULT_VISUAL_STYLE = "3D皮克斯动画电影风格"
+
 
 def _resolve_storage_path(raw_path: str) -> Path | None:
     text = str(raw_path or "").strip()
@@ -1933,6 +1941,9 @@ class Handler(BaseHTTPRequestHandler):
         if route == "/api/novels":
             body = self.read_json()
             english_dir = str(body.get("englishDir") or "").strip()
+            visual_style = str(body.get("visualStyle") or DEFAULT_VISUAL_STYLE).strip() or DEFAULT_VISUAL_STYLE
+            if visual_style not in VISUAL_STYLE_OPTIONS:
+                visual_style = DEFAULT_VISUAL_STYLE
             if not validate_english_dir(english_dir):
                 self.send_json({"error": "invalid englishDir"}, 400)
                 return
@@ -1940,8 +1951,8 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 conn.execute(
                     """
-                    INSERT INTO novels (name,author,english_dir,intro,prompt_id,nsfw_prompt_id,illustration_scene_prompt_id,illustration_shot_prompt_id,illustration_prompt_prompt_id,workflow_id,voice_sample_workflow_id,line_audio_workflow_id,voice_transcribe_workflow_id,audio_asr_workflow_id,chapter_count,total_words)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,0)
+                    INSERT INTO novels (name,author,english_dir,intro,prompt_id,nsfw_prompt_id,illustration_scene_prompt_id,illustration_shot_prompt_id,illustration_prompt_prompt_id,visual_style,workflow_id,voice_sample_workflow_id,line_audio_workflow_id,voice_transcribe_workflow_id,audio_asr_workflow_id,chapter_count,total_words)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,0)
                     """,
                     (
                         str(body.get("name") or "").strip(),
@@ -1959,6 +1970,7 @@ class Handler(BaseHTTPRequestHandler):
                         int(body.get("illustrationPromptPromptId"))
                         if body.get("illustrationPromptPromptId")
                         else None,
+                        visual_style,
                         int(body.get("workflowId")) if body.get("workflowId") else None,
                         int(body.get("voiceSampleWorkflowId"))
                         if body.get("voiceSampleWorkflowId")
@@ -3160,6 +3172,9 @@ class Handler(BaseHTTPRequestHandler):
         if m_novel:
             novel_id = int(m_novel.group(1))
             english_dir = str(body.get("englishDir") or "").strip()
+            visual_style = str(body.get("visualStyle") or DEFAULT_VISUAL_STYLE).strip() or DEFAULT_VISUAL_STYLE
+            if visual_style not in VISUAL_STYLE_OPTIONS:
+                visual_style = DEFAULT_VISUAL_STYLE
             if not validate_english_dir(english_dir):
                 self.send_json({"error": "invalid englishDir"}, 400)
                 return
@@ -3176,7 +3191,7 @@ class Handler(BaseHTTPRequestHandler):
                 conn.execute(
                     """
                     UPDATE novels
-                    SET name=?,author=?,english_dir=?,intro=?,prompt_id=?,nsfw_prompt_id=?,illustration_scene_prompt_id=?,illustration_shot_prompt_id=?,illustration_prompt_prompt_id=?,workflow_id=?,voice_sample_workflow_id=?,line_audio_workflow_id=?,voice_transcribe_workflow_id=?,audio_asr_workflow_id=?,updated_at=CURRENT_TIMESTAMP
+                    SET name=?,author=?,english_dir=?,intro=?,prompt_id=?,nsfw_prompt_id=?,illustration_scene_prompt_id=?,illustration_shot_prompt_id=?,illustration_prompt_prompt_id=?,visual_style=?,workflow_id=?,voice_sample_workflow_id=?,line_audio_workflow_id=?,voice_transcribe_workflow_id=?,audio_asr_workflow_id=?,updated_at=CURRENT_TIMESTAMP
                     WHERE id=?
                     """,
                     (
@@ -3195,6 +3210,7 @@ class Handler(BaseHTTPRequestHandler):
                         int(body.get("illustrationPromptPromptId"))
                         if body.get("illustrationPromptPromptId")
                         else None,
+                        visual_style,
                         int(body.get("workflowId")) if body.get("workflowId") else None,
                         int(body.get("voiceSampleWorkflowId"))
                         if body.get("voiceSampleWorkflowId")
