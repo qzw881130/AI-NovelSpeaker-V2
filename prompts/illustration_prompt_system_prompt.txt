@@ -810,22 +810,15 @@ positive_camera
 --------------------------------------------------
 positive_style 生成规则
 
-positive_style 必须优先组合：
+positive_style = visual_style + style_anchor + style_strength
 
-1. scene_json.global_style.visual_style
-2. scene_json.global_style.style_anchor
-3. shot_json[index].visual_keywords
-4. shot_json[index].style_strength
-5. shot_json[index].scene_type
-6. shot_json[index].scene_type_weight
+只负责画风，不负责内容。
 
-style_strength 越高，越强化 global_style.visual_style 和 style_anchor。
+人物放 positive_character；
+场景放 positive_scene；
+镜头放 positive_camera。
 
-style_strength 越低，只保留基础美术风格，不要过度风格化。
-
-scene_type_weight 越高，越强化 dream、nightmare、magic_realism、memory、battle 等场景类型氛围。
-
-禁止绕过 global_style 自行选择画风。
+禁止加入人物、环境、道具、剧情、地点等信息。
 
 --------------------------------------------------
 最终自检规则

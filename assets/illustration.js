@@ -29,6 +29,8 @@ let autoRefreshTimer = 0;
 let elapsedRefreshTimer = 0;
 let imagesRefreshTimer = 0;
 let activeImagesChapterNum = 0;
+let activePayloadChapterNum = 0;
+let activePayloadStage = "";
 let activePayloadKind = "";
 let activePromptBatchesChapterNum = 0;
 let activePromptBatches = [];
@@ -348,7 +350,7 @@ function renderTable() {
       <td class="select-col"><input class="illustration-row-select" type="checkbox" data-chapter-num="${Number(item.chapterNum || 0)}" ${selectedChapterNums.has(Number(item.chapterNum || 0)) ? "checked" : ""} /></td>
       <td>第 ${String(item.chapterNum || 0).padStart(3, "0")} 回</td>
       <td>${escapeHtml(item.title || "")}</td>
-      <td>${formatTimeSeconds(item.audioDurationSeconds || 0)}</td>
+      <td>${formatAudioDurationClock(item.audioDurationSeconds || 0)}</td>
       <td>${Number(item.wordCount || 0).toLocaleString()}</td>
       <td>${Number(item.illustrationCount || 0) || "-"}</td>
       <td>${renderStageCell(item, "scene")}</td>
@@ -529,6 +531,14 @@ function formatTimeSeconds(value) {
   return minutes ? `${minutes}分${String(seconds).padStart(2, "0")}秒` : `${seconds}秒`;
 }
 
+function formatAudioDurationClock(value) {
+  const total = Math.max(0, Math.round(Number(value || 0)));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
 function formatSelectedSeconds(value) {
   const total = Math.max(0, Math.round(Number(value || 0)));
   const minutes = Math.floor(total / 60);
@@ -605,14 +615,18 @@ function imageTimeLabel(item) {
 }
 
 async function openPayload(chapterNum, stage, kind) {
+  activePayloadChapterNum = Number(chapterNum || 0);
+  activePayloadStage = String(stage || "");
   activePayloadKind = kind;
   hidePayloadTimeTooltip();
   const dialog = document.getElementById("illustrationPayloadDialog");
   const title = document.getElementById("illustrationPayloadTitle");
   const content = document.getElementById("illustrationPayloadContent");
+  const downloadBtn = document.getElementById("downloadIllustrationPayloadBtn");
+  if (downloadBtn) downloadBtn.hidden = kind !== "output";
   const chapter = chapterItems.find((item) => Number(item.chapterNum || 0) === Number(chapterNum || 0));
   const duration = Number(chapter?.audioDurationSeconds || 0);
-  const durationText = duration > 0 ? ` · 音频时长 ${formatTimeSeconds(duration)}` : "";
+  const durationText = duration > 0 ? ` · 音频时长 ${formatAudioDurationClock(duration)}` : "";
   const titlePrefix = `${STAGE_LABELS[stage]} ${kind === "input" ? "输入" : "输出"} · 第${String(chapterNum).padStart(3, "0")}回${durationText}`;
   const initialWarning = stage === "scene" && kind === "output" ? sceneTimingWarningFromChapter(chapter) : "";
   setPayloadTitle(title, titlePrefix, initialWarning);
@@ -681,6 +695,29 @@ function downloadPromptOutput() {
   const filename = `${safeDownloadFilename(title)}-prompt-output.json`;
   downloadTextFile(filename, `${JSON.stringify(parsed, null, 2)}\n`);
   toast("Prompt 输出已下载");
+}
+
+function downloadIllustrationPayloadOutput() {
+  if (!activePayloadChapterNum || activePayloadKind !== "output") return;
+  const content = document.getElementById("illustrationPayloadContent");
+  const text = String(content?.textContent || "").trim();
+  if (!text || text === "加载中...") {
+    toast("暂无可下载内容");
+    return;
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch (err) {
+    toast(`JSON 格式错误：${err.message}`);
+    return;
+  }
+  const chapter = chapterItems.find((item) => Number(item.chapterNum || 0) === Number(activePayloadChapterNum));
+  const title = String(chapter?.title || `第${String(activePayloadChapterNum).padStart(3, "0")}回`).trim();
+  const stage = String(activePayloadStage || "payload").toLowerCase();
+  const filename = `${safeDownloadFilename(title)}-${stage}-output.json`;
+  downloadTextFile(filename, `${JSON.stringify(parsed, null, 2)}\n`);
+  toast(`${STAGE_LABELS[activePayloadStage] || "内容"} 输出已下载`);
 }
 
 function findPromptOutputText() {
@@ -968,8 +1005,10 @@ async function openImagesModal(chapterNum) {
   activeImagesChapterNum = Number(chapterNum || 0);
   const chapter = chapterItems.find((item) => Number(item.chapterNum || 0) === activeImagesChapterNum);
   const duration = Number(chapter?.audioDurationSeconds || 0);
-  const durationText = duration > 0 ? ` · 音频时长 ${formatTimeSeconds(duration)}` : "";
-  document.getElementById("illustrationImagesTitle").textContent = `插图生成 · 第${String(activeImagesChapterNum).padStart(3, "0")}回${durationText}`;
+  const durationText = duration > 0 ? ` · 音频时长 ${formatAudioDurationClock(duration)}` : "";
+  const chapterTitle = String(chapter?.title || "").trim();
+  const titleText = chapterTitle ? ` · ${chapterTitle}` : "";
+  document.getElementById("illustrationImagesTitle").textContent = `插图生成 · 第${String(activeImagesChapterNum).padStart(3, "0")}回${titleText}${durationText}`;
   document.getElementById("illustrationImagesList").innerHTML = '<p class="empty-text">加载中...</p>';
   const dialog = document.getElementById("illustrationImagesDialog");
   if (!dialog.open) dialog.showModal();
@@ -1171,12 +1210,15 @@ function bindEvents() {
   document.getElementById("payloadScrollBottomBtn").addEventListener("click", () => {
     payloadContent.scrollTo({ top: payloadContent.scrollHeight, behavior: "smooth" });
   });
+  document.getElementById("downloadIllustrationPayloadBtn")?.addEventListener("click", downloadIllustrationPayloadOutput);
   document.addEventListener("selectionchange", () => {
     if (document.getElementById("illustrationPayloadDialog")?.open) {
       window.setTimeout(showPayloadTimeTooltip, 0);
     }
   });
   document.getElementById("illustrationPayloadDialog").addEventListener("close", () => {
+    activePayloadChapterNum = 0;
+    activePayloadStage = "";
     activePayloadKind = "";
     hidePayloadTimeTooltip();
   });

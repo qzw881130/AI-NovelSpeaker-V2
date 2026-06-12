@@ -545,10 +545,16 @@ def list_illustration_chapters(novel_id: int) -> list[dict]:
                h.status AS shot_status, h.progress AS shot_progress, h.error_message AS shot_error,
                h.started_at AS shot_started_at, h.updated_at AS shot_updated_at,
                h.result_json_text AS shot_result_json,
-               p.status AS prompt_status, p.progress AS prompt_progress, p.error_message AS prompt_error,
-               p.started_at AS prompt_started_at, p.updated_at AS prompt_updated_at,
-               p.result_json_text AS prompt_result_json,
-               COALESCE(img.image_total, 0) AS image_total,
+                p.status AS prompt_status, p.progress AS prompt_progress, p.error_message AS prompt_error,
+                p.started_at AS prompt_started_at, p.updated_at AS prompt_updated_at,
+                p.result_json_text AS prompt_result_json,
+                COALESCE(pb.batch_total, 0) AS prompt_batch_total,
+                COALESCE(pb.batch_completed, 0) AS prompt_batch_completed,
+                COALESCE(pb.batch_processing, 0) AS prompt_batch_processing,
+                COALESCE(pb.batch_pending, 0) AS prompt_batch_pending,
+                COALESCE(pb.batch_failed, 0) AS prompt_batch_failed,
+                COALESCE(pb.batch_cancelled, 0) AS prompt_batch_cancelled,
+                COALESCE(img.image_total, 0) AS image_total,
                COALESCE(img.image_generated, 0) AS image_generated,
                COALESCE(img.image_queued, 0) AS image_queued,
                COALESCE(img.image_unqueued, 0) AS image_unqueued
@@ -556,6 +562,17 @@ def list_illustration_chapters(novel_id: int) -> list[dict]:
         LEFT JOIN chapter_illustration_tasks s ON s.chapter_id=c.id AND s.stage='scene'
         LEFT JOIN chapter_illustration_tasks h ON h.chapter_id=c.id AND h.stage='shot'
         LEFT JOIN chapter_illustration_tasks p ON p.chapter_id=c.id AND p.stage='prompt'
+        LEFT JOIN (
+            SELECT task_id,
+                   COUNT(*) AS batch_total,
+                   SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) AS batch_completed,
+                   SUM(CASE WHEN status IN ('running','processing') THEN 1 ELSE 0 END) AS batch_processing,
+                   SUM(CASE WHEN status='pending' THEN 1 ELSE 0 END) AS batch_pending,
+                   SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) AS batch_failed,
+                   SUM(CASE WHEN status='cancelled' THEN 1 ELSE 0 END) AS batch_cancelled
+            FROM chapter_illustration_prompt_batches
+            GROUP BY task_id
+        ) pb ON pb.task_id=p.id
         LEFT JOIN (
             SELECT chapter_id,
                    COUNT(*) AS image_total,
@@ -585,6 +602,34 @@ def list_illustration_chapters(novel_id: int) -> list[dict]:
         scene_count = _scene_grid_count(scene_result)
         shot_result = str(r["shot_result_json"] or "") if _status_value(r["shot_status"]) == "completed" else ""
         shot_count = _shot_item_count(shot_result) if shot_result else 0
+        prompt_status = _status_value(r["prompt_status"])
+        prompt_progress = int(r["prompt_progress"] or 0)
+        prompt_error = str(r["prompt_error"] or "")
+        prompt_batch_total = int(r["prompt_batch_total"] or 0)
+        prompt_batch_completed = int(r["prompt_batch_completed"] or 0)
+        prompt_batch_processing = int(r["prompt_batch_processing"] or 0)
+        prompt_batch_pending = int(r["prompt_batch_pending"] or 0)
+        prompt_batch_failed = int(r["prompt_batch_failed"] or 0)
+        prompt_batch_cancelled = int(r["prompt_batch_cancelled"] or 0)
+        if prompt_batch_total > 0:
+            active_batches = prompt_batch_processing + prompt_batch_pending
+            if prompt_batch_processing > 0:
+                prompt_status = "processing"
+            elif prompt_batch_pending > 0:
+                prompt_status = "pending"
+            elif prompt_batch_completed == prompt_batch_total:
+                prompt_status = "completed"
+                prompt_error = ""
+            elif prompt_batch_failed > 0:
+                prompt_status = "failed"
+            elif prompt_batch_cancelled > 0:
+                prompt_status = "cancelled"
+            if prompt_status in {"pending", "processing"}:
+                prompt_error = ""
+            if prompt_batch_total > 0 and prompt_status != "completed":
+                prompt_progress = max(prompt_progress, int(round(100 * prompt_batch_completed / prompt_batch_total)))
+                if active_batches > 0:
+                    prompt_progress = max(prompt_progress, min(99, int(round(100 * (prompt_batch_completed + 0.2 * prompt_batch_processing) / prompt_batch_total))))
         items.append({
             "chapterId": int(r["id"]),
             "chapterNum": int(r["chapter_num"] or 0),
@@ -608,7 +653,7 @@ def list_illustration_chapters(novel_id: int) -> list[dict]:
             "stages": {
                 "scene": {"status": _status_value(r["scene_status"]), "progress": int(r["scene_progress"] or 0), "errorMessage": str(r["scene_error"] or ""), "startedAt": str(r["scene_started_at"] or ""), "updatedAt": str(r["scene_updated_at"] or "")},
                 "shot": {"status": _status_value(r["shot_status"]), "progress": int(r["shot_progress"] or 0), "errorMessage": str(r["shot_error"] or ""), "startedAt": str(r["shot_started_at"] or ""), "updatedAt": str(r["shot_updated_at"] or "")},
-                "prompt": {"status": _status_value(r["prompt_status"]), "progress": int(r["prompt_progress"] or 0), "errorMessage": str(r["prompt_error"] or ""), "startedAt": str(r["prompt_started_at"] or ""), "updatedAt": str(r["prompt_updated_at"] or "")},
+                "prompt": {"status": prompt_status, "progress": prompt_progress, "errorMessage": prompt_error, "startedAt": str(r["prompt_started_at"] or ""), "updatedAt": str(r["prompt_updated_at"] or "")},
             },
         })
     return items
@@ -896,12 +941,39 @@ def list_prompt_batches(novel_id: int, chapter_id: int) -> dict:
         (int(task["id"]),),
     ).fetchall()
     conn.close()
+    task_status = str(task["status"] or "")
+    task_progress = int(task["progress"] or 0)
+    task_error = str(task["error_message"] or "")
+    if rows:
+        total = len(rows)
+        completed = sum(1 for row in rows if str(row["status"] or "") == "completed")
+        processing = sum(1 for row in rows if str(row["status"] or "") in {"running", "processing"})
+        pending = sum(1 for row in rows if str(row["status"] or "") == "pending")
+        failed = sum(1 for row in rows if str(row["status"] or "") == "failed")
+        cancelled = sum(1 for row in rows if str(row["status"] or "") == "cancelled")
+        if processing:
+            task_status = "processing"
+        elif pending:
+            task_status = "pending"
+        elif completed == total:
+            task_status = "completed"
+            task_error = ""
+        elif failed:
+            task_status = "failed"
+        elif cancelled:
+            task_status = "cancelled"
+        if task_status in {"pending", "processing"}:
+            task_error = ""
+        if task_status != "completed":
+            task_progress = max(task_progress, int(round(100 * completed / total)))
+            if processing:
+                task_progress = max(task_progress, min(99, int(round(100 * (completed + 0.2 * processing) / total))))
     return {
         "task": {
             "id": int(task["id"]),
-            "status": str(task["status"] or ""),
-            "progress": int(task["progress"] or 0),
-            "errorMessage": str(task["error_message"] or ""),
+            "status": task_status,
+            "progress": task_progress,
+            "errorMessage": task_error,
             "startedAt": str(task["started_at"] or ""),
             "updatedAt": str(task["updated_at"] or ""),
         },
