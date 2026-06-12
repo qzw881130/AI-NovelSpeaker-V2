@@ -583,6 +583,11 @@ textarea {
   font: inherit;
 }
 
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .prompt-content-textarea {
   min-height: 360px;
 }

@@ -1,4 +1,4 @@
-import { enqueueChapterVideoExport, fetchChapterAsrFile, fetchChapterDetail, fetchChapterIllustrationImages, fetchNovelChapters, getActiveNovelId, getData, setActiveNovelId } from "./store.js";
+import { enqueueChapterVideoExport, fetchChapterAsrFile, fetchChapterDetail, fetchChapterIllustrationImages, fetchNovelChapters, fetchVideoExportTasks, getActiveNovelId, getData, setActiveNovelId } from "./store.js";
 import { renderNav, showPageError, toast } from "./ui.js";
 import { localizeDocumentText, translateText } from "./i18n.js";
 
@@ -18,6 +18,7 @@ const PLAYLIST_COLLAPSED_KEY = "ai_novel_live_reader_playlist_collapsed";
 const TOP_SAFE_OFFSET_KEY = "ai_novel_live_reader_top_safe_offset";
 const READER_THEME_KEY = "ai_novel_live_reader_theme";
 const READER_LAYOUT_KEY = "ai_novel_live_reader_layout";
+const PLAYBACK_STATE_KEY = "ai_novel_live_reader_playback_state";
 const DEFAULT_READER_TOP_SAFE_OFFSET = 72;
 const MAX_READER_TOP_SAFE_OFFSET = 360;
 const DEFAULT_READER_THEME_ID = "parchment";
@@ -180,6 +181,10 @@ let cleanupLiveIllustrationKenBurns = null;
 let liveReaderSessionStartedAt = Date.now();
 let lastLiveReaderHealthLogAt = 0;
 let longSessionNoticeShown = false;
+let playbackStateSaveTimer = 0;
+let pendingRestoreState = null;
+let pendingRestoreApplied = false;
+let liveReaderVideoExportTasks = [];
 const preloadedAudioMap = new Map();
 const TIMEUPDATE_MIN_INTERVAL_MS = 120;
 const LIVE_READER_SYNC_INTERVAL_MS = 500;
@@ -265,6 +270,116 @@ function getAudioStreamUrl(chapterNum, audioVersion = "") {
   const base = `/api/novels/${Number(activeNovel?.id || 0)}/chapters/${Number(chapterNum)}/audio-stream`;
   const version = String(audioVersion || "").trim();
   return version ? `${base}?v=${encodeURIComponent(version)}` : base;
+}
+
+function videoExportButtonBaseLabel(width, height) {
+  return width > height ? "导出16:9 MP4" : "导出9:16 MP4";
+}
+
+function findVideoExportTaskForSize(width, height) {
+  return liveReaderVideoExportTasks.find((task) => (
+    Number(task.chapterNum) === Number(activeChapterNum)
+    && Number(task.width) === Number(width)
+    && Number(task.height) === Number(height)
+    && Number(task.fps || 30) === 30
+  )) || null;
+}
+
+function renderVideoExportButtons() {
+  document.querySelectorAll("[data-video-export-size]").forEach((btn) => {
+    const [width, height] = String(btn.dataset.videoExportSize || "1080x1920").split("x").map((item) => Number(item));
+    const baseLabel = videoExportButtonBaseLabel(width, height);
+    const task = findVideoExportTaskForSize(width, height);
+    btn.disabled = false;
+    if (!activeNovel || !activeChapterNum) {
+      btn.textContent = baseLabel;
+      btn.disabled = true;
+      return;
+    }
+    const status = String(task?.status || "");
+    if (status === "pending") {
+      btn.textContent = `等待中：${baseLabel}`;
+      btn.disabled = true;
+    } else if (status === "running") {
+      btn.textContent = `导出中：${baseLabel}`;
+      btn.disabled = true;
+    } else if (status === "completed") {
+      btn.textContent = `重新${baseLabel}`;
+    } else {
+      btn.textContent = baseLabel;
+    }
+  });
+}
+
+async function refreshLiveReaderVideoExportTasks() {
+  if (!activeNovel) {
+    liveReaderVideoExportTasks = [];
+    renderVideoExportButtons();
+    return;
+  }
+  try {
+    liveReaderVideoExportTasks = await fetchVideoExportTasks(activeNovel.id);
+  } catch {
+    liveReaderVideoExportTasks = [];
+  }
+  renderVideoExportButtons();
+}
+
+function readPlaybackState() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(PLAYBACK_STATE_KEY) || "null");
+    if (!parsed || typeof parsed !== "object") return null;
+    const novelId = Number(parsed.novelId || 0);
+    const chapterNum = Number(parsed.chapterNum || 0);
+    if (!novelId || !chapterNum) return null;
+    return {
+      novelId,
+      chapterNum,
+      currentTime: Math.max(0, Number(parsed.currentTime || 0)),
+      scrollTop: Math.max(0, Number(parsed.scrollTop || 0)),
+      savedAt: Number(parsed.savedAt || 0),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function savePlaybackStateNow() {
+  if (!activeNovel || !activeChapterNum) return;
+  const player = document.getElementById("liveReaderAudioPlayer");
+  const wrap = document.querySelector(".live-reader-reader-wrap");
+  const payload = {
+    novelId: Number(activeNovel.id),
+    chapterNum: Number(activeChapterNum),
+    currentTime: Math.max(0, Number(player?.currentTime || 0)),
+    scrollTop: Math.max(0, Number(wrap?.scrollTop || 0)),
+    savedAt: Date.now(),
+  };
+  localStorage.setItem(PLAYBACK_STATE_KEY, JSON.stringify(payload));
+}
+
+function scheduleSavePlaybackState() {
+  if (playbackStateSaveTimer) return;
+  playbackStateSaveTimer = window.setTimeout(() => {
+    playbackStateSaveTimer = 0;
+    savePlaybackStateNow();
+  }, 800);
+}
+
+function applyPendingPlaybackRestore() {
+  if (!pendingRestoreState || pendingRestoreApplied || !activeNovel || Number(pendingRestoreState.chapterNum) !== Number(activeChapterNum)) return;
+  const player = document.getElementById("liveReaderAudioPlayer");
+  const wrap = document.querySelector(".live-reader-reader-wrap");
+  if (player && Number.isFinite(pendingRestoreState.currentTime) && pendingRestoreState.currentTime > 0) {
+    const duration = Number(player.duration || 0);
+    player.currentTime = duration > 0 ? Math.min(pendingRestoreState.currentTime, Math.max(0, duration - 0.5)) : pendingRestoreState.currentTime;
+  }
+  if (wrap && Number.isFinite(pendingRestoreState.scrollTop) && pendingRestoreState.scrollTop > 0) {
+    wrap.scrollTop = pendingRestoreState.scrollTop;
+    targetReaderScrollTop = pendingRestoreState.scrollTop;
+  }
+  pendingRestoreApplied = true;
+  forceLiveReaderSync();
 }
 
 function getUpcomingWarmupChapters(chapterNum) {
@@ -1016,6 +1131,8 @@ function renderPlaylist() {
     root.addEventListener("click", async (event) => {
       const btn = event.target.closest("[data-chapter-num]");
       if (!btn) return;
+      pendingRestoreState = null;
+      pendingRestoreApplied = false;
       await loadChapter(Number(btn.dataset.chapterNum), { autoplay: false });
     });
   }
@@ -1855,8 +1972,12 @@ function resetReaderScroll() {
 
 async function loadChapter(chapterNum, options = {}) {
   if (!activeNovel) return;
+  savePlaybackStateNow();
   const loadToken = ++chapterLoadToken;
   activeChapterNum = chapterNum;
+  const shouldRestorePlayback = Boolean(options.restorePlayback);
+  pendingRestoreApplied = false;
+  renderVideoExportButtons();
   const detail = await fetchChapterDetail(activeNovel.id, chapterNum);
   if (loadToken !== chapterLoadToken) return;
   activeChapterDetail = detail;
@@ -1890,15 +2011,17 @@ async function loadChapter(chapterNum, options = {}) {
     player.load();
   }
   updateReaderProgressBar();
-  resetReaderScroll();
+  if (!shouldRestorePlayback) resetReaderScroll();
   updatePlaylistActiveState();
   updateNavButtons();
+  refreshLiveReaderVideoExportTasks();
   scheduleUpcomingAudioWarmup(chapterNum);
   loadLiveIllustrations(chapterNum, loadToken);
 
   const basePayload = await buildRenderedChapterPayload(String(detail.content || "").trim(), "");
   if (loadToken !== chapterLoadToken) return;
   renderReadingContentFromPayload(basePayload);
+  if (shouldRestorePlayback) applyPendingPlaybackRestore();
   updateSegmentHighlight(true);
   setStatus("就绪");
   setMatchStatus("匹配: 估算同步");
@@ -1913,20 +2036,25 @@ async function loadChapter(chapterNum, options = {}) {
   const renderPayload = await buildRenderedChapterPayload(String(detail.content || "").trim(), asrText);
   if (loadToken !== chapterLoadToken) return;
   renderReadingContentFromPayload(renderPayload);
-  resetReaderScroll();
+  if (shouldRestorePlayback) {
+    applyPendingPlaybackRestore();
+  } else {
+    resetReaderScroll();
+  }
   updateSegmentHighlight(true);
   setStatus(renderPayload.currentAsrMode ? "已加载精准时间轴" : "就绪");
   setMatchStatus(renderPayload.currentAsrMode ? "匹配: 初始化中" : "匹配: 估算同步");
 }
 
-async function loadNovelChapters() {
+async function loadNovelChapters(options = {}) {
   if (!activeNovel) return;
   chapterItems = await fetchNovelChapters(activeNovel.id);
   audioChapterItems = chapterItems.filter((item) => Boolean(item.hasAudio));
   renderPlaylist();
-  const target = audioChapterItems.find((item) => Number(item.chapterNum) === Number(activeChapterNum)) || audioChapterItems[0] || null;
+  const requestedChapterNum = Number(options.chapterNum || activeChapterNum || 0);
+  const target = audioChapterItems.find((item) => Number(item.chapterNum) === requestedChapterNum) || audioChapterItems[0] || null;
   if (target) {
-    await loadChapter(target.chapterNum, { autoplay: false });
+    await loadChapter(target.chapterNum, { autoplay: false, restorePlayback: Boolean(options.restorePlayback) });
   } else {
     document.getElementById("liveReaderChapterTitle").textContent = "暂无可播放章回";
     document.getElementById("liveReaderChapterMeta").textContent = "";
@@ -1939,7 +2067,7 @@ async function loadNovelChapters() {
   }
 }
 
-async function switchNovel(novelId) {
+async function switchNovel(novelId, options = {}) {
   const previousNovelId = activeNovel?.id;
   activeNovel = allNovels.find((item) => String(item.id) === String(novelId)) || allNovels[0] || null;
   if (!activeNovel) return;
@@ -1947,12 +2075,14 @@ async function switchNovel(novelId) {
     clearPreloadedAudioCache();
     chapterRenderCache.clear();
     lastWarmupKey = "";
+    liveReaderVideoExportTasks = [];
   }
   setActiveNovelId(activeNovel.id);
   document.getElementById("liveReaderPageTitle").textContent = `${activeNovel.name} - 直播阅读器`;
   renderNovelSelect();
-  activeChapterNum = null;
-  await loadNovelChapters();
+  activeChapterNum = options.chapterNum ? Number(options.chapterNum) : null;
+  await loadNovelChapters(options);
+  await refreshLiveReaderVideoExportTasks();
 }
 
 async function playAdjacentChapter(step, options = {}) {
@@ -1963,6 +2093,8 @@ async function playAdjacentChapter(step, options = {}) {
   const wrapped = step > 0 ? audioChapterItems[0] : audioChapterItems[audioChapterItems.length - 1];
   const target = next || (shouldWrap ? wrapped : null);
   if (!target) return;
+  pendingRestoreState = null;
+  pendingRestoreApplied = false;
   await loadChapter(target.chapterNum, { autoplay: true });
 }
 
@@ -1978,10 +2110,13 @@ function bindEvents() {
     updateSegmentHighlight(true);
   });
   document.getElementById("liveReaderNovelSelect")?.addEventListener("change", async (event) => {
+    pendingRestoreState = null;
+    pendingRestoreApplied = false;
     await switchNovel(event.target.value);
   });
   document.getElementById("refreshLiveReaderBtn")?.addEventListener("click", async () => {
     await loadNovelChapters();
+    await refreshLiveReaderVideoExportTasks();
     toast("已刷新");
   });
   document.querySelectorAll("[data-video-export-size]").forEach((btn) => btn.addEventListener("click", async () => {
@@ -1993,6 +2128,7 @@ function bindEvents() {
     try {
       await enqueueChapterVideoExport(activeNovel.id, activeChapterNum, { width, height, fps: 30 });
       toast(`已加入 ${width}x${height} 视频导出队列`);
+      await refreshLiveReaderVideoExportTasks();
     } catch (err) {
       toast(`视频导出排队失败：${err.message}`);
     }
@@ -2114,7 +2250,9 @@ function bindEvents() {
   }
   player?.addEventListener("timeupdate", scheduleTimeUpdate);
   player?.addEventListener("timeupdate", updateReaderProgressBar);
+  player?.addEventListener("timeupdate", scheduleSavePlaybackState);
   player?.addEventListener("loadedmetadata", updateReaderProgressBar);
+  player?.addEventListener("loadedmetadata", applyPendingPlaybackRestore);
   player?.addEventListener("play", () => {
     startLiveReaderSyncLoop();
     setStatus("播放中");
@@ -2125,19 +2263,24 @@ function bindEvents() {
     stopLiveReaderSyncLoop();
     setStatus("已暂停");
     updateReaderProgressBar();
+    savePlaybackStateNow();
   });
   player?.addEventListener("ended", async () => {
     stopLiveReaderSyncLoop();
     updateReaderProgressBar();
     updateSegmentHighlight(true);
     setStatus("播放结束");
+    savePlaybackStateNow();
     if (document.getElementById("liveReaderAutoNext")?.checked) {
       await playAdjacentChapter(1, { wrap: true });
     }
   });
+  document.querySelector(".live-reader-reader-wrap")?.addEventListener("scroll", scheduleSavePlaybackState, { passive: true });
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") forceLiveReaderSync();
+    else savePlaybackStateNow();
   });
+  window.addEventListener("beforeunload", savePlaybackStateNow);
   window.addEventListener("focus", forceLiveReaderSync);
   window.addEventListener("pageshow", forceLiveReaderSync);
 }
@@ -2156,14 +2299,20 @@ async function init() {
   const data = await getData({ include: ["novels", "settings"] });
   window.__liveReaderSettings = data.settings || {};
   allNovels = data.novels || [];
-  activeNovel = getNovelByQueryOrActive();
+  const savedPlaybackState = readPlaybackState();
+  pendingRestoreState = savedPlaybackState;
+  activeNovel = savedPlaybackState
+    ? allNovels.find((item) => Number(item.id) === Number(savedPlaybackState.novelId)) || getNovelByQueryOrActive()
+    : getNovelByQueryOrActive();
   if (!activeNovel) {
     throw new Error("未找到小说");
   }
   syncLiveEndingAudioState();
   renderNovelSelect();
   bindEvents();
-  await switchNovel(activeNovel.id);
+  await switchNovel(activeNovel.id, savedPlaybackState && Number(activeNovel.id) === Number(savedPlaybackState.novelId)
+    ? { chapterNum: savedPlaybackState.chapterNum, restorePlayback: true }
+    : {});
   localizeDocumentText(document);
 }
 
