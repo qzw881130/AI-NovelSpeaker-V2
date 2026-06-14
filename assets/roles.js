@@ -336,6 +336,11 @@ function roleLevelOptions(value) {
     .join("");
 }
 
+function roleSampleDownloadName(role) {
+  const roleName = String(role.name || "role").trim() || "role";
+  return `${Number(role.id || 0) || "role"}-${roleName}.flac`;
+}
+
 function buildSampleCell(role) {
   const hasAudio = String(role.sampleAudioPath || "").trim();
   const isGenerating = generatingSampleRoleIds.has(Number(role.id));
@@ -346,8 +351,9 @@ function buildSampleCell(role) {
   const parts = [];
   if (hasAudio) {
     const cacheKey = encodeURIComponent(String(role.updatedAt || role.sampleAudioPath || "0"));
+    const downloadName = encodeURIComponent(roleSampleDownloadName(role));
     parts.push('<div class="role-sample-main">');
-    parts.push(`<audio class="role-sample-player" controls preload="metadata" src="/api/novels/${activeNovel.id}/roles/${role.id}/sample?v=${cacheKey}"></audio>`);
+    parts.push(`<audio class="role-sample-player" controls preload="metadata" src="/api/novels/${activeNovel.id}/roles/${role.id}/sample/${downloadName}?v=${cacheKey}"></audio>`);
     parts.push(sourceIcon);
     parts.push(`
       <div class="role-sample-actions">

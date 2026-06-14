@@ -1333,7 +1333,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"role": role})
             return
 
-        m_role_sample = re.match(r"^/api/novels/(\d+)/roles/(\d+)/sample$", route)
+        m_role_sample = re.match(r"^/api/novels/(\d+)/roles/(\d+)/sample(?:/[^/]+)?$", route)
         if m_role_sample:
             role_id = int(m_role_sample.group(2))
             role = get_role(role_id)
@@ -1351,7 +1351,8 @@ class Handler(BaseHTTPRequestHandler):
             body = abs_path.read_bytes()
             ctype = mimetypes.guess_type(abs_path.name)[0] or "application/octet-stream"
             role_name = str(role.get("name") or "role").strip() or "role"
-            download_name = f"{role_id}-{role_name}.flac"
+            suffix = abs_path.suffix if abs_path.suffix else ".flac"
+            download_name = f"{role_id}-{role_name}{suffix}"
             ascii_download_name = re.sub(r"[^A-Za-z0-9._-]+", "_", download_name).strip(
                 "._"
             )
