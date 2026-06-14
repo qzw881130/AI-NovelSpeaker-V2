@@ -594,6 +594,17 @@ function applyControlsCollapsedState() {
     btn.textContent = collapsed ? "展开" : "收起";
     btn.setAttribute("aria-expanded", collapsed ? "false" : "true");
   }
+  updatePlaylistMaxHeight();
+}
+
+function updatePlaylistMaxHeight() {
+  const playlist = document.getElementById("liveReaderPlaylist");
+  if (!playlist) return;
+  const rect = playlist.getBoundingClientRect();
+  const bottomPadding = document.fullscreenElement ? 18 : 24;
+  const minHeight = 180;
+  const nextHeight = Math.max(minHeight, Math.floor(window.innerHeight - rect.top - bottomPadding));
+  playlist.style.setProperty("--live-reader-playlist-max-height", `${nextHeight}px`);
 }
 
 function applyPlaylistCollapsedState() {
@@ -613,6 +624,7 @@ function applyPlaylistCollapsedState() {
     btn.setAttribute("aria-label", collapsed ? "展开章回播放列表" : "收起章回播放列表");
     btn.title = collapsed ? "展开章回播放列表" : "收起章回播放列表";
   }
+  updatePlaylistMaxHeight();
 }
 
 function formatMatchStrategy(strategy) {
@@ -1124,6 +1136,7 @@ function renderPlaylist() {
   if (count) count.textContent = `${audioChapterItems.length} 回`;
   if (!audioChapterItems.length) {
     root.innerHTML = '<p class="empty-text">暂无可播放音频章回</p>';
+    updatePlaylistMaxHeight();
     return;
   }
   if (!root.dataset.boundClick) {
@@ -1142,6 +1155,7 @@ function renderPlaylist() {
       return `<button class="live-reader-playlist-item${active}" data-chapter-num="${item.chapterNum}" type="button"><strong>${String(item.chapterNum).padStart(3, "0")}</strong><span>${item.title}</span></button>`;
     })
     .join("");
+  updatePlaylistMaxHeight();
 }
 
 function updatePlaylistActiveState() {
@@ -2107,8 +2121,10 @@ function bindEvents() {
   window.matchMedia("(display-mode: standalone)").addEventListener?.("change", updateInstallButtonVisibility);
   window.addEventListener("resize", () => {
     applyReaderSettings();
+    updatePlaylistMaxHeight();
     updateSegmentHighlight(true);
   });
+  document.addEventListener("fullscreenchange", updatePlaylistMaxHeight);
   document.getElementById("liveReaderNovelSelect")?.addEventListener("change", async (event) => {
     pendingRestoreState = null;
     pendingRestoreApplied = false;
@@ -2136,10 +2152,12 @@ function bindEvents() {
   document.getElementById("toggleLiveReaderControlsBtn")?.addEventListener("click", () => {
     setControlsCollapsed(!isControlsCollapsed());
     applyControlsCollapsedState();
+    window.requestAnimationFrame(updatePlaylistMaxHeight);
   });
   document.getElementById("toggleLiveReaderPlaylistBtn")?.addEventListener("click", () => {
     setPlaylistCollapsed(!isPlaylistCollapsed());
     applyPlaylistCollapsedState();
+    window.requestAnimationFrame(updatePlaylistMaxHeight);
   });
   document.getElementById("liveEndingAudioPlayBtn")?.addEventListener("click", async () => {
     const select = document.getElementById("liveEndingAudioSelect");

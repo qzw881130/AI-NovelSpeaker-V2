@@ -2913,13 +2913,14 @@ menu {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  max-height: calc(100vh - 320px);
-  overflow: auto;
+  max-height: var(--live-reader-playlist-max-height, calc(100vh - 320px));
+  overflow-y: auto;
+  overflow-x: hidden;
   padding-right: 6px;
 }
 
 .live-reader-page:fullscreen .live-reader-playlist {
-  max-height: calc(100vh - 260px);
+  max-height: var(--live-reader-playlist-max-height, calc(100vh - 260px));
 }
 
 .live-reader-popout-body {
