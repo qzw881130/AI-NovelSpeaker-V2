@@ -1998,6 +1998,7 @@ async function loadChapter(chapterNum, options = {}) {
   liveIllustrationItems = [];
   activeIllustrationIndex = -1;
   clearLiveIllustration();
+  document.getElementById("liveReaderChapterNovelName").textContent = detail.novelName || activeNovel?.name || "-";
   document.getElementById("liveReaderChapterTitle").textContent = detail.title;
   document.getElementById("liveReaderChapterMeta").textContent = `${detail.novelName} · 章节 ${detail.chapterNum} · 字数 ${detail.wordCount || 0}`;
   document.getElementById("liveReaderMatchStatus").textContent = "匹配: 初始化中";
@@ -2070,6 +2071,7 @@ async function loadNovelChapters(options = {}) {
   if (target) {
     await loadChapter(target.chapterNum, { autoplay: false, restorePlayback: Boolean(options.restorePlayback) });
   } else {
+    document.getElementById("liveReaderChapterNovelName").textContent = activeNovel?.name || "-";
     document.getElementById("liveReaderChapterTitle").textContent = "暂无可播放章回";
     document.getElementById("liveReaderChapterMeta").textContent = "";
     const frameTitleEl = document.getElementById("liveReaderFrameTitle");
@@ -2093,6 +2095,7 @@ async function switchNovel(novelId, options = {}) {
   }
   setActiveNovelId(activeNovel.id);
   document.getElementById("liveReaderPageTitle").textContent = `${activeNovel.name} - 直播阅读器`;
+  document.getElementById("liveReaderChapterNovelName").textContent = activeNovel.name;
   renderNovelSelect();
   activeChapterNum = options.chapterNum ? Number(options.chapterNum) : null;
   await loadNovelChapters(options);

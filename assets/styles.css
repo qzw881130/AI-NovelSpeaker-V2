@@ -2974,6 +2974,19 @@ menu {
   margin-bottom: 12px;
 }
 
+.live-reader-chapter-novel-name {
+  margin: 0 auto 4px;
+  max-width: calc(100% - 40px);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 20px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .live-reader-audio-wrap {
   display: flex;
   align-items: center;
