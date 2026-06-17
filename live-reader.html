@@ -74,6 +74,17 @@
               <input id="liveReaderIllustrationWidthRange" type="range" min="240" max="1000" step="10" value="620" />
               <span id="liveReaderIllustrationWidthValue" class="reader-status">620px</span>
             </label>
+            <div class="live-reader-theme-control">
+              <span>Ken Burns运动控制</span>
+              <div class="live-reader-theme-row">
+                <select id="liveReaderKenBurnsMotionSelect">
+                  <option value="simple">简单动效</option>
+                  <option value="medium">中等动效</option>
+                  <option value="large">大幅度动效</option>
+                </select>
+              </div>
+              <span id="liveReaderKenBurnsMotionValue" class="reader-status">简单动效</span>
+            </div>
             <label class="live-reader-slider-control">
               字号
               <input id="liveReaderFontSizeRange" type="range" min="12" max="42" step="1" value="28" />
@@ -103,8 +114,8 @@
               <span>阅读布局</span>
               <div class="live-reader-theme-row">
                 <select id="liveReaderLayoutSelect">
-                  <option value="vertical">纵向：正文在上，插画在下</option>
-                  <option value="horizontal">横向：插画在左，正文在右</option>
+                  <option value="vertical">纵向</option>
+                  <option value="horizontal">横向</option>
                 </select>
               </div>
               <span id="liveReaderLayoutValue" class="reader-status">纵向</span>

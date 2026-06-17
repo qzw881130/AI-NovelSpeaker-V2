@@ -2771,20 +2771,45 @@ menu {
   background: linear-gradient(180deg, #fff7ea 0%, #f2e3cc 100%);
 }
 
+.live-reader-controls-panel {
+  padding: 10px 14px 12px;
+}
+
+.live-reader-controls-panel .panel-head {
+  margin-bottom: 8px;
+}
+
+.live-reader-controls-panel h2 {
+  margin-bottom: 0;
+  font-size: 18px;
+}
+
 .live-reader-controls-grid {
   display: grid;
-  grid-template-columns: 160px repeat(7, minmax(96px, 1fr)) auto;
-  gap: 8px 12px;
-  align-items: end;
+  grid-template-columns: repeat(12, minmax(72px, 1fr));
+  gap: 6px 10px;
+  align-items: start;
 }
 
 .live-reader-theme-control {
-  grid-column: 1 / -2;
+  grid-column: span 3;
   min-width: 0;
   display: grid;
-  grid-template-columns: 120px minmax(240px, 360px) auto 1fr;
-  gap: 8px 12px;
-  align-items: center;
+  grid-template-columns: auto minmax(120px, 1fr);
+  gap: 3px 8px;
+  align-items: end;
+}
+
+.live-reader-theme-control > span:first-child {
+  white-space: nowrap;
+}
+
+.live-reader-theme-control > .reader-status {
+  display: none;
+}
+
+.live-reader-theme-control:has(#liveReaderThemeSelect) {
+  grid-column: span 5;
 }
 
 .live-reader-theme-row {
@@ -2799,8 +2824,9 @@ menu {
 }
 
 .live-reader-theme-preview {
+  grid-column: 1 / -1;
   display: flex;
-  gap: 8px 12px;
+  gap: 4px 8px;
   flex-wrap: wrap;
 }
 
@@ -2809,12 +2835,13 @@ menu {
   align-items: center;
   gap: 6px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 11px;
+  line-height: 1.1;
 }
 
 .live-reader-theme-chip i {
-  width: 16px;
-  height: 16px;
+  width: 11px;
+  height: 11px;
   border-radius: 999px;
   border: 1px solid rgba(0, 0, 0, 0.12);
   display: inline-block;
@@ -2825,18 +2852,27 @@ menu {
 }
 
 .live-reader-toggles-col {
+  grid-column: span 2;
   display: flex;
-  flex-direction: column;
-  gap: 10px;
-  align-self: stretch;
-  padding-top: 2px;
+  flex-wrap: wrap;
+  gap: 5px 10px;
+  align-self: start;
+  padding-top: 0;
+}
+
+.live-reader-toggles-col .inline-check {
+  min-width: 72px;
+  line-height: 1.2;
 }
 
 .live-reader-slider-control {
+  grid-column: span 1;
   display: grid;
   grid-template-rows: auto auto auto;
-  gap: 4px;
+  gap: 2px;
   min-width: 0;
+  font-size: 13px;
+  line-height: 1.2;
 }
 
 .live-reader-slider-control input[type="range"] {
@@ -2845,7 +2881,7 @@ menu {
 }
 
 .live-reader-slider-control .reader-status {
-  font-size: 13px;
+  font-size: 11px;
   line-height: 1.2;
 }
 
@@ -4425,6 +4461,12 @@ body.is-illustration-drag-selecting {
   .live-reader-theme-control {
     grid-column: auto;
     grid-template-columns: 1fr;
+  }
+
+  .live-reader-theme-control:has(#liveReaderThemeSelect),
+  .live-reader-slider-control,
+  .live-reader-toggles-col {
+    grid-column: auto;
   }
 
   .live-reader-toggles-col {

@@ -11,6 +11,7 @@ const AUTO_SCROLL_KEY = "ai_novel_live_reader_auto_scroll";
 const HIGHLIGHT_KEY = "ai_novel_live_reader_highlight";
 const ILLUSTRATIONS_KEY = "ai_novel_live_reader_illustrations";
 const HIGHLIGHT_INTENSITY_KEY = "ai_novel_live_reader_highlight_intensity";
+const KEN_BURNS_MOTION_KEY = "ai_novel_live_reader_ken_burns_motion";
 const FOLLOW_SENSITIVITY_KEY = "ai_novel_live_reader_follow_sensitivity";
 const FOLLOW_SMOOTHNESS_KEY = "ai_novel_live_reader_follow_smoothness";
 const CONTROLS_COLLAPSED_KEY = "ai_novel_live_reader_controls_collapsed";
@@ -23,6 +24,56 @@ const DEFAULT_READER_TOP_SAFE_OFFSET = 72;
 const MAX_READER_TOP_SAFE_OFFSET = 360;
 const DEFAULT_READER_THEME_ID = "parchment";
 const DEFAULT_READER_LAYOUT = "vertical";
+const KEN_BURNS_MOTION_PRESETS = {
+  simple: {
+    label: "简单动效",
+    minSegmentMs: 15000,
+    maxSegmentMs: 30000,
+    easing: "ease-in-out",
+    transforms: [
+      "scale(1.08) translate(-2%, -1%)",
+      "scale(1.10) translate(2%, -1%)",
+      "scale(1.09) translate(-1%, 2%)",
+      "scale(1.12) translate(1%, 1%)",
+      "scale(1.07) translate(0%, -2%)",
+      "scale(1.11) translate(-2%, 0%)",
+      "scale(1.06) translate(2%, 2%)",
+      "scale(1.10) translate(-2.5%, 1%)",
+    ],
+  },
+  medium: {
+    label: "中等动效",
+    minSegmentMs: 12000,
+    maxSegmentMs: 24000,
+    easing: "cubic-bezier(0.42, 0, 0.2, 1)",
+    transforms: [
+      "scale(1.15) translate(-4%, -2%) rotate(-0.4deg)",
+      "scale(1.18) translate(4%, -2%) rotate(0.5deg)",
+      "scale(1.16) translate(-3%, 4%) rotate(0.35deg)",
+      "scale(1.20) translate(3%, 3%) rotate(-0.5deg)",
+      "scale(1.14) translate(0%, -5%) rotate(0.25deg)",
+      "scale(1.19) translate(-5%, 1%) rotate(-0.35deg)",
+      "scale(1.17) translate(5%, 4%) rotate(0.45deg)",
+      "scale(1.21) translate(-4%, 3%) rotate(-0.25deg)",
+    ],
+  },
+  large: {
+    label: "大幅度动效",
+    minSegmentMs: 9000,
+    maxSegmentMs: 18000,
+    easing: "cubic-bezier(0.36, 0, 0.16, 1)",
+    transforms: [
+      "scale(1.24) translate(-7%, -4%) rotate(-0.9deg)",
+      "scale(1.30) translate(7%, -5%) rotate(1deg)",
+      "scale(1.26) translate(-6%, 7%) rotate(0.8deg)",
+      "scale(1.33) translate(5%, 6%) rotate(-1.1deg)",
+      "scale(1.22) translate(1%, -8%) rotate(0.65deg)",
+      "scale(1.31) translate(-8%, 2%) rotate(-0.75deg)",
+      "scale(1.28) translate(8%, 7%) rotate(0.95deg)",
+      "scale(1.35) translate(-6%, 5%) rotate(-0.55deg)",
+    ],
+  },
+};
 const READER_THEMES = [
   {
     id: "parchment",
@@ -468,6 +519,15 @@ function getReaderLayoutLabel(layout = getReaderLayout()) {
   return layout === "horizontal" ? "横向" : "纵向";
 }
 
+function getKenBurnsMotionPreset() {
+  const value = String(localStorage.getItem(KEN_BURNS_MOTION_KEY) || "simple").trim();
+  return KEN_BURNS_MOTION_PRESETS[value] ? value : "simple";
+}
+
+function getKenBurnsMotionLabel(preset = getKenBurnsMotionPreset()) {
+  return KEN_BURNS_MOTION_PRESETS[preset]?.label || KEN_BURNS_MOTION_PRESETS.simple.label;
+}
+
 function renderThemeOptions() {
   const select = document.getElementById("liveReaderThemeSelect");
   if (!select || select.dataset.ready === "1") return;
@@ -677,6 +737,7 @@ function applyReaderSettings() {
   const topSafeOffset = getSavedNumber(TOP_SAFE_OFFSET_KEY, DEFAULT_READER_TOP_SAFE_OFFSET, 0, MAX_READER_TOP_SAFE_OFFSET);
   const theme = getReaderTheme();
   const layout = getReaderLayout();
+  const kenBurnsMotion = getKenBurnsMotionPreset();
   const content = document.getElementById("liveReaderContent");
   const progressTrack = document.getElementById("liveReaderProgressTrack");
   const illustrationBox = document.getElementById("liveReaderIllustrationBox");
@@ -688,6 +749,8 @@ function applyReaderSettings() {
   const themePreview = document.getElementById("liveReaderThemePreview");
   const layoutSelect = document.getElementById("liveReaderLayoutSelect");
   const layoutValue = document.getElementById("liveReaderLayoutValue");
+  const kenBurnsMotionSelect = document.getElementById("liveReaderKenBurnsMotionSelect");
+  const kenBurnsMotionValue = document.getElementById("liveReaderKenBurnsMotionValue");
   const frameWidth = width + 36;
   const horizontalIllustrationWidth = illustrationWidth;
   const horizontalStageWidth = horizontalIllustrationWidth + frameWidth;
@@ -742,6 +805,8 @@ function applyReaderSettings() {
   if (themeValue) themeValue.textContent = theme.label;
   if (layoutSelect) layoutSelect.value = layout;
   if (layoutValue) layoutValue.textContent = getReaderLayoutLabel(layout);
+  if (kenBurnsMotionSelect) kenBurnsMotionSelect.value = kenBurnsMotion;
+  if (kenBurnsMotionValue) kenBurnsMotionValue.textContent = getKenBurnsMotionLabel(kenBurnsMotion);
   if (themePreview) {
     themePreview.innerHTML = `
       <span class="live-reader-theme-chip"><i style="background:${theme.background}"></i>正文背景</span>
@@ -815,21 +880,13 @@ function getIllustrationDisplayDurationMs(item, currentTime) {
 
 function applyKenBurns(imgElement, durationMs) {
   if (!imgElement) return () => {};
-  const minSegmentMs = 15000;
-  const maxSegmentMs = 30000;
+  const preset = KEN_BURNS_MOTION_PRESETS[getKenBurnsMotionPreset()] || KEN_BURNS_MOTION_PRESETS.simple;
+  const minSegmentMs = preset.minSegmentMs;
+  const maxSegmentMs = preset.maxSegmentMs;
   const totalMs = Math.max(1000, Number(durationMs) || maxSegmentMs);
   const segmentCount = Math.max(1, Math.ceil(totalMs / maxSegmentMs));
   const segmentMs = totalMs < minSegmentMs ? totalMs : Math.max(minSegmentMs, totalMs / segmentCount);
-  const transforms = [
-    "scale(1.08) translate(-2%, -1%)",
-    "scale(1.10) translate(2%, -1%)",
-    "scale(1.09) translate(-1%, 2%)",
-    "scale(1.12) translate(1%, 1%)",
-    "scale(1.07) translate(0%, -2%)",
-    "scale(1.11) translate(-2%, 0%)",
-    "scale(1.06) translate(2%, 2%)",
-    "scale(1.10) translate(-2.5%, 1%)",
-  ];
+  const transforms = preset.transforms;
   const timers = [];
   let cancelled = false;
   let previousIndex = Math.floor(Math.random() * transforms.length);
@@ -852,7 +909,7 @@ function applyKenBurns(imgElement, durationMs) {
     imgElement.style.transition = "none";
     imgElement.style.transform = previousTransform;
     void imgElement.offsetWidth;
-    imgElement.style.transition = `transform ${segmentMs}ms ease-in-out`;
+    imgElement.style.transition = `transform ${segmentMs}ms ${preset.easing}`;
     imgElement.style.transform = nextTransform;
     previousTransform = nextTransform;
     if (index + 1 < segmentCount) {
@@ -867,6 +924,16 @@ function applyKenBurns(imgElement, durationMs) {
     imgElement.style.transition = "";
     imgElement.style.transform = "";
   };
+}
+
+function restartLiveIllustrationKenBurns() {
+  const img = document.getElementById("liveReaderIllustrationImage");
+  if (!img?.src || img.closest(".live-reader-illustration-box")?.classList.contains("is-empty")) return;
+  const player = document.getElementById("liveReaderAudioPlayer");
+  const item = liveIllustrationItems[activeIllustrationIndex] || null;
+  const durationMs = item ? getIllustrationDisplayDurationMs(item, Number(player?.currentTime || 0)) : 30000;
+  stopLiveIllustrationKenBurns();
+  cleanupLiveIllustrationKenBurns = applyKenBurns(img, durationMs);
 }
 
 function clearLiveIllustration(message = "暂无匹配插画") {
@@ -2234,6 +2301,12 @@ function bindEvents() {
     localStorage.setItem(READER_LAYOUT_KEY, value === "horizontal" ? "horizontal" : "vertical");
     applyReaderSettings();
     updateSegmentHighlight(true);
+  });
+  document.getElementById("liveReaderKenBurnsMotionSelect")?.addEventListener("change", (event) => {
+    const value = String(event.target.value || "simple");
+    localStorage.setItem(KEN_BURNS_MOTION_KEY, KEN_BURNS_MOTION_PRESETS[value] ? value : "simple");
+    applyReaderSettings();
+    restartLiveIllustrationKenBurns();
   });
   document.getElementById("liveReaderResetThemeBtn")?.addEventListener("click", () => {
     localStorage.setItem(READER_THEME_KEY, DEFAULT_READER_THEME_ID);
