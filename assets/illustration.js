@@ -759,6 +759,28 @@ function replacePromptOutputText() {
   editor.focus();
 }
 
+function replaceAllPromptOutputText() {
+  const editor = document.getElementById("promptOutputEditor");
+  const findInput = document.getElementById("promptOutputFindInput");
+  const replaceInput = document.getElementById("promptOutputReplaceInput");
+  const query = String(findInput?.value || "");
+  const replacement = String(replaceInput?.value || "");
+  if (!editor || !query) {
+    toast("请输入查找内容");
+    return;
+  }
+  const text = String(editor.value || "");
+  const parts = text.split(query);
+  const count = parts.length - 1;
+  if (!count) {
+    toast("未找到匹配内容");
+    return;
+  }
+  editor.value = parts.join(replacement);
+  editor.focus();
+  toast(`已替换 ${count} 处`);
+}
+
 async function openLlmParams(chapterNum, stage) {
   const dialog = document.getElementById("illustrationLlmParamsDialog");
   const title = document.getElementById("illustrationLlmParamsTitle");
@@ -1152,6 +1174,7 @@ function bindEvents() {
   });
   document.getElementById("promptOutputFindBtn").addEventListener("click", findPromptOutputText);
   document.getElementById("promptOutputReplaceBtn").addEventListener("click", replacePromptOutputText);
+  document.getElementById("promptOutputReplaceAllBtn").addEventListener("click", replaceAllPromptOutputText);
   document.getElementById("promptOutputFindInput").addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
       event.preventDefault();
