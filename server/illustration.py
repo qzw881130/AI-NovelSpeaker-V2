@@ -37,6 +37,7 @@ STAGE_NOVEL_PROMPT_COLUMN = {
     "prompt": "illustration_prompt_prompt_id",
 }
 ILLUSTRATION_IMAGE_QUEUE_LOCK = threading.Lock()
+ILLUSTRATION_LLM_QUEUE_LOCK = threading.Lock()
 DEFAULT_VISUAL_STYLE = "3D皮克斯动画电影风格"
 
 
@@ -615,13 +616,13 @@ def list_illustration_chapters(novel_id: int) -> list[dict]:
             active_batches = prompt_batch_processing + prompt_batch_pending
             if prompt_batch_processing > 0:
                 prompt_status = "processing"
+            elif prompt_batch_failed > 0:
+                prompt_status = "failed"
             elif prompt_batch_pending > 0:
                 prompt_status = "pending"
             elif prompt_batch_completed == prompt_batch_total:
                 prompt_status = "completed"
                 prompt_error = ""
-            elif prompt_batch_failed > 0:
-                prompt_status = "failed"
             elif prompt_batch_cancelled > 0:
                 prompt_status = "cancelled"
             if prompt_status in {"pending", "processing"}:
@@ -953,13 +954,13 @@ def list_prompt_batches(novel_id: int, chapter_id: int) -> dict:
         cancelled = sum(1 for row in rows if str(row["status"] or "") == "cancelled")
         if processing:
             task_status = "processing"
+        elif failed:
+            task_status = "failed"
         elif pending:
             task_status = "pending"
         elif completed == total:
             task_status = "completed"
             task_error = ""
-        elif failed:
-            task_status = "failed"
         elif cancelled:
             task_status = "cancelled"
         if task_status in {"pending", "processing"}:
@@ -1505,6 +1506,15 @@ def _run_illustration_image_queue_once_locked() -> bool:
 
 
 def run_illustration_llm_queue_once() -> bool:
+    if not ILLUSTRATION_LLM_QUEUE_LOCK.acquire(blocking=False):
+        return False
+    try:
+        return _run_illustration_llm_queue_once_locked()
+    finally:
+        ILLUSTRATION_LLM_QUEUE_LOCK.release()
+
+
+def _run_illustration_llm_queue_once_locked() -> bool:
     conn = db_conn()
     running = conn.execute(
         "SELECT id FROM chapter_illustration_tasks WHERE status IN ('running','processing') ORDER BY id ASC LIMIT 1"
