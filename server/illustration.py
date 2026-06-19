@@ -517,14 +517,13 @@ def _scene_grid_count(result_json_text: str) -> int:
         return 0
     if not isinstance(parsed, dict):
         return 0
-    try:
-        count = int(parsed.get("grid_count") or 0)
-    except (TypeError, ValueError):
-        count = 0
-    if count > 0:
-        return count
     grid = parsed.get("grid")
-    return len(grid) if isinstance(grid, list) else 0
+    if isinstance(grid, list):
+        return len(grid)
+    try:
+        return int(parsed.get("grid_count") or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 def _shot_item_count(result_json_text: str) -> int:
