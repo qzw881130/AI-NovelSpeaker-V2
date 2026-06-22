@@ -648,7 +648,11 @@ async function openPromptOutput(chapterNum) {
   const dialog = document.getElementById("promptOutputDialog");
   const title = document.getElementById("promptOutputTitle");
   const editor = document.getElementById("promptOutputEditor");
+  const findInput = document.getElementById("promptOutputFindInput");
+  const replaceInput = document.getElementById("promptOutputReplaceInput");
   title.textContent = `Prompt 输出 · 第${String(chapterNum).padStart(3, "0")}回`;
+  if (findInput) findInput.value = "";
+  if (replaceInput) replaceInput.value = "";
   editor.value = "加载中...";
   dialog.showModal();
   try {
@@ -658,6 +662,23 @@ async function openPromptOutput(chapterNum) {
   } catch (err) {
     editor.value = `加载失败：${err.message}`;
   }
+}
+
+async function switchPromptOutput(delta) {
+  if (!activePromptOutputChapterNum) return;
+  const chapters = chapterItems
+    .filter((item) => item.stages?.prompt?.status === "completed")
+    .map((item) => Number(item.chapterNum || 0))
+    .filter(Boolean)
+    .sort((a, b) => a - b);
+  const currentIndex = chapters.indexOf(Number(activePromptOutputChapterNum));
+  if (currentIndex < 0) return;
+  const nextIndex = currentIndex + Number(delta || 0);
+  if (nextIndex < 0 || nextIndex >= chapters.length) {
+    toast(delta < 0 ? "已经是第一回 Prompt 输出" : "已经是最后一回 Prompt 输出");
+    return;
+  }
+  await openPromptOutput(chapters[nextIndex]);
 }
 
 async function savePromptOutput() {
@@ -930,10 +951,18 @@ function openPreviewAt(index) {
   const prevBtn = document.getElementById("illustrationPreviewPrevBtn");
   const nextBtn = document.getElementById("illustrationPreviewNextBtn");
   const footerMeta = document.getElementById("illustrationPreviewFooterMeta");
+  const regenerateBtn = document.getElementById("illustrationPreviewRegenerateBtn");
   const positionText = `${currentPreviewIndex + 1}/${total}`;
   const timeText = imageTimeLabel(item);
+  const imageId = String(item.id || "");
+  const imageUpdatedAt = String(item.updatedAt || "");
+  const imageUrl = String(item.imageUrl || "");
+  const busy = ["pending", "running", "processing"].includes(String(item.status || ""));
   prevBtn.disabled = total <= 1;
   nextBtn.disabled = total <= 1;
+  regenerateBtn.dataset.imageId = imageId;
+  regenerateBtn.disabled = busy || !item.id;
+  regenerateBtn.textContent = busy ? `${statusLabel(item.status)}中` : "重新生成";
   document.getElementById("illustrationPreviewTitle").textContent = `#${item.index} ${item.sceneTitle || "预览插图"}`;
   document.getElementById("illustrationPreviewSummary").textContent = item.cnSummary || "";
   document.getElementById("illustrationPreviewCharacters").textContent = item.characterNames ? `人物：${item.characterNames}` : "";
@@ -942,7 +971,14 @@ function openPreviewAt(index) {
   img.onload = () => {
     footerMeta.textContent = [timeText, `尺寸：${img.naturalWidth}x${img.naturalHeight}`, `比例：${ratioLabel(img.naturalWidth, img.naturalHeight)}`, positionText].filter(Boolean).join(" · ");
   };
-  img.src = `${item.imageUrl}?v=${Date.now()}`;
+  if (img.dataset.imageId !== imageId || img.dataset.imageUpdatedAt !== imageUpdatedAt || img.dataset.imageUrl !== imageUrl) {
+    img.dataset.imageId = imageId;
+    img.dataset.imageUpdatedAt = imageUpdatedAt;
+    img.dataset.imageUrl = imageUrl;
+    img.src = `${imageUrl}?v=${Date.now()}`;
+  } else if (img.complete && img.naturalWidth) {
+    footerMeta.textContent = [timeText, `尺寸：${img.naturalWidth}x${img.naturalHeight}`, `比例：${ratioLabel(img.naturalWidth, img.naturalHeight)}`, positionText].filter(Boolean).join(" · ");
+  }
   if (!dialog.open) dialog.showModal();
 }
 
@@ -952,10 +988,33 @@ function switchPreview(delta) {
   openPreviewAt(currentPreviewIndex + delta);
 }
 
+async function regeneratePreviewImage() {
+  const btn = document.getElementById("illustrationPreviewRegenerateBtn");
+  const imageId = Number(btn?.dataset.imageId || 0);
+  if (!imageId) return;
+  btn.disabled = true;
+  try {
+    await enqueueIllustrationImage(imageId);
+    toast("插图已加入生成队列");
+    await refreshImagesModal();
+    const index = currentPreviewItems.findIndex((item) => Number(item.id) === imageId);
+    if (index >= 0) openPreviewAt(index);
+  } catch (err) {
+    btn.disabled = false;
+    toast(`加入队列失败：${err.message}`);
+  }
+}
+
 async function refreshImagesModal() {
   if (!document.getElementById("illustrationImagesDialog")?.open) return;
   if (!activeImagesChapterNum) return;
+  const previewDialog = document.getElementById("illustrationImagePreviewDialog");
+  const previewImageId = previewDialog?.open ? Number(currentPreviewItems[currentPreviewIndex]?.id || 0) : 0;
   renderImages(await fetchChapterIllustrationImages(activeNovel.id, activeImagesChapterNum));
+  if (previewImageId) {
+    const index = currentPreviewItems.findIndex((item) => Number(item.id) === previewImageId);
+    if (index >= 0) openPreviewAt(index);
+  }
   await refreshPage();
 }
 
@@ -1181,6 +1240,13 @@ function bindEvents() {
       findPromptOutputText();
     }
   });
+  document.getElementById("promptOutputDialog").addEventListener("keydown", async (event) => {
+    if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+    if (!event.shiftKey || (!event.metaKey && !event.ctrlKey)) return;
+    if (event.target.closest("input,select")) return;
+    event.preventDefault();
+    await switchPromptOutput(event.key === "ArrowLeft" ? -1 : 1);
+  });
   document.getElementById("savePromptOutputBtn").addEventListener("click", async () => {
     try {
       await savePromptOutput();
@@ -1294,6 +1360,7 @@ function bindEvents() {
   });
   document.getElementById("illustrationPreviewPrevBtn").addEventListener("click", () => switchPreview(-1));
   document.getElementById("illustrationPreviewNextBtn").addEventListener("click", () => switchPreview(1));
+  document.getElementById("illustrationPreviewRegenerateBtn").addEventListener("click", regeneratePreviewImage);
   document.getElementById("illustrationImagesDialog").addEventListener("close", stopImagesAutoRefresh);
   initImagesRefreshControl();
 }

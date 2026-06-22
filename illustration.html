@@ -164,9 +164,12 @@
           <button class="dialog-close-btn" type="submit" aria-label="关闭">×</button>
         </div>
         <textarea id="promptOutputEditor" class="dialog-code-block prompt-output-editor" spellcheck="false">加载中...</textarea>
-        <div class="dialog-actions">
-          <button id="savePromptOutputBtn" class="primary-btn" type="button">保存</button>
-          <button id="downloadPromptOutputBtn" class="ghost-btn" type="button">下载JSON</button>
+        <div class="dialog-actions prompt-output-actions">
+          <div class="prompt-output-action-buttons">
+            <button id="savePromptOutputBtn" class="primary-btn" type="button">保存</button>
+            <button id="downloadPromptOutputBtn" class="ghost-btn" type="button">下载JSON</button>
+          </div>
+          <span class="meta prompt-output-shortcut-hint">快捷键：Command/Ctrl + Shift + ← / → 切换上一回 / 下一回</span>
         </div>
       </form>
     </dialog>
@@ -212,7 +215,10 @@
           <img id="illustrationImagePreview" class="illustration-preview-image" alt="插图预览" />
           <button id="illustrationPreviewNextBtn" class="illustration-preview-nav" type="button" aria-label="下一张" title="下一张">›</button>
         </div>
-        <p id="illustrationPreviewFooterMeta" class="meta illustration-preview-footer-meta"></p>
+        <div class="illustration-preview-footer-row">
+          <p id="illustrationPreviewFooterMeta" class="meta illustration-preview-footer-meta"></p>
+          <button id="illustrationPreviewRegenerateBtn" class="ghost-btn" type="button">重新生成</button>
+        </div>
       </form>
     </dialog>
 

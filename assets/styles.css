@@ -4412,8 +4412,16 @@ body.is-illustration-drag-selecting {
   border-radius: 12px;
 }
 
-.illustration-preview-footer-meta {
+.illustration-preview-footer-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   margin: 8px 58px 0;
+}
+
+.illustration-preview-footer-meta {
+  flex: 1;
+  margin: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -4431,6 +4439,24 @@ body.is-illustration-drag-selecting {
   word-break: break-word;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   line-height: 1.6;
+}
+
+.prompt-output-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.prompt-output-action-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.prompt-output-shortcut-hint {
+  flex: 1;
+  text-align: right;
 }
 
 .nsfw-flag-dot {
