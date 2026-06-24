@@ -408,6 +408,39 @@ def _extract_image_output(history: dict, prompt_id: str, output_node_id: str = "
     return None
 
 
+def _extract_comfy_history_error(history: dict, prompt_id: str) -> str | None:
+    if not isinstance(history, dict) or not history:
+        return None
+    job = history.get(prompt_id)
+    if job is None:
+        job = next(iter(history.values())) if history else None
+    if not isinstance(job, dict):
+        return None
+    status = job.get("status")
+    if not isinstance(status, dict):
+        return None
+    messages = status.get("messages")
+    if isinstance(messages, list):
+        for message in messages:
+            if not isinstance(message, (list, tuple)) or not message:
+                continue
+            message_type = str(message[0] or "").strip().lower()
+            payload = message[1] if len(message) > 1 and isinstance(message[1], dict) else {}
+            if "error" not in message_type and message_type != "execution_interrupted":
+                continue
+            details = [
+                str(payload.get("exception_message") or "").strip(),
+                str(payload.get("node_errors") or "").strip(),
+                str(payload.get("error") or payload.get("message") or "").strip(),
+            ]
+            detail_text = next((item for item in details if item), "")
+            return detail_text or message_type or "ComfyUI workflow failed"
+    status_str = str(status.get("status_str") or "").strip().lower()
+    if status_str in {"error", "failed", "execution_error", "execution_interrupted"}:
+        return str(status.get("status_str") or "ComfyUI workflow failed")
+    return None
+
+
 def _safe_filename_part(value: str, fallback: str = "novel") -> str:
     text = str(value or "").strip()
     safe = "".join(ch for ch in text if ch.isalnum() or ch in {"_", "-"})
@@ -1413,6 +1446,9 @@ def process_illustration_image(image_id: int) -> None:
         for _ in range(240):
             touch_illustration_image_worker_heartbeat(made_progress=True)
             history = comfy_request_json(comfy_url=comfy_url, path=f"/history/{prompt_id}")
+            comfy_error = _extract_comfy_history_error(history, prompt_id)
+            if comfy_error:
+                raise RuntimeError(f"ComfyUI workflow failed: {comfy_error}")
             output = _extract_image_output(history, prompt_id, output_node_id=output_node_id)
             if output:
                 break

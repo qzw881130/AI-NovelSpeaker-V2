@@ -1713,6 +1713,17 @@ textarea {
   font-size: 14px;
 }
 
+.workflow-log-block-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.workflow-log-copy-btn {
+  width: 26px;
+  height: 26px;
+}
+
 .workflow-log-block pre {
   margin: 0;
   padding: 10px 12px;
