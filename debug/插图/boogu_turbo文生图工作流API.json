@@ -1,0 +1,163 @@
+{
+  "2": {
+    "inputs": {
+      "unet_name": "boogu\\boogu_image_turbo_fp8_scaled.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "#2 Load Diffusion Model"
+    }
+  },
+  "3": {
+    "inputs": {
+      "samples": [
+        "32",
+        0
+      ],
+      "vae": [
+        "5",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "#3 VAE Decode"
+    }
+  },
+  "5": {
+    "inputs": {
+      "vae_name": "flux1_vae_bf16.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "#5 Load VAE"
+    }
+  },
+  "7": {
+    "inputs": {
+      "clip_name": "boogu\\qwen3vl_8b_fp8_scaled.safetensors",
+      "type": "boogu",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "#7 Load CLIP"
+    }
+  },
+  "8": {
+    "inputs": {
+      "width": [
+        "34",
+        0
+      ],
+      "height": [
+        "35",
+        0
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyLatentImage",
+    "_meta": {
+      "title": "#8 Empty Latent Image"
+    }
+  },
+  "9": {
+    "inputs": {
+      "conditioning": [
+        "11",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "#9 ConditioningZeroOut"
+    }
+  },
+  "11": {
+    "inputs": {
+      "text": [
+        "36",
+        0
+      ],
+      "clip": [
+        "7",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "#11 CLIP Text Encode (Prompt)"
+    }
+  },
+  "32": {
+    "inputs": {
+      "seed": 823462336496575,
+      "steps": 4,
+      "cfg": 1,
+      "sampler_name": "lcm",
+      "scheduler": "sgm_uniform",
+      "denoise": 1,
+      "model": [
+        "2",
+        0
+      ],
+      "positive": [
+        "11",
+        0
+      ],
+      "negative": [
+        "9",
+        0
+      ],
+      "latent_image": [
+        "8",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "#32 KSampler"
+    }
+  },
+  "34": {
+    "inputs": {
+      "value": 1536
+    },
+    "class_type": "easy int",
+    "_meta": {
+      "title": "#34 Width"
+    }
+  },
+  "35": {
+    "inputs": {
+      "value": 864
+    },
+    "class_type": "easy int",
+    "_meta": {
+      "title": "#35 Height"
+    }
+  },
+  "36": {
+    "inputs": {
+      "prompt": "提示词：中国古典工笔画，工笔重彩，细腻线描，传统设色，古典文学插画，电影级构图，高细节，非动漫，朱武发令，杨雄石秀等前排领命，后排燕顺等肃立，整肃有序场面，杨雄，中年，梁山病关索，军汉服，抱拳领命，前景；石秀，中年，拼命三郎，军汉服，抱拳领命，前景；杜兴，中年，鬼脸儿，江湖短打，躬身领命，前景；薛永，中年，病大虫，江湖短打，躬身领命，前景；樊瑞，中年，混世魔王，全真道袍，稽首领命，前景；燕青，青年，浪子，道家童子服，抱拳领命，前景；朱武，中年，神机军师，儒士服，威严发令，中景；解珍，中年，短打武生，抱拳领命，背景；解宝，中年，短打武生，抱拳领命，背景；施恩，中年，武人装束，抱拳领命，背景；石勇，中年，武人装束，抱拳领命，背景；阮小二，中年，渔民装束，抱拳领命，背景；阮小七，中年，渔民装束，抱拳领命，背景；燕顺，中年，武人装束，抱拳领命，背景；郑天寿，中年，武人装束，抱拳领命，背景；项充，中年，武人装束，抱拳领命，背景；李衮，中年，武人装束，抱拳领命，背景；陈达，中年，武人装束，抱拳领命，背景；杨春，中年，武人装束，抱拳领命，背景，梁山泊忠义堂大厅，宋代木构建筑，整肃有序气氛，柔和日光，工笔重彩陈设，古典文学插画阵列，广角镜头，平视角度，分层深度构图，柔和日光，前景领命好汉队列，中景发令朱武，背景忠义堂陈设；画面中19人"
+    },
+    "class_type": "CR Prompt Text",
+    "_meta": {
+      "title": "#36 Prompt"
+    }
+  },
+  "37": {
+    "inputs": {
+      "filename_prefix": "ComfyUI",
+      "images": [
+        "3",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Image"
+    }
+  }
+}
