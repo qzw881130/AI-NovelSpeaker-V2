@@ -3156,7 +3156,10 @@ menu {
   overflow: auto;
   border: 1px solid var(--line);
   border-radius: 4px;
-  background: var(--live-reader-bg, #fffef7);
+  background-color: var(--live-reader-bg, #fffef7);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='260' height='160' viewBox='0 0 260 160'%3E%3Ctext x='22' y='88' transform='rotate(-28 22 88)' fill='%236f6255' fill-opacity='0.08' font-family='Arial, sans-serif' font-size='20' font-weight='700'%3E%E6%97%BA%E4%BB%94%E6%9C%89%E5%A3%B0%E5%B0%8F%E8%AF%B4%20%C2%B7%20%E8%87%AA%E5%88%B6%E6%BC%94%E6%92%AD%3C/text%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 260px 160px;
   padding: 18px 18px 96px;
   margin: 0 auto;
   box-sizing: border-box;
