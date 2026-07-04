@@ -19,11 +19,13 @@ const PLAYLIST_COLLAPSED_KEY = "ai_novel_live_reader_playlist_collapsed";
 const TOP_SAFE_OFFSET_KEY = "ai_novel_live_reader_top_safe_offset";
 const READER_THEME_KEY = "ai_novel_live_reader_theme";
 const READER_LAYOUT_KEY = "ai_novel_live_reader_layout";
+const WATERMARK_TEXT_KEY = "ai_novel_live_reader_watermark_text";
 const PLAYBACK_STATE_KEY = "ai_novel_live_reader_playback_state";
 const DEFAULT_READER_TOP_SAFE_OFFSET = 72;
 const MAX_READER_TOP_SAFE_OFFSET = 360;
 const DEFAULT_READER_THEME_ID = "parchment";
 const DEFAULT_READER_LAYOUT = "vertical";
+const DEFAULT_WATERMARK_TEXT = "旺仔有声小说 · 自制演播";
 const KEN_BURNS_MOTION_PRESETS = {
   simple: {
     label: "简单动效",
@@ -528,6 +530,22 @@ function getKenBurnsMotionLabel(preset = getKenBurnsMotionPreset()) {
   return KEN_BURNS_MOTION_PRESETS[preset]?.label || KEN_BURNS_MOTION_PRESETS.simple.label;
 }
 
+function getWatermarkText() {
+  const saved = localStorage.getItem(WATERMARK_TEXT_KEY);
+  return saved == null ? DEFAULT_WATERMARK_TEXT : String(saved || "");
+}
+
+function buildWatermarkImage(text) {
+  const value = String(text || "").trim();
+  if (!value) return "none";
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="260" height="160" viewBox="0 0 260 160"><text x="22" y="88" transform="rotate(-28 22 88)" fill="#6f6255" fill-opacity="0.08" font-family="Arial, sans-serif" font-size="20" font-weight="700">${escapeHtml(value)}</text></svg>`;
+  return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
+}
+
+function applyWatermarkText(text = getWatermarkText()) {
+  document.documentElement.style.setProperty("--live-reader-watermark-image", buildWatermarkImage(text));
+}
+
 function renderThemeOptions() {
   const select = document.getElementById("liveReaderThemeSelect");
   if (!select || select.dataset.ready === "1") return;
@@ -738,6 +756,7 @@ function applyReaderSettings() {
   const theme = getReaderTheme();
   const layout = getReaderLayout();
   const kenBurnsMotion = getKenBurnsMotionPreset();
+  const watermarkText = getWatermarkText();
   const content = document.getElementById("liveReaderContent");
   const progressTrack = document.getElementById("liveReaderProgressTrack");
   const illustrationBox = document.getElementById("liveReaderIllustrationBox");
@@ -751,6 +770,7 @@ function applyReaderSettings() {
   const layoutValue = document.getElementById("liveReaderLayoutValue");
   const kenBurnsMotionSelect = document.getElementById("liveReaderKenBurnsMotionSelect");
   const kenBurnsMotionValue = document.getElementById("liveReaderKenBurnsMotionValue");
+  const watermarkTextInput = document.getElementById("liveReaderWatermarkText");
   const frameWidth = width + 36;
   const horizontalIllustrationWidth = illustrationWidth;
   const horizontalStageWidth = horizontalIllustrationWidth + frameWidth;
@@ -807,6 +827,7 @@ function applyReaderSettings() {
   if (layoutValue) layoutValue.textContent = getReaderLayoutLabel(layout);
   if (kenBurnsMotionSelect) kenBurnsMotionSelect.value = kenBurnsMotion;
   if (kenBurnsMotionValue) kenBurnsMotionValue.textContent = getKenBurnsMotionLabel(kenBurnsMotion);
+  if (watermarkTextInput) watermarkTextInput.value = watermarkText;
   if (themePreview) {
     themePreview.innerHTML = `
       <span class="live-reader-theme-chip"><i style="background:${theme.background}"></i>正文背景</span>
@@ -828,6 +849,7 @@ function applyReaderSettings() {
   document.documentElement.style.setProperty("--live-highlight-text-color", theme.highlightText);
   document.documentElement.style.setProperty("--live-progress-fill", theme.progressFill);
   document.documentElement.style.setProperty("--live-progress-track", theme.progressTrack);
+  applyWatermarkText(watermarkText);
 }
 
 function isIllustrationsEnabled() {
@@ -2307,6 +2329,11 @@ function bindEvents() {
     localStorage.setItem(KEN_BURNS_MOTION_KEY, KEN_BURNS_MOTION_PRESETS[value] ? value : "simple");
     applyReaderSettings();
     restartLiveIllustrationKenBurns();
+  });
+  document.getElementById("liveReaderWatermarkText")?.addEventListener("input", (event) => {
+    const value = String(event.target.value || "");
+    localStorage.setItem(WATERMARK_TEXT_KEY, value);
+    applyWatermarkText(value);
   });
   document.getElementById("liveReaderResetThemeBtn")?.addEventListener("click", () => {
     localStorage.setItem(READER_THEME_KEY, DEFAULT_READER_THEME_ID);
