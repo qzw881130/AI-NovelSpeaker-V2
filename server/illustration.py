@@ -806,6 +806,31 @@ def save_illustration_prompt_output(novel_id: int, chapter_id: int, json_text: s
     return {"promptCount": len(prompts), "imageCount": len(items)}
 
 
+def save_illustration_scene_output(novel_id: int, chapter_id: int, json_text: str) -> dict:
+    parsed = _parse_json_any(json_text)
+    if not isinstance(parsed, dict):
+        raise RuntimeError("scene output must be a JSON object")
+    grid = parsed.get("grid")
+    if not isinstance(grid, list) or not grid:
+        raise RuntimeError("scene output has no grid")
+    normalized = _json_dumps(parsed)
+    conn = db_conn()
+    row = conn.execute(
+        "SELECT id FROM chapter_illustration_tasks WHERE novel_id=? AND chapter_id=? AND stage='scene'",
+        (novel_id, chapter_id),
+    ).fetchone()
+    if not row:
+        conn.close()
+        raise RuntimeError("scene task not found")
+    conn.execute(
+        "UPDATE chapter_illustration_tasks SET status='completed',progress=100,output_text=?,result_json_text=?,error_message='',updated_at=CURRENT_TIMESTAMP WHERE id=?",
+        (normalized, normalized, int(row["id"])),
+    )
+    conn.commit()
+    conn.close()
+    return {"sceneCount": len(grid)}
+
+
 def get_illustration_llm_request_preview(novel_id: int, chapter_id: int, stage: str) -> dict:
     if stage not in ILLUSTRATION_STAGES:
         raise RuntimeError("invalid illustration stage")

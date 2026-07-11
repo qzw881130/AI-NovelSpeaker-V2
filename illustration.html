@@ -92,11 +92,15 @@
           <button class="dialog-close-btn" type="submit" aria-label="关闭">×</button>
         </div>
         <div class="payload-content-wrap">
-          <pre id="illustrationPayloadContent" class="dialog-code-block">加载中...</pre>
+          <textarea id="illustrationPayloadContent" class="dialog-code-block prompt-output-editor" spellcheck="false" readonly>加载中...</textarea>
           <button id="payloadScrollBottomBtn" class="payload-scroll-bottom-btn" type="button" aria-label="跳到底部" title="跳到底部">↓</button>
         </div>
-        <div class="dialog-actions">
-          <button id="downloadIllustrationPayloadBtn" class="ghost-btn" type="button">下载JSON</button>
+        <div class="dialog-actions prompt-output-actions">
+          <div class="prompt-output-action-buttons">
+            <button id="saveIllustrationPayloadBtn" class="primary-btn" type="button" hidden>保存</button>
+            <button id="downloadIllustrationPayloadBtn" class="ghost-btn" type="button">下载JSON</button>
+          </div>
+          <span id="illustrationPayloadShortcutHint" class="meta prompt-output-shortcut-hint" hidden>快捷键：Command/Ctrl + Shift + ← / → 切换上一回 / 下一回</span>
         </div>
       </form>
     </dialog>

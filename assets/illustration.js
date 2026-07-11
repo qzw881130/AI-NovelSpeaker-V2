@@ -17,6 +17,7 @@ import {
   restartIllustrationImageWorker,
   restartIllustrationLlmWorker,
   retryChapterIllustrationPromptBatch,
+  saveChapterIllustrationSceneOutput,
   saveChapterIllustrationPromptOutput,
   setActiveNovelId,
 } from "./store.js";
@@ -572,6 +573,28 @@ function showPayloadTimeTooltip() {
   }
   const content = document.getElementById("illustrationPayloadContent");
   const dialog = document.getElementById("illustrationPayloadDialog");
+  if (content?.tagName === "TEXTAREA") {
+    const start = Number(content.selectionStart || 0);
+    const end = Number(content.selectionEnd || 0);
+    const selectedText = String(content.value || "").slice(start, end).trim().replace(/[，,。；;：:]+$/g, "");
+    const selectedSeconds = parseSceneTimecode(selectedText);
+    if (selectedSeconds == null || !dialog?.open) {
+      hidePayloadTimeTooltip();
+      return;
+    }
+    const rect = content.getBoundingClientRect();
+    let tooltip = document.getElementById("payloadTimeTooltip");
+    if (!tooltip) {
+      tooltip = document.createElement("div");
+      tooltip.id = "payloadTimeTooltip";
+      tooltip.className = "payload-time-tooltip";
+      dialog.appendChild(tooltip);
+    }
+    tooltip.textContent = formatSelectedSeconds(selectedSeconds);
+    tooltip.style.left = `${Math.min(window.innerWidth - 80, Math.max(8, rect.left + rect.width / 2))}px`;
+    tooltip.style.top = `${Math.max(8, rect.top - 34)}px`;
+    return;
+  }
   const selection = window.getSelection();
   if (!content || !dialog?.open || !selection || selection.rangeCount === 0) {
     hidePayloadTimeTooltip();
@@ -623,24 +646,62 @@ async function openPayload(chapterNum, stage, kind) {
   const title = document.getElementById("illustrationPayloadTitle");
   const content = document.getElementById("illustrationPayloadContent");
   const downloadBtn = document.getElementById("downloadIllustrationPayloadBtn");
+  const saveBtn = document.getElementById("saveIllustrationPayloadBtn");
+  const shortcutHint = document.getElementById("illustrationPayloadShortcutHint");
+  const isEditableSceneOutput = stage === "scene" && kind === "output";
   if (downloadBtn) downloadBtn.hidden = kind !== "output";
+  if (saveBtn) saveBtn.hidden = !isEditableSceneOutput;
+  if (shortcutHint) shortcutHint.hidden = !isEditableSceneOutput;
+  if (content) content.readOnly = !isEditableSceneOutput;
   const chapter = chapterItems.find((item) => Number(item.chapterNum || 0) === Number(chapterNum || 0));
   const duration = Number(chapter?.audioDurationSeconds || 0);
   const durationText = duration > 0 ? ` · 音频时长 ${formatAudioDurationClock(duration)}` : "";
   const titlePrefix = `${STAGE_LABELS[stage]} ${kind === "input" ? "输入" : "输出"} · 第${String(chapterNum).padStart(3, "0")}回${durationText}`;
   const initialWarning = stage === "scene" && kind === "output" ? sceneTimingWarningFromChapter(chapter) : "";
   setPayloadTitle(title, titlePrefix, initialWarning);
-  content.textContent = "加载中...";
+  content.value = "加载中...";
   dialog.showModal();
   try {
     const payload = await fetchChapterIllustrationPayload(activeNovel.id, chapterNum, stage, kind);
     const raw = String(payload.text || "");
     const loadedWarning = stage === "scene" && kind === "output" ? sceneTimingWarningFromText(raw, duration) || initialWarning : "";
     setPayloadTitle(title, `${titlePrefix} · 字数 ${raw.length.toLocaleString()}`, loadedWarning);
-    content.textContent = raw ? formatMaybeJson(raw) : "暂无内容";
+    content.value = raw ? formatMaybeJson(raw) : "";
   } catch (err) {
-    content.textContent = `加载失败：${err.message}`;
+    content.value = `加载失败：${err.message}`;
   }
+}
+
+async function switchSceneOutput(delta) {
+  if (!activePayloadChapterNum || activePayloadStage !== "scene" || activePayloadKind !== "output") return;
+  const chapters = chapterItems
+    .filter((item) => item.stages?.scene?.status === "completed")
+    .map((item) => Number(item.chapterNum || 0))
+    .filter(Boolean)
+    .sort((a, b) => a - b);
+  const currentIndex = chapters.indexOf(Number(activePayloadChapterNum));
+  if (currentIndex < 0) return;
+  const nextIndex = currentIndex + Number(delta || 0);
+  if (nextIndex < 0 || nextIndex >= chapters.length) {
+    toast(delta < 0 ? "已经是第一回 Scene 输出" : "已经是最后一回 Scene 输出");
+    return;
+  }
+  await openPayload(chapters[nextIndex], "scene", "output");
+}
+
+async function saveSceneOutput() {
+  if (!activePayloadChapterNum || activePayloadStage !== "scene" || activePayloadKind !== "output") return;
+  const editor = document.getElementById("illustrationPayloadContent");
+  const text = String(editor?.value || "");
+  try {
+    JSON.parse(text);
+  } catch (err) {
+    toast(`JSON 格式错误：${err.message}`);
+    return;
+  }
+  await saveChapterIllustrationSceneOutput(activeNovel.id, activePayloadChapterNum, text);
+  toast("Scene 输出已保存");
+  await refreshPage();
 }
 
 async function openPromptOutput(chapterNum) {
@@ -721,7 +782,7 @@ function downloadPromptOutput() {
 function downloadIllustrationPayloadOutput() {
   if (!activePayloadChapterNum || activePayloadKind !== "output") return;
   const content = document.getElementById("illustrationPayloadContent");
-  const text = String(content?.textContent || "").trim();
+  const text = String(content?.value || "").trim();
   if (!text || text === "加载中...") {
     toast("暂无可下载内容");
     return;
@@ -1212,9 +1273,33 @@ function bindEvents() {
     document.body.classList.remove("is-illustration-drag-selecting");
   });
   document.getElementById("illustrationPayloadCopyBtn").addEventListener("click", () => {
-    copyText(document.getElementById("illustrationPayloadContent")?.textContent || "").catch((err) => {
+    copyText(document.getElementById("illustrationPayloadContent")?.value || "").catch((err) => {
       toast(`复制失败：${err.message}`);
     });
+  });
+  document.getElementById("saveIllustrationPayloadBtn").addEventListener("click", async () => {
+    try {
+      await saveSceneOutput();
+    } catch (err) {
+      toast(`保存失败：${err.message}`);
+    }
+  });
+  document.getElementById("illustrationPayloadDialog").addEventListener("keydown", async (event) => {
+    if ((event.ctrlKey || event.metaKey) && String(event.key || "").toLowerCase() === "s") {
+      event.preventDefault();
+      try {
+        await saveSceneOutput();
+      } catch (err) {
+        toast(`保存失败：${err.message}`);
+      }
+      return;
+    }
+    if (!activePayloadChapterNum || activePayloadStage !== "scene" || activePayloadKind !== "output") return;
+    if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+    if (!event.shiftKey || (!event.metaKey && !event.ctrlKey)) return;
+    if (event.target.closest("input,select")) return;
+    event.preventDefault();
+    await switchSceneOutput(event.key === "ArrowLeft" ? -1 : 1);
   });
   document.getElementById("illustrationLlmParamsCopyBtn").addEventListener("click", () => {
     copyText(document.getElementById("illustrationLlmParamsContent")?.textContent || "").catch((err) => {

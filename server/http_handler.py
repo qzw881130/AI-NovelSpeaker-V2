@@ -58,6 +58,7 @@ from .illustration import (
     list_illustration_chapters,
     list_prompt_batches,
     retry_prompt_batch,
+    save_illustration_scene_output,
     save_illustration_prompt_output,
     sync_prompt_images,
 )
@@ -2828,6 +2829,30 @@ class Handler(BaseHTTPRequestHandler):
             payload = self.read_json()
             try:
                 data = save_illustration_prompt_output(novel_id, int(chapter_row["id"]), str(payload.get("jsonText") or ""))
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, 400)
+                return
+            self.send_json({"status": "saved", **data})
+            return
+
+        m_scene_output_save = re.match(
+            r"^/api/novels/(\d+)/chapters/(\d+)/illustration/scene/output/save$", route
+        )
+        if m_scene_output_save:
+            novel_id = int(m_scene_output_save.group(1))
+            chapter_num = int(m_scene_output_save.group(2))
+            conn = db_conn()
+            chapter_row = conn.execute(
+                "SELECT id FROM chapters WHERE novel_id=? AND chapter_num=?",
+                (novel_id, chapter_num),
+            ).fetchone()
+            conn.close()
+            if not chapter_row:
+                self.send_json({"error": "chapter not found"}, 404)
+                return
+            payload = self.read_json()
+            try:
+                data = save_illustration_scene_output(novel_id, int(chapter_row["id"]), str(payload.get("jsonText") or ""))
             except Exception as exc:
                 self.send_json({"error": str(exc)}, 400)
                 return

@@ -687,6 +687,13 @@ async function saveChapterIllustrationPromptOutput(novelId, chapterNum, jsonText
   });
 }
 
+async function saveChapterIllustrationSceneOutput(novelId, chapterNum, jsonText) {
+  return api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/illustration/scene/output/save`, {
+    method: "POST",
+    body: JSON.stringify({ jsonText }),
+  });
+}
+
 async function fetchChapterIllustrationImages(novelId, chapterNum) {
   const data = await api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/illustration/images`, {
     method: "POST",
@@ -989,6 +996,7 @@ export {
   fetchChapterIllustrationPayload,
   fetchChapterIllustrationLlmParams,
   fetchChapterIllustrationPromptBatches,
+  saveChapterIllustrationSceneOutput,
   saveChapterIllustrationPromptOutput,
   fetchChapterIllustrationImages,
   enqueueIllustrationImage,
