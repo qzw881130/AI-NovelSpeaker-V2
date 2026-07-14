@@ -64,12 +64,21 @@ def _novel_audio_output_dir_non_ver(english_dir: str) -> Path:
     return NOVEL_DIR / english_dir / "audio_non_ver"
 
 
-def _assign_text_input(node: dict, value: str, purpose: str) -> None:
+def _assign_text_input(workflow: dict, node_id: str, value: str, purpose: str) -> None:
+    node = workflow.get(str(node_id))
+    if not isinstance(node, dict):
+        raise RuntimeError(f"台词音频工作流缺少{purpose}节点")
     inputs = node.get("inputs")
     if not isinstance(inputs, dict):
         raise RuntimeError(f"台词音频工作流缺少{purpose}节点输入")
     for key in ("prompt", "text", "string", "value"):
         if key in inputs:
+            linked = inputs[key]
+            if isinstance(linked, list) and linked:
+                linked_node_id = str(linked[0] or "").strip()
+                if linked_node_id and linked_node_id != str(node_id):
+                    _assign_text_input(workflow, linked_node_id, value, purpose)
+                    return
             inputs[key] = value
             return
     raise RuntimeError(f"台词音频工作流缺少{purpose}节点文本输入字段")
@@ -707,9 +716,6 @@ def enqueue_line_audio_task(
     sample_text = str(role.get("sample_text") or "").strip()
     sample_audio_path = str(role.get("sample_audio_path") or "").strip()
 
-    if not sample_text:
-        conn.close()
-        return False, f"角色缺少示例台词: {role_name}", None
     if not sample_audio_path:
         conn.close()
         return False, f"角色缺少声音示例: {role_name}", None
@@ -872,7 +878,7 @@ def process_line_audio_task(task_id: int) -> None:
     existing_comfy_status = str(row["comfy_status"] or "").strip()
     workflow_log_id = 0
 
-    if not reference_audio_path or not line_text or not reference_text or not line_hash:
+    if not reference_audio_path or not line_text or not line_hash:
         conn = db_conn()
         conn.execute(
             """
@@ -978,15 +984,20 @@ def process_line_audio_task(task_id: int) -> None:
                 ).strip()
                 or None
             )
-            ref_text_node = (
-                str(
+            ref_text_node = None
+            if reference_text:
+                ref_text_node_configured = str(
                     workflow_io_config.get("inputs", {})
                     .get("referenceText", {})
                     .get("nodeId")
-                    or ("40" if "40" in workflow else "")
+                    or ""
                 ).strip()
-                or None
-            )
+                ref_text_node = (
+                    ref_text_node_configured
+                    if ref_text_node_configured in workflow
+                    else ""
+                    or None
+                )
             output_node = (
                 str(
                     workflow_io_config.get("outputs", {})
@@ -1005,8 +1016,6 @@ def process_line_audio_task(task_id: int) -> None:
                     audio_input_node = node_id
                 if "prompt" in inputs and text_prompt_node is None:
                     text_prompt_node = node_id
-                if "text" in inputs and ref_text_node is None:
-                    ref_text_node = node_id
                 if "filename_prefix" in inputs and output_node is None:
                     output_node = node_id
 
@@ -1014,8 +1023,6 @@ def process_line_audio_task(task_id: int) -> None:
                 raise RuntimeError("台词音频工作流缺少音频输入节点")
             if not text_prompt_node:
                 raise RuntimeError("台词音频工作流缺少目标文本节点")
-            if not ref_text_node:
-                raise RuntimeError("台词音频工作流缺少参考文本节点")
             if not output_node:
                 raise RuntimeError("台词音频工作流缺少音频输出节点")
 
@@ -1024,8 +1031,9 @@ def process_line_audio_task(task_id: int) -> None:
                 workflow[audio_input_node]["inputs"]["audioUI"] = (
                     f"/api/view?filename={filename}&type={file_type}&subfolder={subfolder}&rand={time.time():.6f}"
                 )
-            _assign_text_input(workflow[text_prompt_node], line_text, "目标文本")
-            _assign_text_input(workflow[ref_text_node], reference_text, "参考文本")
+            _assign_text_input(workflow, text_prompt_node, line_text, "目标文本")
+            if reference_text and ref_text_node:
+                _assign_text_input(workflow, ref_text_node, reference_text, "参考文本")
             workflow[output_node]["inputs"]["filename_prefix"] = (
                 _comfy_line_audio_prefix(english_dir, chapter_id)
             )
