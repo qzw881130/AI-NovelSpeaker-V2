@@ -89,6 +89,13 @@ def _line_text_char_count(text: str) -> int:
     return len(re.sub(r"\s+", "", str(text or "")))
 
 
+def _clean_line_text(text: str) -> str:
+    raw = str(text or "").rstrip()
+    if raw.startswith(" ") and not raw.startswith("  "):
+        return raw
+    return raw.strip()
+
+
 def _interrupt_comfy_before_timeout_failure(comfy_url: str) -> str:
     try:
         if comfy_interrupt_execution(comfy_url):
@@ -137,7 +144,7 @@ def parse_juben_lines_from_json_text(json_text: str) -> list[dict]:
         if separator_positions:
             split_at = min(separator_positions)
             role_name = raw_line[:split_at].strip()
-            line_text = raw_line[split_at + 1 :].strip()
+            line_text = _clean_line_text(raw_line[split_at + 1 :])
         line_hash = hashlib.md5(raw_line.encode("utf-8")).hexdigest()
         items.append(
             {
@@ -719,7 +726,7 @@ def enqueue_line_audio_task(
         conn.close()
         return False, "行号超出范围", None
     role_name = _normalize_role_name(line["role_name"])
-    line_text = str(line["line_text"] or "").strip()
+    line_text = _clean_line_text(line["line_text"])
 
     if not role_name:
         conn.close()
@@ -893,7 +900,7 @@ def process_line_audio_task(task_id: int) -> None:
     chapter_id = int(row["chapter_id"])
     chapter_num = int(row["chapter_num"])
     reference_audio_path = str(row["reference_audio_path"] or "").strip()
-    line_text = str(row["line_text"] or "").strip()
+    line_text = _clean_line_text(row["line_text"])
     reference_text = str(row["reference_text"] or "").strip()
     line_hash = str(row["line_hash"] or "").strip()
     existing_prompt_id = str(row["comfy_prompt_id"] or "").strip()

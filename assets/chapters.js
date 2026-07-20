@@ -37,6 +37,8 @@ let lastJsonFindQuery = "";
 let lastJsonFindIndex = -1;
 const CHAPTER_FONT_SIZE_KEY = "ai_novel_reader_font_size";
 const JSON_VIEW_FONT_SIZE_KEY = "ai_novel_json_view_font_size";
+const LINE_AUDIO_REFRESH_INTERVAL_KEY = "ai_novel_line_audio_refresh_interval";
+const LINE_AUDIO_REFRESH_INTERVALS = new Set([0, 5, 20, 60]);
 let jsonAutosaveTimerId = null;
 let jsonAutosaveSaving = false;
 
@@ -52,6 +54,7 @@ let lineEditEnabled = false;
 let editingLineIndex = -1;
 let editingLineOriginalText = "";
 let lineAudioRefreshTimerId = null;
+let lineAudioRefreshIntervalSeconds = getSavedLineAudioRefreshInterval();
 
 // 角色列表状态
 let chapterRoles = [];
@@ -143,6 +146,22 @@ function saveChapterFontSize(px) {
   const size = Math.min(30, Math.max(14, Math.round(Number(px) || 18)));
   localStorage.setItem(CHAPTER_FONT_SIZE_KEY, String(size));
   applyChapterFontSize(size);
+}
+
+function getSavedLineAudioRefreshInterval() {
+  const value = Number(localStorage.getItem(LINE_AUDIO_REFRESH_INTERVAL_KEY) || 5);
+  return LINE_AUDIO_REFRESH_INTERVALS.has(value) ? value : 5;
+}
+
+function saveLineAudioRefreshInterval(value) {
+  const next = Number(value || 0);
+  lineAudioRefreshIntervalSeconds = LINE_AUDIO_REFRESH_INTERVALS.has(next) ? next : 5;
+  localStorage.setItem(LINE_AUDIO_REFRESH_INTERVAL_KEY, String(lineAudioRefreshIntervalSeconds));
+}
+
+function syncLineAudioRefreshSelect() {
+  const select = document.getElementById("lineAudioRefreshSelect");
+  if (select) select.value = String(lineAudioRefreshIntervalSeconds);
 }
 
 function getLineAudioQueueSchedule() {
@@ -1238,6 +1257,21 @@ function bindActions() {
     focusNextLineSearchMatch();
   });
 
+  document.getElementById("lineAudioRefreshSelect")?.addEventListener("change", (event) => {
+    saveLineAudioRefreshInterval(event.target.value);
+    startLineAudioRefreshLoop();
+  });
+
+  document.getElementById("lineAudioManualRefreshBtn")?.addEventListener("click", async (event) => {
+    const btn = event.currentTarget;
+    if (btn) btn.disabled = true;
+    try {
+      await loadLineAudios({ preserveEditing: true });
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  });
+
   document.getElementById("toggleLineEditBtn")?.addEventListener("click", () => {
     lineEditEnabled = !lineEditEnabled;
     editingLineIndex = -1;
@@ -1525,7 +1559,7 @@ function hasPlayingLineAudio() {
 function startLineAudioRefreshLoop() {
   stopLineAudioRefreshLoop();
   const dialog = document.getElementById("lineAudioDialog");
-  if (!dialog?.open || !activeNovel || !activeChapterNum) return;
+  if (!dialog?.open || !activeNovel || !activeChapterNum || lineAudioRefreshIntervalSeconds <= 0) return;
   lineAudioRefreshTimerId = window.setInterval(async () => {
     if (!dialog.open) {
       stopLineAudioRefreshLoop();
@@ -1535,7 +1569,7 @@ function startLineAudioRefreshLoop() {
       return;
     }
     await loadLineAudios({ silent: true, preserveEditing: true });
-  }, 3000);
+  }, lineAudioRefreshIntervalSeconds * 1000);
 }
 
 function updateLineAudioRow(lineIndex) {
@@ -1590,6 +1624,7 @@ async function openLineAudioDialog() {
   editingLineIndex = -1;
   editingLineOriginalText = "";
   lineSearchIndex = -1;
+  syncLineAudioRefreshSelect();
   syncLineRoleFilterOptions();
   updateLineAudioToolbarState();
   await loadLineAudios();

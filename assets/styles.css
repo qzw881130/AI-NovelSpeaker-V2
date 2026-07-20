@@ -2653,8 +2653,17 @@ menu {
 }
 
 .line-audio-toolbar input[type="search"] {
-  flex: 1 1 220px;
+  flex: 1 1 260px;
+  max-width: 420px;
   min-width: 180px;
+}
+
+.line-audio-refresh-control select {
+  min-width: 92px;
+}
+
+#lineAudioManualRefreshBtn {
+  min-width: 64px;
 }
 
 .line-audio-footer {

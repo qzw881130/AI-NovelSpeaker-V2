@@ -203,6 +203,15 @@
             <span>顿号多角色</span>
           </label>
           <input id="lineSearchInput" type="search" placeholder="查找台词" />
+          <label class="inline-filter line-audio-refresh-control">刷新
+            <select id="lineAudioRefreshSelect">
+              <option value="0">不刷新</option>
+              <option value="5">5秒</option>
+              <option value="20">20秒</option>
+              <option value="60">1分钟</option>
+            </select>
+          </label>
+          <button id="lineAudioManualRefreshBtn" class="ghost-btn" type="button">刷新</button>
           <button id="lineSearchNextBtn" class="ghost-btn" type="button">查找下一个</button>
           <button id="toggleLineEditBtn" class="ghost-btn" type="button">编辑台词</button>
         </div>
