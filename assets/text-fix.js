@@ -90,19 +90,26 @@ async function runSearch() {
   renderResults();
 }
 
-async function runReplace() {
+const REPLACE_SCOPE_LABELS = {
+  all: "全部",
+  json: "JSON",
+  txt: "TXT",
+};
+
+async function runReplace(scope = "all") {
   if (!activeNovel) {
     toast("未找到小说");
     return;
   }
   const searchText = String(document.getElementById("textFixSearchInput").value || "").trim();
   const replaceText = String(document.getElementById("textFixReplaceInput").value || "");
+  const scopeLabel = REPLACE_SCOPE_LABELS[scope] || REPLACE_SCOPE_LABELS.all;
   if (!searchText) {
     toast("请输入搜索文本");
     return;
   }
-  if (!window.confirm(`确定要将“${searchText}”替换为“${replaceText}”吗？`)) return;
-  const result = await replaceNovelText(activeNovel.id, searchText, replaceText);
+  if (!window.confirm(`确定要在${scopeLabel}中将“${searchText}”替换为“${replaceText}”吗？`)) return;
+  const result = await replaceNovelText(activeNovel.id, searchText, replaceText, scope);
   toast(`替换完成：txt ${result.txtReplaced || 0} 处，json ${result.jsonReplaced || 0} 处`);
   await runSearch();
 }
@@ -119,7 +126,9 @@ function bindEvents() {
     renderResults();
   });
   document.getElementById("textFixSearchBtn").addEventListener("click", runSearch);
-  document.getElementById("textFixReplaceBtn").addEventListener("click", runReplace);
+  document.getElementById("textFixReplaceAllBtn").addEventListener("click", () => runReplace("all"));
+  document.getElementById("textFixReplaceJsonBtn").addEventListener("click", () => runReplace("json"));
+  document.getElementById("textFixReplaceTxtBtn").addEventListener("click", () => runReplace("txt"));
   document.getElementById("textFixRefreshBtn").addEventListener("click", async () => {
     const data = await getData();
     allNovels = data.novels || [];

@@ -124,6 +124,12 @@ function formatHms(totalSeconds) {
   return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
+function formatAudioSeconds(seconds) {
+  const value = Number(seconds || 0);
+  if (!Number.isFinite(value) || value <= 0) return "-";
+  return `${value.toFixed(1)}秒`;
+}
+
 function calcTaskRuntime(task) {
   const start = parseDbTime(task.comfyStartedAt);
   if (!start) return "-";
@@ -226,6 +232,7 @@ function getLineAudioTaskSignature(task) {
     comfyPromptId: task.comfyPromptId || "",
     outputFilename: task.outputFilename || "",
     downloadedFilePath: task.downloadedFilePath || "",
+    durationSeconds: Number(task.durationSeconds || 0),
     scheduledAt: task.scheduledAt || "",
     errorMessage: task.errorMessage || "",
     updatedAt: task.updatedAt || "",
@@ -245,6 +252,7 @@ function renderLineAudioTaskDetail(task) {
   html += `<div class="detail-row"><span class="detail-label">${translateText("角色:")}</span><span class="detail-value">${escapeHtml(task.roleName || "-")}</span></div>`;
   html += `<div class="detail-row"><span class="detail-label">${translateText("台词:")}</span><span class="detail-value">${escapeHtml(task.lineText || "-")}</span></div>`;
   html += `<div class="detail-row"><span class="detail-label">${translateText("台词字数:")}</span><span class="detail-value">${lineCharCount}</span></div>`;
+  html += `<div class="detail-row"><span class="detail-label">${translateText("音频时长:")}</span><span class="detail-value">${formatAudioSeconds(task.durationSeconds)}</span></div>`;
   html += `<div class="detail-row"><span class="detail-label">${translateText("参考文本:")}</span><span class="detail-value">${escapeHtml(task.referenceText || "-")}</span></div>`;
   html += `<div class="detail-row"><span class="detail-label">${translateText("参考音频:")}</span><span class="detail-value">${escapeHtml(task.referenceAudioPath || "-")}</span></div>`;
 

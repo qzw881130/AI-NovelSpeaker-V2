@@ -230,15 +230,19 @@ function renderTable() {
   tbody.innerHTML = rows.map((item) => {
     const chapterNum = Number(item.chapterNum || 0);
     const selected = selectedChapterNums.has(chapterNum);
+    const abnormalCount = Number(item.abnormalLineAudioCount || 0);
+    const abnormalBadge = abnormalCount > 0
+      ? `<span class="novel-download-abnormal-badge" title="异常台词音频数：${abnormalCount}">! ${abnormalCount}</span>`
+      : "";
     return `
-    <tr class="novel-download-row${selected ? " is-selected" : ""}" data-chapter-num="${chapterNum}">
+    <tr class="novel-download-row${selected ? " is-selected" : ""}${abnormalCount > 0 ? " has-abnormal-line-audio" : ""}" data-chapter-num="${chapterNum}">
       <td>
         <label class="novel-download-checkbox-cell" aria-label="选择第 ${String(item.chapterNum).padStart(3, "0")} 回">
           <input class="novel-download-item-check" type="checkbox" data-chapter-num="${chapterNum}" ${selected ? "checked" : ""} />
         </label>
       </td>
       <td>${String(item.chapterNum).padStart(3, "0")}</td>
-      <td>${escapeHtml(item.title || "-")}</td>
+      <td>${escapeHtml(item.title || "-")} ${abnormalBadge}</td>
       <td>${Number(item.wordCount || 0).toLocaleString("zh-CN")}</td>
       <td>${item.hasAudio ? formatDuration(item.audioDurationSeconds || 0) : "-"}</td>
       <td>${item.hasAudio ? bytesToText(item.audioSizeBytes || 0) : "-"}</td>

@@ -1380,14 +1380,41 @@ def fetch_chapters(conn: sqlite3.Connection, novel_id: int) -> list[dict]:
 def fetch_novel_download_chapters(
     conn: sqlite3.Connection, novel_id: int
 ) -> list[dict]:
-    from .line_audio import get_chapter_merged_audio_stats
+    from .line_audio import get_chapter_merged_audio_stats, parse_juben_lines_from_json_text
+
+    def line_audio_is_abnormal(line_text: str, duration_seconds: float) -> bool:
+        duration = float(duration_seconds or 0)
+        if duration <= 0:
+            return False
+        char_count = len(re.sub(r"\s+", "", str(line_text or "")))
+        if char_count <= 0:
+            return False
+        efficiency = char_count / duration
+        theoretical = char_count * 0.35
+        max_allowed = max(8.0, theoretical * 3)
+        return (
+            efficiency < 0.5
+            or (char_count <= 5 and duration > 4)
+            or (char_count <= 15 and duration > 15)
+            or duration > max_allowed
+        )
 
     rows = conn.execute(
         """
         SELECT c.id,c.novel_id,c.chapter_num,c.title,c.word_count,c.audio_file_path,
                c.audio_duration_seconds,c.audio_duration_md5,
                c.non_ver_audio_duration_seconds,c.non_ver_audio_duration_md5,
-               n.english_dir
+               n.english_dir,
+               (
+                   SELECT jt.merged_result_json
+                   FROM json_tasks jt
+                   WHERE jt.novel_id=c.novel_id
+                     AND jt.chapter_num=c.chapter_num
+                     AND jt.status='completed'
+                     AND jt.merged_result_json IS NOT NULL
+                   ORDER BY jt.id DESC
+                   LIMIT 1
+               ) AS latest_json
         FROM chapters c
         JOIN novels n ON n.id = c.novel_id
         WHERE c.novel_id=?
@@ -1395,6 +1422,24 @@ def fetch_novel_download_chapters(
         """,
         (novel_id,),
     ).fetchall()
+    line_audio_rows = conn.execute(
+        """
+        SELECT id, chapter_id, line_hash, duration_seconds
+        FROM line_audio_tasks
+        WHERE novel_id=?
+          AND status='completed'
+          AND COALESCE(downloaded_file_path, '')<>''
+          AND COALESCE(duration_seconds, 0)>0
+        ORDER BY id DESC
+        """,
+        (novel_id,),
+    ).fetchall()
+    line_audio_by_key: dict[tuple[int, str], sqlite3.Row] = {}
+    for audio_row in line_audio_rows:
+        key = (int(audio_row["chapter_id"] or 0), str(audio_row["line_hash"] or ""))
+        if key[0] > 0 and key[1] and key not in line_audio_by_key:
+            line_audio_by_key[key] = audio_row
+
     result: list[dict] = []
     for row in rows:
         abs_audio = resolve_audio_file(row)
@@ -1421,6 +1466,17 @@ def fetch_novel_download_chapters(
                     non_ver_duration = update_chapter_non_ver_audio_duration_cache(
                         conn, int(row["id"]), non_ver_path
                     )
+        abnormal_count = 0
+        current_lines = parse_juben_lines_from_json_text(str(row["latest_json"] or ""))
+        for line in current_lines:
+            audio_row = line_audio_by_key.get(
+                (int(row["id"]), str(line.get("line_hash") or ""))
+            )
+            if audio_row and line_audio_is_abnormal(
+                str(line.get("line_text") or ""),
+                float(audio_row["duration_seconds"] or 0),
+            ):
+                abnormal_count += 1
         result.append(
             {
                 "id": int(row["id"]),
@@ -1429,6 +1485,7 @@ def fetch_novel_download_chapters(
                 "wordCount": int(row["word_count"] or 0),
                 "audioDurationSeconds": duration_seconds,
                 "audioSizeBytes": size_bytes,
+                "abnormalLineAudioCount": abnormal_count,
                 "downloadUrl": download_url,
                 "hasAudio": bool(download_url),
                 "nonVerAudioDurationSeconds": non_ver_duration,
@@ -1624,56 +1681,66 @@ def search_novel_text_occurrences(
 
 
 def replace_novel_text_occurrences(
-    conn: sqlite3.Connection, novel_id: int, search_text: str, replace_text: str
+    conn: sqlite3.Connection,
+    novel_id: int,
+    search_text: str,
+    replace_text: str,
+    scope: str = "all",
 ) -> dict:
     needle = str(search_text or "")
     replacement = str(replace_text or "")
+    replace_scope = str(scope or "all").strip().lower()
     if not needle:
         return {"ok": False, "error": "search text is empty"}
+    if replace_scope not in {"all", "json", "txt"}:
+        return {"ok": False, "error": "invalid replace scope"}
 
-    rows = conn.execute(
-        "SELECT id, chapter_num, title, text_file_path FROM chapters WHERE novel_id=? ORDER BY chapter_num ASC",
-        (novel_id,),
-    ).fetchall()
     txt_replaced = 0
-    for row in rows:
-        file_path = str(row["text_file_path"] or "").strip()
-        if not file_path:
-            continue
-        abs_path = (ROOT_DIR / file_path).resolve()
-        if not abs_path.exists() or not abs_path.is_file():
-            continue
-        raw = abs_path.read_text(encoding="utf-8", errors="ignore")
-        count = raw.count(needle)
-        if count <= 0:
-            continue
-        updated = raw.replace(needle, replacement)
-        abs_path.write_text(updated, encoding="utf-8")
-        _, content = split_title_and_content(updated, str(row["title"] or ""))
-        conn.execute(
-            "UPDATE chapters SET word_count=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
-            (count_words(content), int(row["id"])),
-        )
-        txt_replaced += count
+    if replace_scope in {"all", "txt"}:
+        rows = conn.execute(
+            "SELECT id, chapter_num, title, text_file_path FROM chapters WHERE novel_id=? ORDER BY chapter_num ASC",
+            (novel_id,),
+        ).fetchall()
+        for row in rows:
+            file_path = str(row["text_file_path"] or "").strip()
+            if not file_path:
+                continue
+            abs_path = (ROOT_DIR / file_path).resolve()
+            if not abs_path.exists() or not abs_path.is_file():
+                continue
+            raw = abs_path.read_text(encoding="utf-8", errors="ignore")
+            count = raw.count(needle)
+            if count <= 0:
+                continue
+            updated = raw.replace(needle, replacement)
+            abs_path.write_text(updated, encoding="utf-8")
+            _, content = split_title_and_content(updated, str(row["title"] or ""))
+            conn.execute(
+                "UPDATE chapters SET word_count=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                (count_words(content), int(row["id"])),
+            )
+            txt_replaced += count
 
-    json_rows = conn.execute(
-        "SELECT id, chapter_title, merged_result_json FROM json_tasks WHERE novel_id=?",
-        (novel_id,),
-    ).fetchall()
     json_replaced = 0
-    for row in json_rows:
-        raw = str(row["merged_result_json"] or "")
-        count = raw.count(needle)
-        if count <= 0:
-            continue
-        updated = raw.replace(needle, replacement)
-        conn.execute(
-            "UPDATE json_tasks SET merged_result_json=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
-            (updated, int(row["id"])),
-        )
-        json_replaced += count
+    if replace_scope in {"all", "json"}:
+        json_rows = conn.execute(
+            "SELECT id, chapter_title, merged_result_json FROM json_tasks WHERE novel_id=?",
+            (novel_id,),
+        ).fetchall()
+        for row in json_rows:
+            raw = str(row["merged_result_json"] or "")
+            count = raw.count(needle)
+            if count <= 0:
+                continue
+            updated = raw.replace(needle, replacement)
+            conn.execute(
+                "UPDATE json_tasks SET merged_result_json=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                (updated, int(row["id"])),
+            )
+            json_replaced += count
 
-    recalc_novel_stats(conn, novel_id)
+    if replace_scope in {"all", "txt"}:
+        recalc_novel_stats(conn, novel_id)
     return {"ok": True, "txtReplaced": txt_replaced, "jsonReplaced": json_replaced}
 
 

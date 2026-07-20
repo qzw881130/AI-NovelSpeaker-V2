@@ -2062,9 +2062,10 @@ class Handler(BaseHTTPRequestHandler):
             body = self.read_json()
             search_text = str(body.get("searchText") or "")
             replace_text = str(body.get("replaceText") or "")
+            scope = str(body.get("scope") or "all")
             conn = db_conn()
             result = replace_novel_text_occurrences(
-                conn, novel_id, search_text, replace_text
+                conn, novel_id, search_text, replace_text, scope
             )
             if not result.get("ok"):
                 conn.close()
@@ -3325,7 +3326,7 @@ class Handler(BaseHTTPRequestHandler):
             workflow_id = int(m_workflow.group(1))
             conn = db_conn()
             row = conn.execute(
-                "SELECT workflow_type, name FROM comfy_workflows WHERE id=?",
+                "SELECT workflow_type, name, workflow_log_enabled FROM comfy_workflows WHERE id=?",
                 (workflow_id,),
             ).fetchone()
             if not row:
@@ -3339,7 +3340,10 @@ class Handler(BaseHTTPRequestHandler):
             workflow_io_config = body.get("workflowIoConfig") or {}
             if not isinstance(workflow_io_config, dict):
                 workflow_io_config = {}
-            workflow_log_enabled = 1 if body.get("workflowLogEnabled", True) else 0
+            if "workflowLogEnabled" in body:
+                workflow_log_enabled = 1 if body.get("workflowLogEnabled") else 0
+            else:
+                workflow_log_enabled = int(row["workflow_log_enabled"] or 0)
             workflow_type = str(
                 body.get("workflowType") or row["workflow_type"] or ""
             ).strip()

@@ -15,6 +15,7 @@ from typing import Any
 from .app_context import NOVEL_DIR, ROOT_DIR, db_conn
 from .services import (
     comfy_download_file,
+    comfy_interrupt_execution,
     comfy_request_json,
     comfy_upload_input_file,
     create_workflow_log,
@@ -82,6 +83,19 @@ def _assign_text_input(workflow: dict, node_id: str, value: str, purpose: str) -
             inputs[key] = value
             return
     raise RuntimeError(f"台词音频工作流缺少{purpose}节点文本输入字段")
+
+
+def _line_text_char_count(text: str) -> int:
+    return len(re.sub(r"\s+", "", str(text or "")))
+
+
+def _interrupt_comfy_before_timeout_failure(comfy_url: str) -> str:
+    try:
+        if comfy_interrupt_execution(comfy_url):
+            return "已中断 ComfyUI 当前工作流"
+        return "ComfyUI 中断请求返回失败"
+    except Exception as exc:
+        return f"ComfyUI 中断请求失败: {exc}"
 
 
 def _chapter_merged_output_path(english_dir: str, chapter_num: int) -> Path:
@@ -184,6 +198,7 @@ def _line_audio_task_row_to_dict(row: Any) -> dict:
         "outputSubfolder": str(row["output_subfolder"] or ""),
         "outputType": str(row["output_type"] or ""),
         "downloadedFilePath": str(row["downloaded_file_path"] or ""),
+        "durationSeconds": round(float(row["duration_seconds"] or 0), 1),
         "errorMessage": str(row["error_message"] or ""),
         "createdAt": str(row["created_at"] or ""),
         "updatedAt": str(row["updated_at"] or ""),
@@ -423,8 +438,10 @@ def get_chapter_line_audio_entries(novel_id: int, chapter_id: int) -> list[dict]
         # 添加音频流URL
         if item["hasAudio"] and row:
             item["streamUrl"] = f"/api/line-audio-tasks/{int(row['id'])}/file"
+            item["durationSeconds"] = round(float(row["duration_seconds"] or 0), 1)
         else:
             item["streamUrl"] = ""
+            item["durationSeconds"] = 0.0
 
         items.append(item)
 
@@ -517,6 +534,11 @@ def list_role_line_audio_entries(
             }
             item["streamUrl"] = (
                 f"/api/line-audio-tasks/{int(row['id'])}/file" if item["hasAudio"] and row else ""
+            )
+            item["durationSeconds"] = (
+                round(float(row["duration_seconds"] or 0), 1)
+                if item["hasAudio"] and row
+                else 0.0
             )
             items.append(item)
 
@@ -732,7 +754,7 @@ def enqueue_line_audio_task(
             SET chapter_title=?, line_index=?, role_name=?, line_text=?,
                 reference_text=?, reference_audio_path=?, status='pending', comfy_status='queued',
                 comfy_prompt_id=NULL, output_filename='', output_subfolder='', output_type='',
-                downloaded_file_path='', error_message=NULL, comfy_started_at=NULL,
+                downloaded_file_path='', duration_seconds=0, error_message=NULL, comfy_started_at=NULL,
                 scheduled_at=?,
                 comfy_finished_at=NULL, updated_at=CURRENT_TIMESTAMP
             WHERE id=?
@@ -1073,17 +1095,33 @@ def process_line_audio_task(task_id: int) -> None:
             conn.commit()
             conn.close()
 
-        # 等待工作流完成
+        # 等待工作流完成。短台词异常拖长通常意味着 ComfyUI 卡住或尾部静音，尽早中断。
+        is_short_line_timeout = _line_text_char_count(line_text) <= 10
         started = time.time()
-        timeout_seconds = 60 * 60  # 1小时超时
+        timeout_seconds = 15 if is_short_line_timeout else 60 * 60
+        poll_interval = 1 if is_short_line_timeout else 3
         output_info = None
 
         while time.time() - started < timeout_seconds:
-            history = comfy_request_json(
-                comfy_url=comfy_url,
-                path=f"/history/{prompt_id}",
-                method="GET",
-            )
+            remaining_seconds = max(0.1, timeout_seconds - (time.time() - started))
+            try:
+                history = comfy_request_json(
+                    comfy_url=comfy_url,
+                    path=f"/history/{prompt_id}",
+                    method="GET",
+                    timeout=min(120.0, max(1.0, remaining_seconds)),
+                )
+            except Exception as exc:
+                if time.time() - started >= timeout_seconds:
+                    interrupt_result = _interrupt_comfy_before_timeout_failure(comfy_url)
+                    if is_short_line_timeout:
+                        raise TimeoutError(
+                            f"短台词 ComfyUI 工作流超过 15 秒未完成，{interrupt_result}"
+                        ) from exc
+                    raise TimeoutError(
+                        f"ComfyUI 工作流超时，未找到音频输出，{interrupt_result}"
+                    ) from exc
+                raise
             history_error = _extract_comfy_history_error(history, prompt_id)
             if history_error:
                 raise RuntimeError(history_error)
@@ -1092,10 +1130,15 @@ def process_line_audio_task(task_id: int) -> None:
             )
             if output_info is not None:
                 break
-            time.sleep(3)
+            time.sleep(min(poll_interval, max(0.1, timeout_seconds - (time.time() - started))))
 
         if output_info is None:
-            raise TimeoutError("ComfyUI 工作流超时，未找到音频输出")
+            interrupt_result = _interrupt_comfy_before_timeout_failure(comfy_url)
+            if is_short_line_timeout:
+                raise TimeoutError(
+                    f"短台词 ComfyUI 工作流超过 15 秒未完成，{interrupt_result}"
+                )
+            raise TimeoutError(f"ComfyUI 工作流超时，未找到音频输出，{interrupt_result}")
 
         # 下载音频文件
         out_filename, out_subfolder, out_type = output_info
@@ -1113,6 +1156,7 @@ def process_line_audio_task(task_id: int) -> None:
         local_path.write_bytes(data)
 
         rel_path = str(local_path.relative_to(ROOT_DIR))
+        duration_seconds = round(float(probe_audio_duration_seconds(local_path)), 1)
 
         # 更新任务完成状态
         conn = db_conn()
@@ -1121,11 +1165,11 @@ def process_line_audio_task(task_id: int) -> None:
             UPDATE line_audio_tasks
             SET status='completed', comfy_status='completed',
                 output_filename=?, output_subfolder=?, output_type=?,
-                downloaded_file_path=?, error_message=NULL,
+                downloaded_file_path=?, duration_seconds=?, error_message=NULL,
                 comfy_finished_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP
             WHERE id=? AND status IN ('running', 'processing')
             """,
-            (out_filename, out_subfolder, out_type, rel_path, task_id),
+            (out_filename, out_subfolder, out_type, rel_path, duration_seconds, task_id),
         )
         conn.commit()
         conn.close()
@@ -1504,7 +1548,7 @@ def retry_line_audio_task(task_id: int) -> tuple[bool, str]:
         UPDATE line_audio_tasks
         SET status='pending', comfy_status='queued', comfy_prompt_id='',
             output_filename='', output_subfolder='', output_type='',
-            downloaded_file_path='', error_message=NULL,
+            downloaded_file_path='', duration_seconds=0, error_message=NULL,
             comfy_started_at=NULL, comfy_finished_at=NULL,
             scheduled_at='', updated_at=CURRENT_TIMESTAMP
         WHERE id=?

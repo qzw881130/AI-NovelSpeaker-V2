@@ -110,14 +110,18 @@
           <div id="chapterJsonAceEditor" class="code-editor-surface hidden" aria-label="台词编辑器"></div>
           <textarea id="chapterJsonEditor" class="code-block code-editor-input hidden" rows="16" wrap="off"></textarea>
         </div>
-        <p id="jsonAutosaveHint" class="caption hidden">编辑状态下每15秒自动保存</p>
-        <p id="jsonShortcutHint" class="caption hidden">Ctrl/Cmd + S 保存台词</p>
-        <menu>
-          <button id="editJsonViewBtn" class="ghost-btn" type="button">编辑JSON</button>
-          <button id="saveJsonViewBtn" class="primary-btn hidden" type="button">保存</button>
-          <button id="copyJsonBtn" class="ghost-btn" type="button">复制JSON</button>
-          <button class="primary-btn" type="submit">关闭</button>
-        </menu>
+        <div class="json-dialog-footer">
+          <div class="json-dialog-hints">
+            <p id="jsonAutosaveHint" class="caption hidden">编辑状态下每15秒自动保存</p>
+            <p id="jsonShortcutHint" class="caption hidden">Ctrl/Cmd + S 保存台词</p>
+          </div>
+          <menu>
+            <button id="editJsonViewBtn" class="ghost-btn" type="button">编辑JSON</button>
+            <button id="saveJsonViewBtn" class="primary-btn hidden" type="button">保存</button>
+            <button id="copyJsonBtn" class="ghost-btn" type="button">复制JSON</button>
+            <button class="primary-btn" type="submit">关闭</button>
+          </menu>
+        </div>
       </form>
     </dialog>
 

@@ -35,6 +35,13 @@ const generatingSampleRoleIds = new Set();
 let activeRoleVoiceBundleNovelId = "";
 const ROLES_STATS_COLLAPSED_KEY = "ai_novel_roles_stats_collapsed";
 const ROLES_FILTER_COLLAPSED_KEY = "ai_novel_roles_filter_collapsed";
+const ROLES_PAGE_SIZE_KEY = "ai_novel_roles_page_size";
+const ROLE_PAGE_SIZE_OPTIONS = [30, 50, 100];
+
+const rolesPaginationState = {
+  page: 1,
+  pageSize: 30,
+};
 
 const rolesFilterState = {
   chapter: "all",
@@ -234,6 +241,42 @@ function getFilteredRoleItems() {
   });
 }
 
+function getSavedRolePageSize() {
+  const saved = Number(localStorage.getItem(ROLES_PAGE_SIZE_KEY) || 30);
+  return ROLE_PAGE_SIZE_OPTIONS.includes(saved) ? saved : 30;
+}
+
+function setRolePageSize(value) {
+  const next = Number(value || 30);
+  rolesPaginationState.pageSize = ROLE_PAGE_SIZE_OPTIONS.includes(next) ? next : 30;
+  rolesPaginationState.page = 1;
+  localStorage.setItem(ROLES_PAGE_SIZE_KEY, String(rolesPaginationState.pageSize));
+}
+
+function resetRolesPagination() {
+  rolesPaginationState.page = 1;
+}
+
+function renderRolesPagination(totalItems, totalPages) {
+  const summary = document.getElementById("rolesPaginationSummary");
+  const pageSizeSelect = document.getElementById("rolesPageSizeSelect");
+  const firstBtn = document.getElementById("rolesFirstPageBtn");
+  const prevBtn = document.getElementById("rolesPrevPageBtn");
+  const nextBtn = document.getElementById("rolesNextPageBtn");
+  const lastBtn = document.getElementById("rolesLastPageBtn");
+  const currentPage = totalItems ? rolesPaginationState.page : 0;
+  if (summary) {
+    summary.textContent = totalItems
+      ? `第 ${currentPage} / ${totalPages} 页 · 共 ${totalItems} 条`
+      : "第 0 / 0 页 · 共 0 条";
+  }
+  if (pageSizeSelect) pageSizeSelect.value = String(rolesPaginationState.pageSize);
+  if (firstBtn) firstBtn.disabled = rolesPaginationState.page <= 1;
+  if (prevBtn) prevBtn.disabled = rolesPaginationState.page <= 1;
+  if (nextBtn) nextBtn.disabled = !totalItems || rolesPaginationState.page >= totalPages;
+  if (lastBtn) lastBtn.disabled = !totalItems || rolesPaginationState.page >= totalPages;
+}
+
 function getRolesMissingSampleAudio() {
   return roleItems.filter((role) => !String(role.sampleAudioPath || "").trim());
 }
@@ -255,6 +298,7 @@ function renderRoleNameFilter() {
     chip.addEventListener("click", () => {
       rolesFilterState.names.delete(String(chip.dataset.roleName || ""));
       renderRoleNameFilter();
+      resetRolesPagination();
       renderRolesTable();
     });
   }
@@ -292,6 +336,7 @@ function renderRoleNameFilter() {
       roleNameFilterInputEl.focus();
       renderRoleNameFilter();
       openRoleNameFilterDropdown();
+      resetRolesPagination();
       renderRolesTable();
     });
   }
@@ -404,16 +449,21 @@ function renderRolesTable() {
   tbody.innerHTML = "";
 
   const items = getFilteredRoleItems();
+  const totalPages = Math.max(1, Math.ceil(items.length / rolesPaginationState.pageSize));
+  rolesPaginationState.page = Math.min(Math.max(1, rolesPaginationState.page), totalPages);
+  const startIndex = (rolesPaginationState.page - 1) * rolesPaginationState.pageSize;
+  const pageItems = items.slice(startIndex, startIndex + rolesPaginationState.pageSize);
   if (countEl) {
     countEl.textContent = `${translateText("结果")} ${items.length} ${translateText("条")}`;
   }
+  renderRolesPagination(items.length, totalPages);
   if (!items.length) {
     tbody.innerHTML = `<tr><td colspan="6" class="empty-cell">${translateText("暂无角色数据")}</td></tr>`;
     localizeDocumentText(document);
     return;
   }
 
-  for (const role of items) {
+  for (const role of pageItems) {
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td><input class="role-page-input" data-role-id="${role.id}" data-field="name" value="${escapeHtml(role.name || "")}" /></td>
@@ -862,6 +912,7 @@ function bindActions() {
 
   document.getElementById("sampleFilterSelect").addEventListener("change", (e) => {
     rolesFilterState.sample = String(e.target.value || "all");
+    resetRolesPagination();
     renderRolesTable();
   });
 
@@ -872,11 +923,13 @@ function bindActions() {
     document.getElementById("roleNameFilterInput").value = "";
     await getSelectedChapterRoleNames();
     renderRoleNameFilter();
+    resetRolesPagination();
     renderRolesTable();
   });
 
   document.getElementById("levelFilterSelect").addEventListener("change", (e) => {
     rolesFilterState.level = String(e.target.value || "all");
+    resetRolesPagination();
     renderRolesTable();
   });
 
@@ -913,8 +966,35 @@ function bindActions() {
     document.getElementById("roleNameFilterInput").value = "";
     closeRoleNameFilterDropdown();
     renderRoleNameFilter();
+    resetRolesPagination();
     renderRolesTable();
     setRolesPageStatus(translateText("已清空筛选"));
+  });
+
+  document.getElementById("rolesPageSizeSelect")?.addEventListener("change", (event) => {
+    setRolePageSize(event.target.value);
+    renderRolesTable();
+  });
+
+  document.getElementById("rolesFirstPageBtn")?.addEventListener("click", () => {
+    rolesPaginationState.page = 1;
+    renderRolesTable();
+  });
+
+  document.getElementById("rolesPrevPageBtn")?.addEventListener("click", () => {
+    rolesPaginationState.page = Math.max(1, rolesPaginationState.page - 1);
+    renderRolesTable();
+  });
+
+  document.getElementById("rolesNextPageBtn")?.addEventListener("click", () => {
+    rolesPaginationState.page += 1;
+    renderRolesTable();
+  });
+
+  document.getElementById("rolesLastPageBtn")?.addEventListener("click", () => {
+    const totalPages = Math.max(1, Math.ceil(getFilteredRoleItems().length / rolesPaginationState.pageSize));
+    rolesPaginationState.page = totalPages;
+    renderRolesTable();
   });
 
   document.addEventListener("click", (event) => {
@@ -1024,6 +1104,7 @@ async function refreshRoleVoiceBundleList() {
 
 async function init() {
   renderNav();
+  rolesPaginationState.pageSize = getSavedRolePageSize();
   const data = await getData();
   allNovels = data.novels || [];
   activeNovel = getNovelByQueryOrActive();

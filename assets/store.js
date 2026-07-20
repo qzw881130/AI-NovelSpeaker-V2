@@ -466,12 +466,13 @@ async function searchNovelText(novelId, searchText) {
   });
 }
 
-async function replaceNovelText(novelId, searchText, replaceText) {
+async function replaceNovelText(novelId, searchText, replaceText, scope = "all") {
   return api(`/api/novels/${Number(novelId)}/text-fix/replace`, {
     method: "POST",
     body: JSON.stringify({
       searchText: String(searchText || ""),
       replaceText: String(replaceText || ""),
+      scope: String(scope || "all"),
     }),
   });
 }

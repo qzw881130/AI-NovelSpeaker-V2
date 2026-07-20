@@ -1330,6 +1330,45 @@ function getLineAudioEntry(lineIndex) {
   return lineAudioEntries.find((item) => Number(item.lineIndex) === Number(lineIndex)) || null;
 }
 
+function formatLineAudioSeconds(seconds) {
+  const value = Number(seconds || 0);
+  if (!Number.isFinite(value) || value <= 0) return "-";
+  return `${value.toFixed(1)}秒`;
+}
+
+function getLineCharCount(line) {
+  return String(line || "").replace(/\s+/g, "").length;
+}
+
+function getLineCharCountClass(count) {
+  if (count >= 180) return "is-long";
+  if (count >= 90) return "is-medium";
+  return "is-short";
+}
+
+function getLineAudioAnomaly(row, entry) {
+  const duration = Number(entry?.durationSeconds || 0);
+  if (!entry?.hasAudio || duration <= 0) return { abnormal: false, reason: "" };
+  const charCount = getLineCharCount(entry?.lineText || row?.line || "");
+  if (charCount <= 0) return { abnormal: false, reason: "" };
+  const efficiency = charCount / duration;
+  const theoretical = charCount * 0.35;
+  const maxAllowed = Math.max(8, theoretical * 3);
+  if (efficiency < 0.5) {
+    return { abnormal: true, reason: `字符效率 ${efficiency.toFixed(2)} 字/秒，低于 0.5` };
+  }
+  if (charCount <= 5 && duration > 4) {
+    return { abnormal: true, reason: `超短台词 ${charCount} 字，音频 ${duration.toFixed(1)} 秒` };
+  }
+  if (charCount <= 15 && duration > 15) {
+    return { abnormal: true, reason: `短台词 ${charCount} 字，音频 ${duration.toFixed(1)} 秒` };
+  }
+  if (duration > maxAllowed) {
+    return { abnormal: true, reason: `音频 ${duration.toFixed(1)} 秒，超过允许 ${maxAllowed.toFixed(1)} 秒` };
+  }
+  return { abnormal: false, reason: "" };
+}
+
 function getLineAudioViewState(entry) {
   let statusText = "未生成";
   let statusClass = "text-muted";
@@ -1507,9 +1546,15 @@ function updateLineAudioRow(lineIndex) {
 
   const entry = getLineAudioEntry(lineIndex);
   const view = getLineAudioViewState(entry);
+  const row = getLinePreviewRow(lineIndex);
+  const anomaly = getLineAudioAnomaly(row, entry);
+  rowEl.classList.toggle("juben-line-audio-anomaly", anomaly.abnormal);
+  rowEl.title = anomaly.abnormal ? `检测到音频时长异常，可能存在生成失败或尾部静音。${anomaly.reason}。建议重新生成。` : "";
   if (view.hasAudio) {
+    const durationText = formatLineAudioSeconds(entry?.durationSeconds);
     audioCell.innerHTML = `
       <audio controls preload="metadata" src="${escapeHtml(view.src)}"></audio>
+      <span class="juben-line-duration${anomaly.abnormal ? " is-anomaly" : ""}">${anomaly.abnormal ? "⚠ " : ""}${escapeHtml(durationText)}</span>
       <span class="${view.statusClass}">${escapeHtml(view.statusText)}</span>
       <button class="ghost-btn btn-sm enqueue-line-btn" data-line-index="${lineIndex}" type="button">生成音频</button>
     `;
@@ -1588,8 +1633,25 @@ function renderLineAudioTable() {
 
   const rows = getFilteredLinePreviewRows();
   const matches = getLineSearchMatches(rows);
+  const anomalyRows = rows.filter((row) => {
+    const entry = getLineAudioEntry(row.index);
+    return getLineAudioAnomaly(row, entry).abnormal;
+  });
+  const anomalyCount = rows.reduce((count, row) => {
+    const entry = getLineAudioEntry(row.index);
+    return count + (getLineAudioAnomaly(row, entry).abnormal ? 1 : 0);
+  }, 0);
   if (countEl) {
-    countEl.textContent = `${translateText("筛选")} ${rows.length} ${translateText("条")}`;
+    countEl.innerHTML = `${translateText("筛选")} ${rows.length} ${translateText("条")} <span class="line-audio-anomaly-summary">异常台词音频数: ${anomalyCount}</span>${anomalyCount ? ' <button id="jumpFirstLineAudioAnomalyBtn" class="ghost-btn btn-sm line-audio-anomaly-jump-btn" type="button">跳转</button>' : ""}`;
+    countEl.querySelector("#jumpFirstLineAudioAnomalyBtn")?.addEventListener("click", () => {
+      const first = anomalyRows[0];
+      if (!first) return;
+      const target = document.querySelector(`.juben-line[data-line-index="${first.index}"]`);
+      if (!target) return;
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+      target.classList.add("juben-line-anomaly-focus");
+      window.setTimeout(() => target.classList.remove("juben-line-anomaly-focus"), 1600);
+    });
   }
   root.innerHTML = "";
 
@@ -1613,13 +1675,26 @@ function renderLineAudioTable() {
     const item = document.createElement("div");
     const isEditing = editingLineIndex === row.index;
     const isMatched = matches.some((match) => match.index === row.index);
-    item.className = `juben-line${isEditing ? " juben-line-single-editing" : ""}${isMatched ? " juben-line-search-hit" : ""}`;
+    const anomaly = getLineAudioAnomaly(row, entry);
+    item.className = `juben-line${isEditing ? " juben-line-single-editing" : ""}${isMatched ? " juben-line-search-hit" : ""}${anomaly.abnormal ? " juben-line-audio-anomaly" : ""}`;
+    item.title = anomaly.abnormal ? `检测到音频时长异常，可能存在生成失败或尾部静音。${anomaly.reason}。建议重新生成。` : "";
     item.dataset.lineIndex = String(row.index);
+
+    const meta = document.createElement("div");
+    meta.className = "juben-line-meta";
 
     const no = document.createElement("span");
     no.className = "juben-line-no";
     no.textContent = String(row.index + 1).padStart(3, "0");
-    item.appendChild(no);
+
+    const charCount = getLineCharCount(row.line);
+    const count = document.createElement("span");
+    count.className = `juben-line-count ${getLineCharCountClass(charCount)}`;
+    count.textContent = String(charCount);
+
+    meta.appendChild(no);
+    meta.appendChild(count);
+    item.appendChild(meta);
 
     const textCell = document.createElement("div");
     textCell.className = "juben-line-text-cell";
@@ -1660,8 +1735,10 @@ function renderLineAudioTable() {
     const audioCell = document.createElement("div");
     audioCell.className = "juben-line-audio";
     if (view.hasAudio) {
+      const durationText = formatLineAudioSeconds(entry?.durationSeconds);
       audioCell.innerHTML = `
         <audio controls preload="metadata" src="${escapeHtml(view.src)}"></audio>
+        <span class="juben-line-duration${anomaly.abnormal ? " is-anomaly" : ""}">${anomaly.abnormal ? "⚠ " : ""}${escapeHtml(durationText)}</span>
         <span class="${view.statusClass}">${escapeHtml(view.statusText)}</span>
         <button class="ghost-btn btn-sm enqueue-line-btn" data-line-index="${row.index}" type="button">生成音频</button>
       `;
@@ -2190,11 +2267,16 @@ async function updateLineAudioWarningBadge() {
       const entry = entries.find((item) => Number(item.lineIndex) === Number(row.index));
       return !(entry && entry.hasAudio && entry.streamUrl);
     });
-    const hasWarning = incomplete.length > 0;
+    const abnormal = rows.filter((row) => {
+      const entry = entries.find((item) => Number(item.lineIndex) === Number(row.index));
+      return getLineAudioAnomaly(row, entry).abnormal;
+    });
+    const hasWarning = incomplete.length > 0 || abnormal.length > 0;
     warningBtn.classList.toggle("has-line-audio-warning", hasWarning);
-    warningBtn.title = hasWarning
-      ? `还有 ${incomplete.length} 条台词未生成音频`
-      : "";
+    const titleParts = [];
+    if (incomplete.length > 0) titleParts.push(`还有 ${incomplete.length} 条台词未生成音频`);
+    if (abnormal.length > 0) titleParts.push(`有 ${abnormal.length} 条异常台词音频`);
+    warningBtn.title = titleParts.join("；");
   } catch {
     warningBtn.classList.remove("has-line-audio-warning");
     warningBtn.title = "";

@@ -330,7 +330,7 @@ def migrate_chapters_table(conn: sqlite3.Connection) -> None:
 
 
 def migrate_line_audio_tasks_table(conn: sqlite3.Connection) -> None:
-    """迁移：为 line_audio_tasks 表添加调度字段"""
+    """迁移：为 line_audio_tasks 表添加调度和音频时长字段"""
     tables = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='line_audio_tasks'"
     ).fetchone()
@@ -340,6 +340,10 @@ def migrate_line_audio_tasks_table(conn: sqlite3.Connection) -> None:
     column_names = [col[1] for col in columns]
     if "scheduled_at" not in column_names:
         conn.execute("ALTER TABLE line_audio_tasks ADD COLUMN scheduled_at DATETIME")
+    if "duration_seconds" not in column_names:
+        conn.execute(
+            "ALTER TABLE line_audio_tasks ADD COLUMN duration_seconds REAL NOT NULL DEFAULT 0"
+        )
 
 
 def migrate_workflow_io_config_column(conn: sqlite3.Connection) -> None:

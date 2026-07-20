@@ -9,7 +9,7 @@
   <body>
     <div class="app-shell">
       <aside class="main-nav" id="mainNav"></aside>
-      <main class="page">
+      <main class="page text-fix-page">
         <header class="page-header">
           <div>
             <p class="eyebrow">文本修复</p>
@@ -39,13 +39,15 @@
               <input id="textFixReplaceInput" placeholder="输入替换后的文本" />
             </label>
             <div class="card-actions top-actions text-fix-actions">
-            <button id="textFixSearchBtn" class="ghost-btn" type="button">搜索</button>
-            <button id="textFixReplaceBtn" class="primary-btn" type="button">替换</button>
+              <button id="textFixSearchBtn" class="ghost-btn" type="button">搜索</button>
+              <button id="textFixReplaceAllBtn" class="primary-btn" type="button">替换全部</button>
+              <button id="textFixReplaceJsonBtn" class="ghost-btn" type="button">替换JSON</button>
+              <button id="textFixReplaceTxtBtn" class="ghost-btn" type="button">替换TXT</button>
             </div>
           </div>
         </section>
 
-        <section class="panel">
+        <section class="panel text-fix-results-panel">
           <div class="panel-head">
             <h2>搜索结果</h2>
             <span id="textFixCount" class="meta">共 0 处</span>

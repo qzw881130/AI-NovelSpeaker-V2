@@ -1500,6 +1500,10 @@ textarea {
   background: #fffcf6;
 }
 
+#jsonDialog {
+  width: min(920px, 94vw);
+}
+
 .dialog-close-btn {
   position: absolute;
   top: 12px;
@@ -2175,6 +2179,32 @@ menu {
   word-break: break-word;
 }
 
+.json-dialog-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.json-dialog-hints {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  color: var(--muted);
+}
+
+.json-dialog-hints .caption {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.json-dialog-footer menu {
+  margin: 0;
+  flex: 0 0 auto;
+}
+
 .steps {
   margin: 0;
   padding-left: 20px;
@@ -2230,13 +2260,34 @@ menu {
   gap: 6px;
 }
 
+.text-fix-page {
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.text-fix-results-panel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.text-fix-results-panel .asset-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 6px;
+}
+
 .text-fix-controls {
   grid-template-columns: minmax(0, 1.15fr) minmax(0, 1.15fr) auto;
   align-items: end;
 }
 
 .text-fix-actions {
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   align-self: end;
   padding-bottom: 2px;
 }
@@ -2351,6 +2402,11 @@ menu {
     grid-template-columns: 1fr;
   }
 
+  .text-fix-page {
+    height: auto;
+    overflow: visible;
+  }
+
   .text-fix-actions {
     flex-wrap: wrap;
     padding-bottom: 0;
@@ -2418,6 +2474,11 @@ menu {
 .modal-large {
   max-width: 90vw;
   width: 1000px;
+}
+
+#lineAudioDialog {
+  max-width: 96vw;
+  width: min(1320px, 96vw);
 }
 
 .roles-stats {
@@ -2610,18 +2671,30 @@ menu {
   font-weight: 600;
 }
 
+.line-audio-anomaly-summary {
+  margin-left: 22px;
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.line-audio-anomaly-jump-btn {
+  margin-left: 8px;
+  color: var(--danger);
+  border-color: rgba(168, 54, 47, 0.38);
+}
+
 .juben-lines {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 8px;
+  gap: 6px;
+  padding: 6px;
 }
 
 .juben-line-head {
   display: grid;
-  grid-template-columns: 60px minmax(0, 1fr) 320px;
-  gap: 12px;
-  padding: 12px 14px 8px;
+  grid-template-columns: 54px minmax(0, 1fr) 360px;
+  gap: 10px;
+  padding: 10px 12px 6px;
   color: var(--muted);
   font-size: 12px;
   font-weight: 600;
@@ -2629,10 +2702,10 @@ menu {
 
 .juben-line {
   display: grid;
-  grid-template-columns: 60px minmax(0, 1fr) 320px;
-  gap: 12px;
+  grid-template-columns: 54px minmax(0, 1fr) 360px;
+  gap: 10px;
   align-items: start;
-  padding: 10px 14px;
+  padding: 8px 12px;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--panel-strong);
@@ -2644,6 +2717,33 @@ menu {
   line-height: 1.8;
 }
 
+.juben-line-meta {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 100%;
+}
+
+.juben-line-count {
+  align-self: flex-start;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.juben-line-count.is-short {
+  color: var(--ok);
+}
+
+.juben-line-count.is-medium {
+  color: var(--running);
+}
+
+.juben-line-count.is-long {
+  color: var(--danger);
+}
+
 .juben-line-text-cell {
   display: flex;
   align-items: flex-start;
@@ -2652,7 +2752,7 @@ menu {
 }
 
 .juben-line-text {
-  line-height: 1.8;
+  line-height: 1.65;
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -2679,6 +2779,15 @@ menu {
   border-color: #d9b898;
 }
 
+.juben-line-audio-anomaly {
+  border-color: rgba(168, 54, 47, 0.72);
+  background: #fff5ef;
+}
+
+.juben-line-anomaly-focus {
+  box-shadow: 0 0 0 3px rgba(168, 54, 47, 0.18);
+}
+
 .juben-line-input {
   width: 100%;
   min-height: 64px;
@@ -2703,12 +2812,25 @@ menu {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
-  flex-wrap: wrap;
+  gap: 6px;
+  flex-wrap: nowrap;
+  white-space: nowrap;
 }
 
 .juben-line-audio audio {
-  width: 170px;
+  width: 160px;
+  height: 38px;
+}
+
+.juben-line-duration {
+  color: var(--running);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.juben-line-duration.is-anomaly {
+  color: var(--danger);
 }
 
 @media (max-width: 960px) {
@@ -2737,6 +2859,26 @@ menu {
 .roles-page-status.error {
   background: #f8d7da;
   color: #721c24;
+}
+
+.novel-download-row.has-abnormal-line-audio {
+  background: #fff5ef;
+}
+
+.novel-download-abnormal-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid rgba(168, 54, 47, 0.34);
+  background: #fff0e9;
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 700;
+  vertical-align: middle;
 }
 
 .roles-filters {
@@ -3700,6 +3842,34 @@ body.is-nsfw-review-drag-selecting .novel-download-table {
   color: var(--muted);
   font-size: 14px;
   font-weight: 600;
+}
+
+.roles-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.roles-pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.roles-page-size-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.roles-page-size-control select {
+  min-width: 78px;
 }
 
 .role-json-btn {
