@@ -1,0 +1,84 @@
+{
+  "1": {
+    "inputs": {
+      "model": "MOSS-TTS Local Transformer v1.5 BF16 - OpenMOSS-Team (auto-download)",
+      "dtype": "auto",
+      "attention": "auto",
+      "download_if_missing": false
+    },
+    "class_type": "MossTTSModelLoader",
+    "_meta": {
+      "title": "#1 MOSS-TTS Load Model"
+    }
+  },
+  "2": {
+    "inputs": {
+      "text": [
+        "16",
+        0
+      ],
+      "language": "Chinese",
+      "instruction": "",
+      "duration_tokens": 0,
+      "quality": "",
+      "sound_event": "",
+      "ambient_sound": "",
+      "max_new_tokens": 1024,
+      "do_sample": true,
+      "text_temperature": 0.65,
+      "text_top_p": 0.8,
+      "text_top_k": 25,
+      "audio_temperature": 0.7,
+      "audio_top_p": 0.65,
+      "audio_top_k": 12,
+      "audio_repetition_penalty": 1.1,
+      "seed": 43032538277695,
+      "mosstts_model": [
+        "1",
+        0
+      ],
+      "reference_audio": [
+        "4",
+        0
+      ]
+    },
+    "class_type": "MossTTSVoiceClone",
+    "_meta": {
+      "title": "#2 MOSS-TTS Voice Clone"
+    }
+  },
+  "4": {
+    "inputs": {
+      "audio": "1982-曹操.flac",
+      "audioUI": "/api/view?filename=1982-%E6%9B%B9%E6%93%8D.flac&type=input&subfolder=&rand=0.6226812787537871"
+    },
+    "class_type": "LoadAudio",
+    "_meta": {
+      "title": "#4 参考音频文件"
+    }
+  },
+  "11": {
+    "inputs": {
+      "filename_prefix": "audio/ComfyUI",
+      "format": "flac",
+      "audioUI": "/api/view?filename=ComfyUI_00275.flac&type=output&subfolder=audio&rand=0.582129757263749",
+      "audio": [
+        "2",
+        0
+      ]
+    },
+    "class_type": "SaveAudioAdvanced",
+    "_meta": {
+      "title": "#11 Save Audio (Advanced)"
+    }
+  },
+  "16": {
+    "inputs": {
+      "text": "霸闻吕布已死，张辽已降，遂亦引本部军投降。操厚赏之"
+    },
+    "class_type": "JjkText",
+    "_meta": {
+      "title": "#16 台词"
+    }
+  }
+}
