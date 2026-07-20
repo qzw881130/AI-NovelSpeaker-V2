@@ -6,6 +6,7 @@ import {
   fetchLineAudioTaskDetail,
   deleteLineAudioTask,
   retryLineAudioTask,
+  prioritizeLineAudioTask,
   fetchLineAudioWorkerStatus,
   restartLineAudioWorker,
 } from "./store.js";
@@ -192,6 +193,7 @@ function renderLineAudioTaskList() {
         <span>${translateText("行号")} : ${task.lineIndex + 1}</span>
         <span>${translateText("用时")} : ${runtime}</span>
         <span>${escapeHtml(getScheduleLabel(task))}</span>
+        ${status === "pending" && Number(task.queuePriority || 0) > 0 ? `<span>${translateText("优先级")} : ${Number(task.queuePriority || 0)}</span>` : ""}
       </div>
     `;
 
@@ -233,6 +235,7 @@ function getLineAudioTaskSignature(task) {
     outputFilename: task.outputFilename || "",
     downloadedFilePath: task.downloadedFilePath || "",
     durationSeconds: Number(task.durationSeconds || 0),
+    queuePriority: Number(task.queuePriority || 0),
     scheduledAt: task.scheduledAt || "",
     errorMessage: task.errorMessage || "",
     updatedAt: task.updatedAt || "",
@@ -263,6 +266,9 @@ function renderLineAudioTaskDetail(task) {
   html += `<div class="detail-row"><span class="detail-label">${translateText("输出文件:")}</span><span class="detail-value">${escapeHtml(task.outputFilename || "-")}</span></div>`;
   html += `<div class="detail-row"><span class="detail-label">${translateText("本地下载路径:")}</span><span class="detail-value">${escapeHtml(task.downloadedFilePath || "-")}</span></div>`;
   html += `<div class="detail-row"><span class="detail-label">${translateText("执行设置:")}</span><span class="detail-value">${escapeHtml(getScheduleLabel(task))}</span></div>`;
+  if (status === "pending" && Number(task.queuePriority || 0) > 0) {
+    html += `<div class="detail-row"><span class="detail-label">${translateText("队列优先级:")}</span><span class="detail-value">${Number(task.queuePriority || 0)}</span></div>`;
+  }
   html += `<div class="detail-row"><span class="detail-label">${translateText("任务用时:")}</span><span class="detail-value">${calcTaskRuntime(task)}</span></div>`;
 
   if (task.errorMessage) {
@@ -284,6 +290,9 @@ function renderLineAudioTaskDetail(task) {
 
   // 操作按钮
   html += '<div class="task-actions">';
+  if (status === "pending") {
+    html += `<button class="primary-btn prioritize-task-btn" data-task-id="${task.id}" type="button">${translateText("优先执行")}</button>`;
+  }
   if (status === "failed" || status === "cancelled") {
     html += `<button class="ghost-btn retry-task-btn" data-task-id="${task.id}" type="button">${translateText("重试")}</button>`;
   }
@@ -291,6 +300,20 @@ function renderLineAudioTaskDetail(task) {
   html += '</div>';
 
   detailEl.innerHTML = html;
+
+  const prioritizeBtn = detailEl.querySelector(".prioritize-task-btn");
+  if (prioritizeBtn) {
+    prioritizeBtn.addEventListener("click", async () => {
+      try {
+        await prioritizeLineAudioTask(task.id);
+        toast(translateText("任务已调整为优先执行"));
+        await refreshLineAudioTasks();
+        await loadLineAudioTaskDetail(task.id);
+      } catch (err) {
+        toast(err.message);
+      }
+    });
+  }
 
   const retryBtn = detailEl.querySelector(".retry-task-btn");
   if (retryBtn) {

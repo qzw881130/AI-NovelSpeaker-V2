@@ -1272,6 +1272,16 @@ function bindActions() {
     }
   });
 
+  document.getElementById("mergeAdjacentSameRoleLinesBtn")?.addEventListener("click", async (event) => {
+    const btn = event.currentTarget;
+    if (btn) btn.disabled = true;
+    try {
+      await mergeAdjacentSameRoleLines();
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  });
+
   document.getElementById("toggleLineEditBtn")?.addEventListener("click", () => {
     lineEditEnabled = !lineEditEnabled;
     editingLineIndex = -1;
@@ -1310,6 +1320,96 @@ function extractRoleName(line) {
   if (!positions.length) return "";
   const splitAt = Math.min(...positions);
   return String(text.slice(0, splitAt) || "").trim().slice(0, 20);
+}
+
+function parseJubenLineForMerge(line) {
+  const raw = String(line || "").trim();
+  if (!raw) return { raw: String(line || ""), roleName: "", separator: "", text: "" };
+  const positions = [raw.indexOf(":"), raw.indexOf("：")].filter((pos) => pos >= 0);
+  if (!positions.length) return { raw, roleName: "", separator: "", text: raw };
+  const splitAt = Math.min(...positions);
+  return {
+    raw,
+    roleName: String(raw.slice(0, splitAt) || "").trim(),
+    separator: raw.slice(splitAt, splitAt + 1) || ":",
+    text: String(raw.slice(splitAt + 1) || "").trim(),
+  };
+}
+
+function composeJubenLine(roleName, separator, text) {
+  return `${roleName}${separator || ":"}${text}`;
+}
+
+function partitionRunByCount(items, groupCount) {
+  const groups = [];
+  for (let index = 0; index < groupCount; index += 1) {
+    const start = Math.floor((index * items.length) / groupCount);
+    const end = Math.floor(((index + 1) * items.length) / groupCount);
+    const group = items.slice(start, end);
+    if (group.length) groups.push(group);
+  }
+  return groups;
+}
+
+function mergeSameRoleRun(run, maxChars = 200) {
+  for (let groupCount = 1; groupCount <= run.length; groupCount += 1) {
+    const groups = partitionRunByCount(run, groupCount);
+    const valid = groups.every((group) => getLineCharCount(group.map((item) => item.text).join("")) <= maxChars);
+    if (!valid) continue;
+    const rows = groups.map((group) => {
+      if (group.length === 1) return group[0].raw;
+      return composeJubenLine(group[0].roleName, group[0].separator, group.map((item) => item.text).join(""));
+    });
+    return {
+      rows,
+      mergedCount: groups.reduce((count, group) => count + Math.max(0, group.length - 1), 0),
+      mergedGroups: groups.filter((group) => group.length > 1).length,
+      overlongCount: 0,
+    };
+  }
+  return {
+    rows: run.map((item) => item.raw),
+    mergedCount: 0,
+    mergedGroups: 0,
+    overlongCount: run.filter((item) => getLineCharCount(item.text) > maxChars).length,
+  };
+}
+
+function mergeAdjacentSameRoleJubenRows(rows, maxChars = 200) {
+  const parsedRows = rows.map((line) => parseJubenLineForMerge(line));
+  const nextRows = [];
+  let mergedCount = 0;
+  let mergedGroups = 0;
+  let overlongCount = 0;
+
+  for (let index = 0; index < parsedRows.length;) {
+    const current = parsedRows[index];
+    if (!current.raw.trim() || !current.roleName) {
+      nextRows.push(String(rows[index] || ""));
+      index += 1;
+      continue;
+    }
+
+    const run = [current];
+    let nextIndex = index + 1;
+    while (nextIndex < parsedRows.length && parsedRows[nextIndex].roleName === current.roleName) {
+      run.push(parsedRows[nextIndex]);
+      nextIndex += 1;
+    }
+
+    if (run.length === 1) {
+      nextRows.push(current.raw);
+    } else {
+      const result = mergeSameRoleRun(run, maxChars);
+      nextRows.push(...result.rows);
+      mergedCount += result.mergedCount;
+      mergedGroups += result.mergedGroups;
+      overlongCount += result.overlongCount;
+    }
+    index = nextIndex;
+  }
+
+  return { rows: nextRows, mergedCount, mergedGroups, overlongCount };
 }
 
 function getJubenLinesFromParsed(parsed) {
@@ -1931,6 +2031,53 @@ async function saveLineText(lineIndex) {
     setStatus(`第 ${lineIndex + 1} 行台词已保存`);
   } catch (err) {
     toast(err.message || "保存台词失败");
+  }
+}
+
+async function mergeAdjacentSameRoleLines() {
+  if (!activeNovel || !activeChapterNum) return;
+  if (editingLineIndex >= 0 && !window.confirm("当前有正在编辑的台词，继续合并会放弃未保存编辑。确定继续吗？")) {
+    return;
+  }
+  const parsed = parseChapterJson();
+  if (!parsed) {
+    toast("JSON解析失败，无法合并台词");
+    return;
+  }
+  const rows = String(parsed?.juben || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+  if (!rows.some((line) => String(line || "").trim())) {
+    toast("当前章节没有可合并的台词");
+    return;
+  }
+
+  const result = mergeAdjacentSameRoleJubenRows(rows, 200);
+  if (result.mergedCount <= 0) {
+    const suffix = result.overlongCount > 0 ? `，${result.overlongCount} 条单行已超过 200 字` : "";
+    toast(`没有可合并的相邻同角色台词${suffix}`);
+    return;
+  }
+
+  if (!window.confirm(`确定合并同角色相邻台词吗？\n台词 ${rows.length} 条 -> ${result.rows.length} 条，合并 ${result.mergedCount} 条。`)) {
+    return;
+  }
+
+  parsed.juben = result.rows.join("\n");
+  try {
+    const nextJsonText = JSON.stringify(parsed, null, 2);
+    await saveChapterJsonOutput(activeNovel.id, activeChapterNum, nextJsonText);
+    jsonViewRawText = nextJsonText;
+    jsonViewParsed = parsed;
+    linePreviewRows = getJubenLinesFromParsed(parsed);
+    editingLineIndex = -1;
+    editingLineOriginalText = "";
+    lineSearchIndex = -1;
+    await loadLineAudios();
+    await updateChapterActionWarnings();
+    const suffix = result.overlongCount > 0 ? `，${result.overlongCount} 条单行超过 200 字未合并` : "";
+    toast(`已合并 ${result.mergedGroups} 组，台词 ${rows.length} 条 -> ${result.rows.length} 条${suffix}`);
+    setStatus(`已合并同角色相邻台词：${rows.length} -> ${result.rows.length}`);
+  } catch (err) {
+    toast(err.message || "合并台词失败");
   }
 }
 

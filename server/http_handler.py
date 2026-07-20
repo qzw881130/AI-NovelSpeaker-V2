@@ -34,6 +34,7 @@ from .line_audio import (
     get_chapter_merged_audio_stats,
     delete_line_audio_task,
     retry_line_audio_task,
+    prioritize_line_audio_task,
 )
 from .audio_asr import (
     cancel_chapter_audio_asr_task,
@@ -3006,6 +3007,19 @@ class Handler(BaseHTTPRequestHandler):
             ensure_line_audio_worker()
             task_id = int(m_retry_line_task.group(1))
             ok, msg = retry_line_audio_task(task_id)
+            if not ok:
+                code = 404 if "不存在" in msg or "not found" in msg else 409
+                self.send_json({"error": msg}, code)
+                return
+            kick_line_audio_queue_once()
+            self.send_json({"status": msg})
+            return
+
+        m_prioritize_line_task = re.match(r"^/api/line-audio-tasks/(\d+)/prioritize$", route)
+        if m_prioritize_line_task:
+            ensure_line_audio_worker()
+            task_id = int(m_prioritize_line_task.group(1))
+            ok, msg = prioritize_line_audio_task(task_id)
             if not ok:
                 code = 404 if "不存在" in msg or "not found" in msg else 409
                 self.send_json({"error": msg}, code)

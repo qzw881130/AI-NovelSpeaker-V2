@@ -206,6 +206,7 @@ def _line_audio_task_row_to_dict(row: Any) -> dict:
         "outputType": str(row["output_type"] or ""),
         "downloadedFilePath": str(row["downloaded_file_path"] or ""),
         "durationSeconds": round(float(row["duration_seconds"] or 0), 1),
+        "queuePriority": int(row["queue_priority"] or 0),
         "errorMessage": str(row["error_message"] or ""),
         "createdAt": str(row["created_at"] or ""),
         "updatedAt": str(row["updated_at"] or ""),
@@ -344,10 +345,12 @@ def list_line_audio_tasks(
         ORDER BY
             CASE status
               WHEN 'processing' THEN 0
+              WHEN 'running' THEN 0
               WHEN 'pending' THEN 1
               WHEN 'failed' THEN 2
               ELSE 3
             END,
+            CASE WHEN status='pending' THEN COALESCE(queue_priority, 0) ELSE 0 END DESC,
             updated_at DESC,
             id DESC
         LIMIT ? OFFSET ?
@@ -761,7 +764,8 @@ def enqueue_line_audio_task(
             SET chapter_title=?, line_index=?, role_name=?, line_text=?,
                 reference_text=?, reference_audio_path=?, status='pending', comfy_status='queued',
                 comfy_prompt_id=NULL, output_filename='', output_subfolder='', output_type='',
-                downloaded_file_path='', duration_seconds=0, error_message=NULL, comfy_started_at=NULL,
+                downloaded_file_path='', duration_seconds=0, queue_priority=0,
+                error_message=NULL, comfy_started_at=NULL,
                 scheduled_at=?,
                 comfy_finished_at=NULL, updated_at=CURRENT_TIMESTAMP
             WHERE id=?
@@ -1482,7 +1486,12 @@ def run_line_audio_queue_once() -> bool:
 
     # 获取待处理任务
     pending_rows = conn.execute(
-        "SELECT id,scheduled_at FROM line_audio_tasks WHERE status='pending' ORDER BY id ASC"
+        """
+        SELECT id,scheduled_at
+        FROM line_audio_tasks
+        WHERE status='pending'
+        ORDER BY COALESCE(queue_priority, 0) DESC, id ASC
+        """
     ).fetchall()
     picked_id: int | None = None
     now = time.time()
@@ -1555,7 +1564,7 @@ def retry_line_audio_task(task_id: int) -> tuple[bool, str]:
         UPDATE line_audio_tasks
         SET status='pending', comfy_status='queued', comfy_prompt_id='',
             output_filename='', output_subfolder='', output_type='',
-            downloaded_file_path='', duration_seconds=0, error_message=NULL,
+            downloaded_file_path='', duration_seconds=0, queue_priority=0, error_message=NULL,
             comfy_started_at=NULL, comfy_finished_at=NULL,
             scheduled_at='', updated_at=CURRENT_TIMESTAMP
         WHERE id=?
@@ -1565,6 +1574,35 @@ def retry_line_audio_task(task_id: int) -> tuple[bool, str]:
     conn.commit()
     conn.close()
     return True, "queued"
+
+
+def prioritize_line_audio_task(task_id: int) -> tuple[bool, str]:
+    """将待执行台词音频任务提升为当前任务结束后的优先任务"""
+    conn = db_conn()
+    row = conn.execute(
+        "SELECT id, status FROM line_audio_tasks WHERE id=?", (task_id,)
+    ).fetchone()
+    if not row:
+        conn.close()
+        return False, "任务不存在"
+    if str(row["status"] or "").strip() != "pending":
+        conn.close()
+        return False, "只有待执行任务可以优先执行"
+    max_row = conn.execute(
+        "SELECT COALESCE(MAX(queue_priority), 0) AS max_priority FROM line_audio_tasks"
+    ).fetchone()
+    next_priority = int(max_row["max_priority"] or 0) + 1 if max_row else 1
+    conn.execute(
+        """
+        UPDATE line_audio_tasks
+        SET queue_priority=?, scheduled_at='', updated_at=CURRENT_TIMESTAMP
+        WHERE id=? AND status='pending'
+        """,
+        (next_priority, task_id),
+    )
+    conn.commit()
+    conn.close()
+    return True, "prioritized"
 
 
 def cancel_all_line_audio_tasks(novel_id: int | None = None) -> dict:

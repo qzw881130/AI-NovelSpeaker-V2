@@ -898,6 +898,10 @@ async function retryLineAudioTask(taskId) {
   await api(`/api/line-audio-tasks/${Number(taskId)}/retry`, { method: "POST", body: "{}" });
 }
 
+async function prioritizeLineAudioTask(taskId) {
+  await api(`/api/line-audio-tasks/${Number(taskId)}/prioritize`, { method: "POST", body: "{}" });
+}
+
 function getLineAudioFileUrl(taskId) {
   return `/api/line-audio-tasks/${Number(taskId)}/file`;
 }
@@ -1053,6 +1057,7 @@ export {
   fetchLineAudioTaskDetail,
   deleteLineAudioTask,
   retryLineAudioTask,
+  prioritizeLineAudioTask,
   getLineAudioFileUrl,
   getMergedAudioUrl,
   // 视频导出

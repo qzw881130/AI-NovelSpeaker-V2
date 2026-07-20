@@ -330,7 +330,7 @@ def migrate_chapters_table(conn: sqlite3.Connection) -> None:
 
 
 def migrate_line_audio_tasks_table(conn: sqlite3.Connection) -> None:
-    """迁移：为 line_audio_tasks 表添加调度和音频时长字段"""
+    """迁移：为 line_audio_tasks 表添加调度、音频时长和队列优先级字段"""
     tables = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='line_audio_tasks'"
     ).fetchone()
@@ -343,6 +343,10 @@ def migrate_line_audio_tasks_table(conn: sqlite3.Connection) -> None:
     if "duration_seconds" not in column_names:
         conn.execute(
             "ALTER TABLE line_audio_tasks ADD COLUMN duration_seconds REAL NOT NULL DEFAULT 0"
+        )
+    if "queue_priority" not in column_names:
+        conn.execute(
+            "ALTER TABLE line_audio_tasks ADD COLUMN queue_priority INTEGER NOT NULL DEFAULT 0"
         )
 
 

@@ -328,6 +328,8 @@ DDL_STATEMENTS = [
         output_subfolder TEXT,
         output_type TEXT,
         downloaded_file_path TEXT,
+        duration_seconds REAL NOT NULL DEFAULT 0,
+        queue_priority INTEGER NOT NULL DEFAULT 0,
         error_message TEXT,
         comfy_started_at DATETIME,
         comfy_finished_at DATETIME,
