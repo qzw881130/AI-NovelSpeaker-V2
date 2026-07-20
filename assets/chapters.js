@@ -14,6 +14,8 @@ import {
   fetchChapterLineAudioOverview,
   enqueueLineAudio,
   enqueueAllLineAudios,
+  editLineAudioTaskAudio,
+  detectLineAudioTaskSilences,
   mergeChapterLineAudio,
 } from "./store.js";
 import { fmtDateTime, fmtNumber, incrementNavBadge, renderNav, showPageError, toast } from "./ui.js";
@@ -38,6 +40,8 @@ let lastJsonFindIndex = -1;
 const CHAPTER_FONT_SIZE_KEY = "ai_novel_reader_font_size";
 const JSON_VIEW_FONT_SIZE_KEY = "ai_novel_json_view_font_size";
 const LINE_AUDIO_REFRESH_INTERVAL_KEY = "ai_novel_line_audio_refresh_interval";
+const LAST_CHAPTER_KEY_PREFIX = "ai_novel_last_chapter";
+const LAST_LINE_AUDIO_ROW_KEY_PREFIX = "ai_novel_last_line_audio_row";
 const LINE_AUDIO_REFRESH_INTERVALS = new Set([0, 5, 20, 60]);
 let jsonAutosaveTimerId = null;
 let jsonAutosaveSaving = false;
@@ -55,6 +59,21 @@ let editingLineIndex = -1;
 let editingLineOriginalText = "";
 let lineAudioRefreshTimerId = null;
 let lineAudioRefreshIntervalSeconds = getSavedLineAudioRefreshInterval();
+let lineAudioEditorWaveSurfer = null;
+let lineAudioEditorRegions = null;
+let lineAudioEditorRegion = null;
+let lineAudioEditorDeleteRegions = [];
+let lineAudioEditorSelectionPlaying = false;
+let lineAudioEditorTaskId = 0;
+let lineAudioEditorLineIndex = -1;
+let lineAudioEditorReady = false;
+let lineAudioEditorDetectToken = 0;
+let lineAudioEditorSpaceKeyHandler = null;
+let activeLineAudioRowIndex = -1;
+let lineAudioSilenceMarks = new Map();
+let lineAudioBatchProcessingIndex = -1;
+let lineAudioBatchBusy = false;
+let waveSurferModulesPromise = null;
 
 // 角色列表状态
 let chapterRoles = [];
@@ -157,6 +176,41 @@ function saveLineAudioRefreshInterval(value) {
   const next = Number(value || 0);
   lineAudioRefreshIntervalSeconds = LINE_AUDIO_REFRESH_INTERVALS.has(next) ? next : 5;
   localStorage.setItem(LINE_AUDIO_REFRESH_INTERVAL_KEY, String(lineAudioRefreshIntervalSeconds));
+}
+
+function getLastChapterKey(novelId = activeNovel?.id) {
+  return novelId ? `${LAST_CHAPTER_KEY_PREFIX}_${Number(novelId)}` : "";
+}
+
+function getSavedLastChapterNum(novelId = activeNovel?.id) {
+  const key = getLastChapterKey(novelId);
+  if (!key) return null;
+  const value = Number(localStorage.getItem(key) || 0);
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+function saveLastChapterNum(chapterNum) {
+  const key = getLastChapterKey();
+  const value = Number(chapterNum || 0);
+  if (key && value > 0) localStorage.setItem(key, String(value));
+}
+
+function getLastLineAudioRowKey() {
+  if (!activeNovel?.id || !activeChapterNum) return "";
+  return `${LAST_LINE_AUDIO_ROW_KEY_PREFIX}_${Number(activeNovel.id)}_${Number(activeChapterNum)}`;
+}
+
+function getSavedLastLineAudioRowIndex() {
+  const key = getLastLineAudioRowKey();
+  if (!key) return -1;
+  const value = Number(localStorage.getItem(key) || -1);
+  return Number.isFinite(value) && value >= 0 ? value : -1;
+}
+
+function saveLastLineAudioRowIndex(lineIndex) {
+  const key = getLastLineAudioRowKey();
+  const value = Number(lineIndex);
+  if (key && value >= 0) localStorage.setItem(key, String(value));
 }
 
 function syncLineAudioRefreshSelect() {
@@ -355,6 +409,7 @@ function refreshChapterAudioState(detail) {
 async function loadChapter(chapterNum) {
   if (!activeNovel) return;
   activeChapterNum = chapterNum;
+  saveLastChapterNum(chapterNum);
   resetChapterJsonCache();
   try {
     const detail = await fetchChapterDetail(activeNovel.id, chapterNum);
@@ -887,7 +942,10 @@ async function refreshChapters() {
     return;
   }
   if (!chapterState.some((x) => x.chapterNum === activeChapterNum)) {
-    activeChapterNum = chapterState[0].chapterNum;
+    const savedChapterNum = getSavedLastChapterNum();
+    activeChapterNum = chapterState.some((x) => x.chapterNum === savedChapterNum)
+      ? savedChapterNum
+      : chapterState[0].chapterNum;
   }
   renderChapterList();
   updateChapterNavButtons();
@@ -1121,6 +1179,7 @@ function bindActions() {
     setActiveNovelId(id);
     activeNovel = allNovels.find((n) => Number(n.id) === id) || null;
     if (!activeNovel) return;
+    activeChapterNum = null;
     setHeader(activeNovel);
     await refreshChapters();
     toast(`${t("common.view")}: ${activeNovel.name}`);
@@ -1217,6 +1276,14 @@ function bindActions() {
     window.open(url, "_blank");
   });
 
+  document.getElementById("detectAllLineAudioSilencesBtn")?.addEventListener("click", async () => {
+    await detectAllLineAudioSilences();
+  });
+
+  document.getElementById("removeAllLineAudioMarkedSegmentsBtn")?.addEventListener("click", async () => {
+    await removeAllLineAudioMarkedSegments();
+  });
+
   document.getElementById("lineRoleFilter")?.addEventListener("change", (event) => {
     activeLineRole = String(event.target.value || "__all");
     lineSearchIndex = -1;
@@ -1296,6 +1363,37 @@ function bindActions() {
     editingLineIndex = -1;
     editingLineOriginalText = "";
   });
+
+  document.getElementById("lineAudioEditorDialog")?.addEventListener("close", () => {
+    destroyLineAudioEditor();
+  });
+
+  document.getElementById("lineAudioEditorDialog")?.addEventListener("keydown", async (event) => {
+    await handleLineAudioEditorKeydown(event);
+  });
+
+  document.getElementById("lineAudioEditorPlayBtn")?.addEventListener("click", () => {
+    playLineAudioEditorSelection();
+  });
+
+  document.getElementById("lineAudioEditorSaveBtn")?.addEventListener("click", async () => {
+    await saveLineAudioEditorSelection();
+  });
+
+  document.getElementById("lineAudioEditorMarkDeleteBtn")?.addEventListener("click", () => {
+    markLineAudioEditorDeleteRegion();
+  });
+
+  document.getElementById("lineAudioEditorClearDeleteBtn")?.addEventListener("click", () => {
+    clearLineAudioEditorDeleteRegions();
+  });
+
+  document.getElementById("lineAudioEditorRemoveSaveBtn")?.addEventListener("click", async () => {
+    await saveLineAudioEditorDeleteRegions();
+  });
+
+  document.getElementById("lineAudioEditorStart")?.addEventListener("change", updateLineAudioEditorRegionFromInputs);
+  document.getElementById("lineAudioEditorEnd")?.addEventListener("change", updateLineAudioEditorRegionFromInputs);
 
   const player = document.getElementById("chapterAudioPlayer");
   const duration = document.getElementById("chapterAudioDuration");
@@ -1542,6 +1640,31 @@ function getLineAudioViewState(entry) {
   return { statusText, statusClass, disabled, hasAudio, src };
 }
 
+function getLineAudioSilenceMark(lineIndex) {
+  return lineAudioSilenceMarks.get(Number(lineIndex)) || null;
+}
+
+function getLineAudioSilenceMarkCount(lineIndex) {
+  const mark = getLineAudioSilenceMark(lineIndex);
+  return Array.isArray(mark?.segments) ? mark.segments.length : 0;
+}
+
+function updateLineAudioMarkedSegmentsBadge() {
+  const badge = document.getElementById("removeAllLineAudioMarkedSegmentsBadge");
+  if (!badge) return;
+  const count = Array.from(lineAudioSilenceMarks.values()).filter(
+    (mark) => Array.isArray(mark?.segments) && mark.segments.length,
+  ).length;
+  badge.textContent = String(count);
+  badge.classList.toggle("hidden", count <= 0);
+}
+
+function renderLineAudioEditButton(lineIndex) {
+  const count = getLineAudioSilenceMarkCount(lineIndex);
+  const badge = count ? `<span class="line-audio-edit-badge">${count}</span>` : "";
+  return `<button class="ghost-btn btn-sm edit-line-audio-btn" data-line-index="${lineIndex}" type="button">编辑音频${badge}</button>`;
+}
+
 function getFilteredLinePreviewRows() {
   return linePreviewRows.filter((row) => {
     if (activeLineRole !== "__all" && row.roleName !== activeLineRole) {
@@ -1690,6 +1813,7 @@ function updateLineAudioRow(lineIndex) {
       <audio controls preload="metadata" src="${escapeHtml(view.src)}"></audio>
       <span class="juben-line-duration${anomaly.abnormal ? " is-anomaly" : ""}">${anomaly.abnormal ? "⚠ " : ""}${escapeHtml(durationText)}</span>
       <span class="${view.statusClass}">${escapeHtml(view.statusText)}</span>
+      ${renderLineAudioEditButton(lineIndex)}
       <button class="ghost-btn btn-sm enqueue-line-btn" data-line-index="${lineIndex}" type="button">生成音频</button>
     `;
   } else {
@@ -1724,11 +1848,16 @@ async function openLineAudioDialog() {
   editingLineIndex = -1;
   editingLineOriginalText = "";
   lineSearchIndex = -1;
+  lineAudioSilenceMarks = new Map();
+  updateLineAudioMarkedSegmentsBadge();
+  clearLineAudioBatchProcessingLine();
+  activeLineAudioRowIndex = getSavedLastLineAudioRowIndex();
   syncLineAudioRefreshSelect();
   syncLineRoleFilterOptions();
   updateLineAudioToolbarState();
   await loadLineAudios();
   document.getElementById("lineAudioDialog")?.showModal();
+  restoreActiveLineAudioRow();
   startLineAudioRefreshLoop();
 }
 
@@ -1810,8 +1939,10 @@ function renderLineAudioTable() {
     const item = document.createElement("div");
     const isEditing = editingLineIndex === row.index;
     const isMatched = matches.some((match) => match.index === row.index);
+    const isActiveLine = activeLineAudioRowIndex === row.index;
+    const isBatchProcessing = lineAudioBatchProcessingIndex === row.index;
     const anomaly = getLineAudioAnomaly(row, entry);
-    item.className = `juben-line${isEditing ? " juben-line-single-editing" : ""}${isMatched ? " juben-line-search-hit" : ""}${anomaly.abnormal ? " juben-line-audio-anomaly" : ""}`;
+    item.className = `juben-line${isEditing ? " juben-line-single-editing" : ""}${isMatched ? " juben-line-search-hit" : ""}${isActiveLine ? " juben-line-active" : ""}${isBatchProcessing ? " juben-line-batch-processing" : ""}${anomaly.abnormal ? " juben-line-audio-anomaly" : ""}`;
     item.title = anomaly.abnormal ? `检测到音频时长异常，可能存在生成失败或尾部静音。${anomaly.reason}。建议重新生成。` : "";
     item.dataset.lineIndex = String(row.index);
 
@@ -1875,6 +2006,7 @@ function renderLineAudioTable() {
         <audio controls preload="metadata" src="${escapeHtml(view.src)}"></audio>
         <span class="juben-line-duration${anomaly.abnormal ? " is-anomaly" : ""}">${anomaly.abnormal ? "⚠ " : ""}${escapeHtml(durationText)}</span>
         <span class="${view.statusClass}">${escapeHtml(view.statusText)}</span>
+        ${renderLineAudioEditButton(row.index)}
         <button class="ghost-btn btn-sm enqueue-line-btn" data-line-index="${row.index}" type="button">生成音频</button>
       `;
     } else {
@@ -1888,12 +2020,576 @@ function renderLineAudioTable() {
   }
 
   root.appendChild(list);
+  bindLineAudioRowActivation(root);
   bindLineAudioButtons(root);
   bindLineEditingEvents(root);
   localizeDocumentText(document);
 }
 
+function setActiveLineAudioRow(lineIndex, options = {}) {
+  const index = Number(lineIndex);
+  if (!Number.isFinite(index) || index < 0) return;
+  activeLineAudioRowIndex = index;
+  saveLastLineAudioRowIndex(index);
+  document.querySelectorAll(".juben-line-active").forEach((el) => {
+    el.classList.remove("juben-line-active");
+  });
+  const target = document.querySelector(`.juben-line[data-line-index="${index}"]`);
+  if (!target) return;
+  target.classList.add("juben-line-active");
+  if (options.scroll) {
+    target.scrollIntoView({ behavior: options.smooth ? "smooth" : "auto", block: "center" });
+  }
+}
+
+function restoreActiveLineAudioRow() {
+  const savedIndex = getSavedLastLineAudioRowIndex();
+  if (savedIndex < 0 || !getLinePreviewRow(savedIndex)) return;
+  activeLineAudioRowIndex = savedIndex;
+  window.setTimeout(() => setActiveLineAudioRow(savedIndex, { scroll: true }), 0);
+}
+
+function bindLineAudioRowActivation(root) {
+  root.querySelectorAll(".juben-line[data-line-index]").forEach((row) => {
+    if (row.dataset.activeBound === "1") return;
+    row.dataset.activeBound = "1";
+    row.addEventListener("click", (event) => {
+      if (event.target.closest("button, audio, input, textarea, select, a")) return;
+      setActiveLineAudioRow(Number(row.dataset.lineIndex || -1));
+    });
+  });
+}
+
+function getLineAudioEditableRows() {
+  return linePreviewRows
+    .map((row) => ({ row, entry: getLineAudioEntry(row.index) }))
+    .filter(({ entry }) => Boolean(entry?.hasAudio && entry?.streamUrl && entry?.task?.id));
+}
+
+function setLineAudioBatchProcessingLine(lineIndex, options = {}) {
+  const previous = lineAudioBatchProcessingIndex;
+  lineAudioBatchProcessingIndex = Number(lineIndex);
+  if (previous >= 0) {
+    document.querySelector(`.juben-line[data-line-index="${previous}"]`)?.classList.remove("juben-line-batch-processing");
+  }
+  const target = document.querySelector(`.juben-line[data-line-index="${lineAudioBatchProcessingIndex}"]`);
+  if (!target) return;
+  target.classList.add("juben-line-batch-processing");
+  if (options.scroll) {
+    target.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+}
+
+function clearLineAudioBatchProcessingLine() {
+  if (lineAudioBatchProcessingIndex >= 0) {
+    document.querySelector(`.juben-line[data-line-index="${lineAudioBatchProcessingIndex}"]`)?.classList.remove("juben-line-batch-processing");
+  }
+  lineAudioBatchProcessingIndex = -1;
+}
+
+function setLineAudioBatchButtonsDisabled(disabled) {
+  lineAudioBatchBusy = Boolean(disabled);
+  document.getElementById("detectAllLineAudioSilencesBtn")?.toggleAttribute("disabled", lineAudioBatchBusy);
+  document.getElementById("removeAllLineAudioMarkedSegmentsBtn")?.toggleAttribute("disabled", lineAudioBatchBusy);
+}
+
+async function detectAllLineAudioSilences() {
+  if (!activeNovel || !activeChapterNum || lineAudioBatchBusy) return;
+  const items = getLineAudioEditableRows();
+  if (!items.length) {
+    toast("当前章节没有可检测的台词音频");
+    return;
+  }
+  lineAudioSilenceMarks = new Map();
+  updateLineAudioMarkedSegmentsBadge();
+  setLineAudioBatchButtonsDisabled(true);
+  let markedCount = 0;
+  try {
+    for (const { row, entry } of items) {
+      setLineAudioBatchProcessingLine(row.index, { scroll: true });
+      try {
+        const data = await detectLineAudioTaskSilences(entry.task.id, { noiseDb: "-45dB", minDuration: 1.2 });
+        const duration = Number(entry.durationSeconds || data.durationSeconds || 0);
+        const segments = normalizeLineAudioEditorSegments(
+          reserveLineAudioEditorMiddleSilence(data.segments || [], duration),
+          duration,
+        );
+        if (segments.length) {
+          lineAudioSilenceMarks.set(Number(row.index), {
+            taskId: Number(entry.task.id),
+            segments,
+          });
+          markedCount += 1;
+          updateLineAudioMarkedSegmentsBadge();
+        }
+        updateLineAudioRow(row.index);
+      } catch (err) {
+        console.warn("detect line audio silence failed", row.index, err);
+      }
+    }
+    toast(`已检测 ${items.length} 条台词音频，${markedCount} 条存在长空片段`);
+  } finally {
+    clearLineAudioBatchProcessingLine();
+    setLineAudioBatchButtonsDisabled(false);
+  }
+}
+
+async function removeAllLineAudioMarkedSegments() {
+  if (!activeNovel || !activeChapterNum || lineAudioBatchBusy) return;
+  const items = Array.from(lineAudioSilenceMarks.entries())
+    .map(([lineIndex, mark]) => ({ lineIndex: Number(lineIndex), mark }))
+    .filter(({ mark }) => mark?.taskId && Array.isArray(mark.segments) && mark.segments.length);
+  if (!items.length) {
+    toast("当前没有已标记的音频片段");
+    return;
+  }
+  if (!window.confirm(`确定删除 ${items.length} 条台词音频中的已标记片段吗？`)) return;
+  setLineAudioBatchButtonsDisabled(true);
+  let editedCount = 0;
+  try {
+    for (const item of items) {
+      setLineAudioBatchProcessingLine(item.lineIndex, { scroll: true });
+      try {
+        await editLineAudioTaskAudio(item.mark.taskId, {
+          mode: "remove",
+          segments: item.mark.segments,
+        });
+        lineAudioSilenceMarks.delete(item.lineIndex);
+        updateLineAudioMarkedSegmentsBadge();
+        editedCount += 1;
+        await loadLineAudios({ silent: true, partialLineIndex: item.lineIndex });
+        setLineAudioBatchProcessingLine(item.lineIndex, { scroll: false });
+      } catch (err) {
+        toast(`第 ${item.lineIndex + 1} 行处理失败: ${err.message || "未知错误"}`);
+      }
+      updateLineAudioRow(item.lineIndex);
+    }
+    await updateChapterActionWarnings();
+    toast(`已删除 ${editedCount} 条台词音频的标记片段`);
+  } finally {
+    clearLineAudioBatchProcessingLine();
+    setLineAudioBatchButtonsDisabled(false);
+  }
+}
+
+async function loadWaveSurferModules() {
+  if (!waveSurferModulesPromise) {
+    waveSurferModulesPromise = Promise.all([
+      import("https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.esm.js"),
+      import("https://unpkg.com/wavesurfer.js@7/dist/plugins/regions.esm.js"),
+    ]).then(([waveSurferModule, regionsModule]) => ({
+      WaveSurfer: waveSurferModule.default,
+      RegionsPlugin: regionsModule.default,
+    }));
+  }
+  return waveSurferModulesPromise;
+}
+
+function destroyLineAudioEditor() {
+  unbindLineAudioEditorSpaceKey();
+  if (lineAudioEditorWaveSurfer) {
+    lineAudioEditorWaveSurfer.destroy();
+  }
+  lineAudioEditorWaveSurfer = null;
+  lineAudioEditorRegions = null;
+  lineAudioEditorRegion = null;
+  lineAudioEditorDeleteRegions = [];
+  lineAudioEditorSelectionPlaying = false;
+  lineAudioEditorTaskId = 0;
+  lineAudioEditorLineIndex = -1;
+  lineAudioEditorReady = false;
+  lineAudioEditorDetectToken += 1;
+  const playBtn = document.getElementById("lineAudioEditorPlayBtn");
+  if (playBtn) playBtn.textContent = "播放选中";
+}
+
+function shouldIgnoreLineAudioEditorShortcut(event) {
+  const tagName = String(event.target?.tagName || "").toLowerCase();
+  return ["input", "textarea", "select", "button"].includes(tagName) || Boolean(event.target?.isContentEditable);
+}
+
+function bindLineAudioEditorSpaceKey() {
+  unbindLineAudioEditorSpaceKey();
+  lineAudioEditorSpaceKeyHandler = (event) => {
+    const dialog = document.getElementById("lineAudioEditorDialog");
+    if (!dialog?.open || event.code !== "Space" || shouldIgnoreLineAudioEditorShortcut(event)) return;
+    event.preventDefault();
+    playLineAudioEditorSelection();
+  };
+  document.addEventListener("keydown", lineAudioEditorSpaceKeyHandler);
+}
+
+function unbindLineAudioEditorSpaceKey() {
+  if (!lineAudioEditorSpaceKeyHandler) return;
+  document.removeEventListener("keydown", lineAudioEditorSpaceKeyHandler);
+  lineAudioEditorSpaceKeyHandler = null;
+}
+
+function getLineAudioEditorSelection() {
+  const start = Number(document.getElementById("lineAudioEditorStart")?.value || 0);
+  const end = Number(document.getElementById("lineAudioEditorEnd")?.value || 0);
+  return { start, end };
+}
+
+function syncLineAudioEditorInputs(start, end) {
+  const startInput = document.getElementById("lineAudioEditorStart");
+  const endInput = document.getElementById("lineAudioEditorEnd");
+  if (startInput) startInput.value = Number(start || 0).toFixed(1);
+  if (endInput) endInput.value = Number(end || 0).toFixed(1);
+}
+
+function updateLineAudioEditorRegionFromInputs() {
+  if (!lineAudioEditorReady || !lineAudioEditorRegions || !lineAudioEditorWaveSurfer) return;
+  const duration = lineAudioEditorWaveSurfer.getDuration() || 0;
+  let { start, end } = getLineAudioEditorSelection();
+  start = Math.max(0, Math.min(start, Math.max(0, duration - 0.05)));
+  end = Math.max(start + 0.05, Math.min(end, duration));
+  syncLineAudioEditorInputs(start, end);
+  if (lineAudioEditorRegion?.setOptions) {
+    lineAudioEditorRegion.setOptions({ start, end });
+    return;
+  }
+  lineAudioEditorRegions.clearRegions?.();
+  lineAudioEditorRegion = lineAudioEditorRegions.addRegion({
+    start,
+    end,
+    color: "rgba(168, 82, 36, 0.24)",
+    drag: true,
+    resize: true,
+  });
+}
+
+function normalizeLineAudioEditorSegments(segments, duration = 0) {
+  const maxDuration = Math.max(0, Number(duration || 0));
+  return segments
+    .map((segment) => ({
+      start: Math.max(0, Math.min(Number(segment.start || 0), maxDuration)),
+      end: Math.max(0, Math.min(Number(segment.end || 0), maxDuration)),
+    }))
+    .filter((segment) => segment.end - segment.start >= 0.05)
+    .sort((a, b) => a.start - b.start)
+    .reduce((items, segment) => {
+      const last = items[items.length - 1];
+      if (last && segment.start <= last.end + 0.02) {
+        last.end = Math.max(last.end, segment.end);
+      } else {
+        items.push({ ...segment });
+      }
+      return items;
+    }, []);
+}
+
+function reserveLineAudioEditorMiddleSilence(segments, duration = 0) {
+  const maxDuration = Math.max(0, Number(duration || 0));
+  const reserveSeconds = 0.4;
+  return segments.map((segment) => {
+    const start = Number(segment.start || 0);
+    const end = Number(segment.end || 0);
+    if (start <= 0.05 || end >= maxDuration - 0.05 || end - start <= reserveSeconds + 0.05) {
+      return segment;
+    }
+    return { ...segment, end: end - reserveSeconds };
+  });
+}
+
+function getLineAudioEditorDeleteSegments() {
+  const duration = lineAudioEditorWaveSurfer?.getDuration?.() || 0;
+  return normalizeLineAudioEditorSegments(
+    lineAudioEditorDeleteRegions.map((region) => ({ start: region.start, end: region.end })),
+    duration,
+  );
+}
+
+function updateLineAudioEditorDeleteSummary() {
+  const summary = document.getElementById("lineAudioEditorDeleteSummary");
+  if (!summary) return;
+  const segments = getLineAudioEditorDeleteSegments();
+  if (!segments.length) {
+    summary.textContent = "拖动波形区域选择片段。可保留选中，也可标记多个删除片段后统一保存。";
+    return;
+  }
+  const text = segments
+    .map((segment, index) => `${index + 1}. ${segment.start.toFixed(1)}-${segment.end.toFixed(1)}秒`)
+    .join("；");
+  summary.textContent = `已标记删除 ${segments.length} 段：${text}`;
+}
+
+function addLineAudioEditorDeleteRegion(start, end) {
+  if (!lineAudioEditorReady || !lineAudioEditorRegions) return false;
+  if (end <= start || end - start < 0.05) {
+    return false;
+  }
+  const region = lineAudioEditorRegions.addRegion({
+    start,
+    end,
+    color: "rgba(168, 54, 47, 0.28)",
+    drag: true,
+    resize: true,
+  });
+  lineAudioEditorDeleteRegions.push(region);
+  region.on?.("remove", () => {
+    lineAudioEditorDeleteRegions = lineAudioEditorDeleteRegions.filter((item) => item !== region);
+    updateLineAudioEditorDeleteSummary();
+  });
+  updateLineAudioEditorDeleteSummary();
+  return true;
+}
+
+function markLineAudioEditorDeleteRegion() {
+  if (!lineAudioEditorReady || !lineAudioEditorRegion) return;
+  const { start, end } = getLineAudioEditorSelection();
+  if (!addLineAudioEditorDeleteRegion(start, end)) {
+    toast("请选择有效的音频片段");
+  }
+}
+
+function clearLineAudioEditorDeleteRegions() {
+  for (const region of lineAudioEditorDeleteRegions) {
+    region.remove?.();
+  }
+  lineAudioEditorDeleteRegions = [];
+  updateLineAudioEditorDeleteSummary();
+}
+
+function getNavigableLineAudioIndexes() {
+  return getFilteredLinePreviewRows()
+    .filter((row) => {
+      const entry = getLineAudioEntry(row.index);
+      return Boolean(entry?.hasAudio && entry?.streamUrl && entry?.task?.id);
+    })
+    .map((row) => Number(row.index));
+}
+
+async function navigateLineAudioEditor(direction) {
+  if (!lineAudioEditorTaskId || lineAudioEditorLineIndex < 0) return;
+  const indexes = getNavigableLineAudioIndexes();
+  if (!indexes.length) return;
+  const current = Number(lineAudioEditorLineIndex);
+  const currentPosition = indexes.indexOf(current);
+  let targetIndex = null;
+  if (direction < 0) {
+    targetIndex = currentPosition >= 0 ? indexes[currentPosition - 1] : indexes.filter((index) => index < current).pop();
+  } else {
+    targetIndex = currentPosition >= 0 ? indexes[currentPosition + 1] : indexes.find((index) => index > current);
+  }
+  if (targetIndex == null) {
+    toast(direction < 0 ? "已经是上一条台词音频" : "已经是下一条台词音频");
+    return;
+  }
+  await openLineAudioEditor(targetIndex);
+}
+
+async function handleLineAudioEditorKeydown(event) {
+  if (!event || !["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+  if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+  if (shouldIgnoreLineAudioEditorShortcut(event)) return;
+  event.preventDefault();
+  await navigateLineAudioEditor(event.key === "ArrowLeft" ? -1 : 1);
+}
+
+async function autoMarkLineAudioEditorSilences(taskId, token) {
+  const summary = document.getElementById("lineAudioEditorDeleteSummary");
+  if (summary) summary.textContent = "正在用 ffmpeg 检测空白音频...";
+  try {
+    const data = await detectLineAudioTaskSilences(taskId, { noiseDb: "-45dB", minDuration: 1.2 });
+    if (token !== lineAudioEditorDetectToken || taskId !== lineAudioEditorTaskId) return;
+    const duration = lineAudioEditorWaveSurfer?.getDuration?.() || Number(data.durationSeconds || 0);
+    const segments = normalizeLineAudioEditorSegments(
+      reserveLineAudioEditorMiddleSilence(data.segments || [], duration),
+      duration,
+    );
+    if (!segments.length) {
+      updateLineAudioEditorDeleteSummary();
+      return;
+    }
+    clearLineAudioEditorDeleteRegions();
+    for (const segment of segments) {
+      addLineAudioEditorDeleteRegion(segment.start, segment.end);
+    }
+    updateLineAudioEditorDeleteSummary();
+    toast(`已自动标记 ${segments.length} 段空白音频`);
+  } catch (err) {
+    if (token !== lineAudioEditorDetectToken || taskId !== lineAudioEditorTaskId) return;
+    updateLineAudioEditorDeleteSummary();
+    toast(err.message || "自动检测空白音频失败");
+  }
+}
+
+async function openLineAudioEditor(lineIndex) {
+  const entry = getLineAudioEntry(lineIndex);
+  if (!entry?.hasAudio || !entry?.streamUrl || !entry?.task?.id) {
+    toast("当前行没有可编辑的音频");
+    return;
+  }
+  const dialog = document.getElementById("lineAudioEditorDialog");
+  const textEl = document.getElementById("lineAudioEditorText");
+  const durationEl = document.getElementById("lineAudioEditorDuration");
+  const waveEl = document.getElementById("lineAudioWaveform");
+  if (!dialog || !waveEl) return;
+
+  destroyLineAudioEditor();
+  lineAudioEditorTaskId = Number(entry.task.id);
+  lineAudioEditorLineIndex = Number(lineIndex);
+  if (textEl) textEl.textContent = `${String(lineIndex + 1).padStart(3, "0")} ${entry.rawLine || entry.lineText || ""}`;
+  if (durationEl) durationEl.textContent = `时长：${formatLineAudioSeconds(entry.durationSeconds)}`;
+  syncLineAudioEditorInputs(0, Number(entry.durationSeconds || 0));
+  waveEl.textContent = "正在加载波形...";
+  if (!dialog.open) dialog.showModal();
+  bindLineAudioEditorSpaceKey();
+
+  try {
+    const { WaveSurfer, RegionsPlugin } = await loadWaveSurferModules();
+    waveEl.textContent = "";
+    lineAudioEditorRegions = RegionsPlugin.create();
+    lineAudioEditorWaveSurfer = WaveSurfer.create({
+      container: waveEl,
+      waveColor: "#d8b995",
+      progressColor: "#a85224",
+      cursorColor: "#2b2118",
+      height: 140,
+      normalize: true,
+      plugins: [lineAudioEditorRegions],
+    });
+
+    lineAudioEditorRegions.on("region-updated", (region) => {
+      if (region === lineAudioEditorRegion) {
+        syncLineAudioEditorInputs(region.start, region.end);
+      } else if (lineAudioEditorDeleteRegions.includes(region)) {
+        updateLineAudioEditorDeleteSummary();
+      }
+    });
+    lineAudioEditorWaveSurfer.on("pause", () => {
+      lineAudioEditorSelectionPlaying = false;
+      const playBtn = document.getElementById("lineAudioEditorPlayBtn");
+      if (playBtn) playBtn.textContent = "播放选中";
+    });
+    lineAudioEditorWaveSurfer.on("finish", () => {
+      lineAudioEditorSelectionPlaying = false;
+      const playBtn = document.getElementById("lineAudioEditorPlayBtn");
+      if (playBtn) playBtn.textContent = "播放选中";
+    });
+    lineAudioEditorWaveSurfer.on("ready", () => {
+      const duration = lineAudioEditorWaveSurfer.getDuration() || Number(entry.durationSeconds || 0);
+      const detectToken = lineAudioEditorDetectToken;
+      lineAudioEditorReady = true;
+      if (durationEl) durationEl.textContent = `时长：${formatLineAudioSeconds(duration)}`;
+      syncLineAudioEditorInputs(0, duration);
+      lineAudioEditorRegion = lineAudioEditorRegions.addRegion({
+        start: 0,
+        end: duration,
+        color: "rgba(168, 82, 36, 0.24)",
+        drag: true,
+        resize: true,
+      });
+      updateLineAudioEditorDeleteSummary();
+      autoMarkLineAudioEditorSilences(lineAudioEditorTaskId, detectToken);
+    });
+    lineAudioEditorWaveSurfer.on("error", (error) => {
+      toast(error?.message || "音频波形加载失败");
+    });
+    const version = String(entry.task?.updatedAt || entry.lineHash || Date.now());
+    lineAudioEditorWaveSurfer.load(`${entry.streamUrl}?v=${encodeURIComponent(version)}`);
+  } catch (err) {
+    toast(err.message || "音频编辑器加载失败");
+  }
+}
+
+function playLineAudioEditorSelection() {
+  if (!lineAudioEditorWaveSurfer || !lineAudioEditorReady) return;
+  const playBtn = document.getElementById("lineAudioEditorPlayBtn");
+  if (lineAudioEditorSelectionPlaying) {
+    lineAudioEditorWaveSurfer.pause();
+    lineAudioEditorSelectionPlaying = false;
+    if (playBtn) playBtn.textContent = "播放选中";
+    return;
+  }
+  lineAudioEditorSelectionPlaying = true;
+  if (playBtn) playBtn.textContent = "暂停播放";
+  if (lineAudioEditorRegion?.play) {
+    lineAudioEditorRegion.play();
+    return;
+  }
+  const { start, end } = getLineAudioEditorSelection();
+  lineAudioEditorWaveSurfer.play(start, end);
+}
+
+async function saveLineAudioEditorSelection() {
+  if (!lineAudioEditorTaskId) return;
+  const saveBtn = document.getElementById("lineAudioEditorSaveBtn");
+  const lineIndex = lineAudioEditorLineIndex;
+  const { start, end } = getLineAudioEditorSelection();
+  if (end <= start || end - start < 0.05) {
+    toast("请选择有效的音频片段");
+    return;
+  }
+  if (!window.confirm(`确定只保留 ${start.toFixed(1)} 秒到 ${end.toFixed(1)} 秒的音频片段并替换原音频吗？`)) {
+    return;
+  }
+  if (saveBtn) saveBtn.disabled = true;
+  try {
+    const result = await editLineAudioTaskAudio(lineAudioEditorTaskId, {
+      mode: "keep",
+      startSeconds: start,
+      endSeconds: end,
+    });
+    await loadLineAudios({ preserveEditing: true });
+    await updateChapterActionWarnings();
+    await openLineAudioEditor(lineIndex);
+    toast(`音频已保存，时长 ${formatLineAudioSeconds(result.durationSeconds)}`);
+  } catch (err) {
+    toast(err.message || "保存音频失败");
+  } finally {
+    if (saveBtn) saveBtn.disabled = false;
+  }
+}
+
+async function saveLineAudioEditorDeleteRegions() {
+  if (!lineAudioEditorTaskId || !lineAudioEditorWaveSurfer) return;
+  const saveBtn = document.getElementById("lineAudioEditorRemoveSaveBtn");
+  const lineIndex = lineAudioEditorLineIndex;
+  const duration = lineAudioEditorWaveSurfer.getDuration() || 0;
+  const segments = getLineAudioEditorDeleteSegments();
+  if (!segments.length) {
+    toast("请先标记要删除的音频片段");
+    return;
+  }
+  const totalDelete = segments.reduce((sum, segment) => sum + (segment.end - segment.start), 0);
+  if (duration > 0 && duration - totalDelete < 0.05) {
+    toast("不能删除整段音频");
+    return;
+  }
+  const segmentText = segments.map((segment) => `${segment.start.toFixed(1)}-${segment.end.toFixed(1)}秒`).join("，");
+  if (!window.confirm(`确定删除已标记的 ${segments.length} 个片段并替换原音频吗？\n${segmentText}`)) {
+    return;
+  }
+  if (saveBtn) saveBtn.disabled = true;
+  try {
+    const result = await editLineAudioTaskAudio(lineAudioEditorTaskId, {
+      mode: "remove",
+      segments,
+    });
+    await loadLineAudios({ preserveEditing: true });
+    await updateChapterActionWarnings();
+    await openLineAudioEditor(lineIndex);
+    toast(`音频已保存，时长 ${formatLineAudioSeconds(result.durationSeconds)}`);
+  } catch (err) {
+    toast(err.message || "保存音频失败");
+  } finally {
+    if (saveBtn) saveBtn.disabled = false;
+  }
+}
+
 function bindLineAudioButtons(root) {
+  root.querySelectorAll(".edit-line-audio-btn").forEach((btn) => {
+    if (btn.dataset.bound === "1") return;
+    btn.dataset.bound = "1";
+    btn.addEventListener("click", async (event) => {
+      const lineIndex = Number(event.currentTarget.dataset.lineIndex || -1);
+      setActiveLineAudioRow(lineIndex);
+      await openLineAudioEditor(lineIndex);
+    });
+  });
+
   root.querySelectorAll(".enqueue-line-btn").forEach((btn) => {
     if (btn.dataset.bound === "1") return;
     btn.dataset.bound = "1";

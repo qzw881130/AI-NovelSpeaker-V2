@@ -6,6 +6,7 @@ import hashlib
 import json
 import random
 import re
+import shutil
 import subprocess
 import time
 from copy import deepcopy
@@ -1603,6 +1604,273 @@ def prioritize_line_audio_task(task_id: int) -> tuple[bool, str]:
     conn.commit()
     conn.close()
     return True, "prioritized"
+
+
+def edit_line_audio_task_audio(
+    task_id: int,
+    *,
+    mode: str,
+    start_seconds: float,
+    end_seconds: float,
+    segments: list | None = None,
+) -> tuple[bool, str, dict]:
+    """编辑台词音频文件。支持保留选中片段或删除多个片段后替换原文件。"""
+    edit_mode = str(mode or "keep").strip().lower()
+    if edit_mode not in {"keep", "remove"}:
+        return False, "不支持的音频编辑模式", {}
+    start = max(0.0, float(start_seconds or 0))
+    end = max(0.0, float(end_seconds or 0))
+    if edit_mode == "keep" and (end <= start or end - start < 0.05):
+        return False, "请选择有效的音频片段", {}
+
+    conn = db_conn()
+    row = conn.execute(
+        "SELECT id, status, downloaded_file_path FROM line_audio_tasks WHERE id=?",
+        (task_id,),
+    ).fetchone()
+    conn.close()
+    if not row:
+        return False, "任务不存在", {}
+    if str(row["status"] or "") != "completed":
+        return False, "只有已完成任务可以编辑音频", {}
+    rel_path = str(row["downloaded_file_path"] or "").strip()
+    if not rel_path:
+        return False, "任务没有可编辑的音频文件", {}
+
+    audio_path = (ROOT_DIR / rel_path).resolve()
+    root_resolved = ROOT_DIR.resolve()
+    if root_resolved not in audio_path.parents and audio_path != root_resolved:
+        return False, "无效的音频路径", {}
+    if not audio_path.exists() or not audio_path.is_file():
+        return False, "音频文件不存在", {}
+
+    original_duration = float(probe_audio_duration_seconds(audio_path))
+    if original_duration <= 0:
+        return False, "无法读取音频时长", {}
+    if edit_mode == "keep":
+        if start >= original_duration:
+            return False, "片段开始时间超出音频时长", {}
+        end = min(end, original_duration)
+        if end <= start or end - start < 0.05:
+            return False, "请选择有效的音频片段", {}
+        ffmpeg_cmd = [
+            "ffmpeg",
+            "-y",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-ss",
+            f"{start:.3f}",
+            "-to",
+            f"{end:.3f}",
+            "-i",
+            str(audio_path),
+            "-c:a",
+            "flac",
+        ]
+    else:
+        raw_segments = segments or []
+        delete_segments: list[dict[str, float]] = []
+        for item in raw_segments:
+            if not isinstance(item, dict):
+                continue
+            try:
+                segment_start = max(0.0, min(float(item.get("start") or 0), original_duration))
+                segment_end = max(0.0, min(float(item.get("end") or 0), original_duration))
+            except (TypeError, ValueError):
+                continue
+            if segment_end - segment_start >= 0.05:
+                delete_segments.append({"start": segment_start, "end": segment_end})
+        delete_segments.sort(key=lambda item: item["start"])
+        normalized_segments: list[dict[str, float]] = []
+        for item in delete_segments:
+            if normalized_segments and item["start"] <= normalized_segments[-1]["end"] + 0.02:
+                normalized_segments[-1]["end"] = max(normalized_segments[-1]["end"], item["end"])
+            else:
+                normalized_segments.append(dict(item))
+        if not normalized_segments:
+            return False, "请先标记要删除的音频片段", {}
+
+        keep_segments: list[dict[str, float]] = []
+        cursor = 0.0
+        for item in normalized_segments:
+            if item["start"] - cursor >= 0.05:
+                keep_segments.append({"start": cursor, "end": item["start"]})
+            cursor = max(cursor, item["end"])
+        if original_duration - cursor >= 0.05:
+            keep_segments.append({"start": cursor, "end": original_duration})
+        if not keep_segments:
+            return False, "不能删除整段音频", {}
+        if len(keep_segments) == 1:
+            keep = keep_segments[0]
+            ffmpeg_cmd = [
+                "ffmpeg",
+                "-y",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-ss",
+                f"{keep['start']:.3f}",
+                "-to",
+                f"{keep['end']:.3f}",
+                "-i",
+                str(audio_path),
+                "-c:a",
+                "flac",
+            ]
+        else:
+            filter_parts = []
+            concat_inputs = []
+            for index, keep in enumerate(keep_segments):
+                label = f"a{index}"
+                filter_parts.append(
+                    f"[0:a]atrim=start={keep['start']:.3f}:end={keep['end']:.3f},asetpts=PTS-STARTPTS[{label}]"
+                )
+                concat_inputs.append(f"[{label}]")
+            filter_parts.append(
+                f"{''.join(concat_inputs)}concat=n={len(keep_segments)}:v=0:a=1[outa]"
+            )
+            ffmpeg_cmd = [
+                "ffmpeg",
+                "-y",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-i",
+                str(audio_path),
+                "-filter_complex",
+                ";".join(filter_parts),
+                "-map",
+                "[outa]",
+                "-c:a",
+                "flac",
+            ]
+
+    tmp_path = audio_path.with_name(f"{audio_path.stem}.edit-tmp{audio_path.suffix}")
+    try:
+        subprocess.run(
+            [*ffmpeg_cmd, str(tmp_path)],
+            check=True,
+            capture_output=True,
+        )
+        if not tmp_path.exists() or tmp_path.stat().st_size <= 0:
+            return False, "音频编辑输出为空", {}
+        new_duration = round(float(probe_audio_duration_seconds(tmp_path)), 1)
+        if new_duration <= 0:
+            return False, "无法读取编辑后的音频时长", {}
+        shutil.move(str(tmp_path), str(audio_path))
+        conn = db_conn()
+        conn.execute(
+            """
+            UPDATE line_audio_tasks
+            SET duration_seconds=?, updated_at=CURRENT_TIMESTAMP
+            WHERE id=?
+            """,
+            (new_duration, task_id),
+        )
+        conn.commit()
+        conn.close()
+        return True, "edited", {"durationSeconds": new_duration}
+    except subprocess.CalledProcessError as exc:
+        error_text = (exc.stderr or b"").decode("utf-8", errors="ignore").strip()
+        return False, error_text or "ffmpeg 音频编辑失败", {}
+    finally:
+        if tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
+
+
+def detect_line_audio_task_silences(
+    task_id: int, *, noise_db: str = "-45dB", min_duration: float = 1.2
+) -> tuple[bool, str, dict]:
+    """使用 ffmpeg silencedetect 检测台词音频中的静音片段。"""
+    duration = max(0.1, float(min_duration or 1.2))
+    noise = str(noise_db or "-45dB").strip() or "-45dB"
+    if not re.fullmatch(r"-?\d+(?:\.\d+)?dB", noise):
+        return False, "invalid silence noise threshold", {}
+
+    conn = db_conn()
+    row = conn.execute(
+        "SELECT id, status, downloaded_file_path FROM line_audio_tasks WHERE id=?",
+        (task_id,),
+    ).fetchone()
+    conn.close()
+    if not row:
+        return False, "任务不存在", {}
+    if str(row["status"] or "") != "completed":
+        return False, "只有已完成任务可以检测静音", {}
+    rel_path = str(row["downloaded_file_path"] or "").strip()
+    if not rel_path:
+        return False, "任务没有可检测的音频文件", {}
+
+    audio_path = (ROOT_DIR / rel_path).resolve()
+    root_resolved = ROOT_DIR.resolve()
+    if root_resolved not in audio_path.parents and audio_path != root_resolved:
+        return False, "无效的音频路径", {}
+    if not audio_path.exists() or not audio_path.is_file():
+        return False, "音频文件不存在", {}
+
+    audio_duration = float(probe_audio_duration_seconds(audio_path))
+    if audio_duration <= 0:
+        return False, "无法读取音频时长", {}
+
+    try:
+        proc = subprocess.run(
+            [
+                "ffmpeg",
+                "-hide_banner",
+                "-nostats",
+                "-i",
+                str(audio_path),
+                "-af",
+                f"silencedetect=noise={noise}:d={duration:.3f}",
+                "-f",
+                "null",
+                "-",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError as exc:
+        return False, f"ffmpeg 静音检测失败: {exc}", {}
+
+    text = "\n".join([proc.stdout or "", proc.stderr or ""])
+    segments: list[dict[str, float]] = []
+    current_start: float | None = None
+    for line in text.splitlines():
+        start_match = re.search(r"silence_start:\s*([0-9.]+)", line)
+        if start_match:
+            current_start = float(start_match.group(1))
+            continue
+        end_match = re.search(r"silence_end:\s*([0-9.]+).*?silence_duration:\s*([0-9.]+)", line)
+        if end_match and current_start is not None:
+            end = float(end_match.group(1))
+            if end - current_start >= duration:
+                segments.append(
+                    {
+                        "start": round(max(0.0, min(current_start, audio_duration)), 3),
+                        "end": round(max(0.0, min(end, audio_duration)), 3),
+                    }
+                )
+            current_start = None
+
+    if current_start is not None and audio_duration - current_start >= duration:
+        segments.append(
+            {
+                "start": round(max(0.0, min(current_start, audio_duration)), 3),
+                "end": round(audio_duration, 3),
+            }
+        )
+
+    return True, "detected", {
+        "segments": segments,
+        "durationSeconds": round(audio_duration, 1),
+        "noiseDb": noise,
+        "minDuration": duration,
+    }
 
 
 def cancel_all_line_audio_tasks(novel_id: int | None = None) -> dict:

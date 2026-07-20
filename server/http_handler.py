@@ -35,6 +35,8 @@ from .line_audio import (
     delete_line_audio_task,
     retry_line_audio_task,
     prioritize_line_audio_task,
+    edit_line_audio_task_audio,
+    detect_line_audio_task_silences,
 )
 from .audio_asr import (
     cancel_chapter_audio_asr_task,
@@ -1502,6 +1504,28 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": "line audio task not found"}, 404)
                 return
             self.send_json({"task": task})
+            return
+
+        m_line_audio_silences = re.match(r"^/api/line-audio-tasks/(\d+)/silences$", route)
+        if m_line_audio_silences:
+            task_id = int(m_line_audio_silences.group(1))
+            query = parse_qs(parsed.query or "")
+            noise_db = str((query.get("noiseDb") or ["-45dB"])[0] or "-45dB").strip()
+            try:
+                min_duration = float((query.get("minDuration") or ["1.2"])[0] or 1.2)
+            except (TypeError, ValueError):
+                self.send_json({"error": "invalid silence min duration"}, 400)
+                return
+            ok, msg, data = detect_line_audio_task_silences(
+                task_id,
+                noise_db=noise_db,
+                min_duration=min_duration,
+            )
+            if not ok:
+                code = 404 if "不存在" in msg or "not found" in msg else 409
+                self.send_json({"error": msg}, code)
+                return
+            self.send_json(data)
             return
 
         m_line_audio_file = re.match(r"^/api/line-audio-tasks/(\d+)/file$", route)
@@ -3026,6 +3050,30 @@ class Handler(BaseHTTPRequestHandler):
                 return
             kick_line_audio_queue_once()
             self.send_json({"status": msg})
+            return
+
+        m_edit_line_audio = re.match(r"^/api/line-audio-tasks/(\d+)/edit-audio$", route)
+        if m_edit_line_audio:
+            task_id = int(m_edit_line_audio.group(1))
+            body = self.read_json()
+            try:
+                start_seconds = float(body.get("startSeconds") or 0)
+                end_seconds = float(body.get("endSeconds") or 0)
+            except (TypeError, ValueError):
+                self.send_json({"error": "invalid audio range"}, 400)
+                return
+            ok, msg, data = edit_line_audio_task_audio(
+                task_id,
+                mode=str(body.get("mode") or "keep"),
+                start_seconds=start_seconds,
+                end_seconds=end_seconds,
+                segments=body.get("segments") if isinstance(body.get("segments"), list) else None,
+            )
+            if not ok:
+                code = 404 if "不存在" in msg or "not found" in msg else 409
+                self.send_json({"error": msg}, code)
+                return
+            self.send_json({"status": msg, **data})
             return
 
         m_merge_audio = re.match(

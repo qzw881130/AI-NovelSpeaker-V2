@@ -902,6 +902,25 @@ async function prioritizeLineAudioTask(taskId) {
   await api(`/api/line-audio-tasks/${Number(taskId)}/prioritize`, { method: "POST", body: "{}" });
 }
 
+async function editLineAudioTaskAudio(taskId, options = {}) {
+  return await api(`/api/line-audio-tasks/${Number(taskId)}/edit-audio`, {
+    method: "POST",
+    body: JSON.stringify({
+      mode: String(options.mode || "keep"),
+      startSeconds: Number(options.startSeconds || 0),
+      endSeconds: Number(options.endSeconds || 0),
+      segments: Array.isArray(options.segments) ? options.segments : [],
+    }),
+  });
+}
+
+async function detectLineAudioTaskSilences(taskId, options = {}) {
+  const noiseDb = String(options.noiseDb || "-45dB");
+  const minDuration = Number(options.minDuration || 1.2);
+  const query = new URLSearchParams({ noiseDb, minDuration: String(minDuration) });
+  return await api(`/api/line-audio-tasks/${Number(taskId)}/silences?${query.toString()}`);
+}
+
 function getLineAudioFileUrl(taskId) {
   return `/api/line-audio-tasks/${Number(taskId)}/file`;
 }
@@ -1058,6 +1077,8 @@ export {
   deleteLineAudioTask,
   retryLineAudioTask,
   prioritizeLineAudioTask,
+  editLineAudioTaskAudio,
+  detectLineAudioTaskSilences,
   getLineAudioFileUrl,
   getMergedAudioUrl,
   // 视频导出

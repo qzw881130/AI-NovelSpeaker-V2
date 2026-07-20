@@ -220,10 +220,39 @@
         </div>
         <menu class="line-audio-footer">
           <span id="lineAudioFilteredCount" class="line-audio-footer-count">筛选 0 条</span>
+          <button id="detectAllLineAudioSilencesBtn" class="ghost-btn" type="button">识别所有台词长空音频</button>
+          <button id="removeAllLineAudioMarkedSegmentsBtn" class="ghost-btn line-audio-marked-remove-btn" type="button">删除所有音频标记片段<span id="removeAllLineAudioMarkedSegmentsBadge" class="line-audio-edit-badge hidden">0</span></button>
           <button id="mergeAdjacentSameRoleLinesBtn" class="ghost-btn" type="button">合并同角色相邻台词</button>
           <button id="enqueueFilteredLineAudioBtn" class="ghost-btn" type="button">批量生成当前所列</button>
           <button id="enqueueRemainingLineAudioBtn" class="ghost-btn" type="button">批量生成剩余</button>
           <button id="enqueueAllLineAudioBtn" class="primary-btn" type="button">批量生成所有</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <dialog id="lineAudioEditorDialog" class="modal modal-large">
+      <form method="dialog" class="line-audio-editor-form">
+        <button class="dialog-close-btn" type="submit" aria-label="关闭">×</button>
+        <h3>编辑台词音频</h3>
+        <p id="lineAudioEditorText" class="line-audio-editor-text"></p>
+        <div id="lineAudioWaveform" class="line-audio-waveform"></div>
+        <div class="line-audio-editor-time-row">
+          <span id="lineAudioEditorDuration" class="meta">时长：-</span>
+          <label>开始
+            <input id="lineAudioEditorStart" type="number" min="0" step="0.1" value="0" />
+          </label>
+          <label>结束
+            <input id="lineAudioEditorEnd" type="number" min="0" step="0.1" value="0" />
+          </label>
+        </div>
+        <p id="lineAudioEditorDeleteSummary" class="caption">拖动波形区域选择片段。可保留选中，也可标记多个删除片段后统一保存。</p>
+        <menu>
+          <button id="lineAudioEditorPlayBtn" class="ghost-btn" type="button">播放选中</button>
+          <button id="lineAudioEditorMarkDeleteBtn" class="ghost-btn" type="button">标记删除片段</button>
+          <button id="lineAudioEditorClearDeleteBtn" class="ghost-btn" type="button">清空删除片段</button>
+          <button id="lineAudioEditorSaveBtn" class="primary-btn" type="button">保留选中并保存</button>
+          <button id="lineAudioEditorRemoveSaveBtn" class="primary-btn" type="button">删除标记片段并保存</button>
+          <button class="ghost-btn" type="submit">取消</button>
         </menu>
       </form>
     </dialog>
