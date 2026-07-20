@@ -1,0 +1,401 @@
+{
+  "id": "08b84dd1-2564-4222-a1fa-5d97d28323e9",
+  "revision": 0,
+  "last_node_id": 17,
+  "last_link_id": 23,
+  "nodes": [
+    {
+      "id": 8,
+      "type": "MarkdownNote",
+      "pos": [
+        -261.6233492243424,
+        4485.78503428805
+      ],
+      "size": [
+        489.527452465064,
+        1270.28991610729
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "title": "#8 ‎",
+      "properties": {
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "version": "7.8",
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "## Moss_TTS-ComfyUI Model Requirements\n\n**VRAM:** MOSS-TTS Local Transformer v1.5 BF16 stages roughly **8.7 GB** for the main model and **4.0 GB** for MOSS-Audio-Tokenizer-v2. With AIMDO DynamicVRAM, pages move into VRAM as the model runs, so active VRAM can grow during generation / codec encode-decode. Leave extra VRAM for KV cache, Whisper ASR, ComfyUI, and other loaded models.\n\nMoss_TTS-ComfyUI has **ComfyUI / AIMDO model-management integration** with unload support, real tensor registration, and cleanup/reload when model, dtype, or attention settings change.\n\n**MOSS-TTS main TTS model**\n\n- 🤗 [OpenMOSS-Team/MOSS-TTS-Local-Transformer-v1.5 — model.safetensors](https://huggingface.co/OpenMOSS-Team/MOSS-TTS-Local-Transformer-v1.5/resolve/main/model.safetensors?download=true)\n\n**Required audio tokenizer**\n\n- 🤗 [OpenMOSS-Team/MOSS-Audio-Tokenizer-v2](https://huggingface.co/OpenMOSS-Team/MOSS-Audio-Tokenizer-v2)\n\n**Optional Whisper ASR for continuation transcripts**\n\n- 🤗 [openai/whisper-large-v3-turbo](https://huggingface.co/openai/whisper-large-v3-turbo)\n- 🤗 [openai/whisper-large-v3](https://huggingface.co/openai/whisper-large-v3)\n- 🤗 [openai/whisper-medium](https://huggingface.co/openai/whisper-medium)\n- 🤗 [openai/whisper-small](https://huggingface.co/openai/whisper-small)\n- 🤗 [openai/whisper-tiny](https://huggingface.co/openai/whisper-tiny)\n\n**Required model assets**\n\n- `moss-tts-local-transformer-v1.5/model.safetensors`\n- `moss-audio-tokenizer-v2/model.safetensors.index.json`\n- `moss-audio-tokenizer-v2/model-00001-of-00003.safetensors`\n- `moss-audio-tokenizer-v2/model-00002-of-00003.safetensors`\n- `moss-audio-tokenizer-v2/model-00003-of-00003.safetensors`\n\nAssets are downloaded from:\n\n- 🤗 [OpenMOSS-Team/MOSS-TTS-Local-Transformer-v1.5](https://huggingface.co/OpenMOSS-Team/MOSS-TTS-Local-Transformer-v1.5)\n\nand\n\n- 🤗 [OpenMOSS-Team/MOSS-Audio-Tokenizer-v2](https://huggingface.co/OpenMOSS-Team/MOSS-Audio-Tokenizer-v2)\n\n## Model Storage Location\n\n~~~text\nComfyUI/models/mosstts/\n├── moss-tts-local-transformer-v1.5/\n│   └── model.safetensors\n└── moss-audio-tokenizer-v2/\n    ├── model.safetensors.index.json\n    ├── model-00001-of-00003.safetensors\n    ├── model-00002-of-00003.safetensors\n    └── model-00003-of-00003.safetensors\n~~~\n\nOptional Whisper ASR models are stored under:\n\n~~~text\nComfyUI/models/audio_encoders/\n└── openai_whisper-large-v3-turbo/\n    ├── config.json\n    ├── generation_config.json\n    ├── model.safetensors\n    ├── preprocessor_config.json\n    ├── tokenizer.json\n    └── tokenizer_config.json\n~~~\n\nIf `download_if_missing` is enabled, missing model files / tokenizer files are downloaded automatically.\n\nThe loader uses bundled architecture, config, processor, and tokenizer assets from:\n\n~~~text\nComfyUI/custom_nodes/Moss_TTS-ComfyUI/assets/\n├── moss-tts-local-transformer-v1.5/\n└── moss-audio-tokenizer-v2/\n~~~\n\n## Notes\n\n- Use `dtype: auto`, `bf16`, or `fp16`.\n- Use `attention: auto`, `sdpa`, `flash_attention`, or `eager`.\n- `auto` selects FlashAttention when available, otherwise SDPA on CUDA, and eager on CPU.\n- MOSS-TTS v1.5 outputs **48 kHz stereo audio**.\n- Voice cloning uses audio-only reference input and does **not** require a transcript.\n- Speech continuation requires `prefix_audio` plus a matching `prefix_text`.\n- The optional Whisper node can generate `prefix_text` for continuation workflows.\n- Recommended voice reference: **5–30 seconds** of clean, single-speaker speech.\n- MOSS supports inline pause tags such as `[pause 3.2s]`.\n- Supported controls include language tags, duration tokens, Pinyin / IPA pronunciation markup, multilingual synthesis, and code-switching.\n- With AIMDO enabled, RAM usage is expected because AIMDO keeps CPU/host-backed weight storage while faulting active pages into VRAM.\n\n## Links\n\n- [Issues](https://github.com/Saganaki22/Moss_TTS-ComfyUI/issues)\n- [Moss_TTS-ComfyUI](https://github.com/Saganaki22/Moss_TTS-ComfyUI)\n- [MOSS-TTS Local Transformer v1.5 Model Repository](https://huggingface.co/OpenMOSS-Team/MOSS-TTS-Local-Transformer-v1.5)\n- [MOSS-Audio-Tokenizer-v2 Repository](https://huggingface.co/OpenMOSS-Team/MOSS-Audio-Tokenizer-v2)\n- [Official OpenMOSS/MOSS-TTS Repository](https://github.com/OpenMOSS/MOSS-TTS)\n- [MOSS-TTS Technical Report](https://arxiv.org/abs/2603.18090)"
+      ],
+      "color": "#222",
+      "bgcolor": "#000"
+    },
+    {
+      "id": 9,
+      "type": "MarkdownNote",
+      "pos": [
+        235.1218339365258,
+        4487.846986165557
+      ],
+      "size": [
+        530.0349115895274,
+        1265.141957905158
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "title": "#9 ‎",
+      "properties": {
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "version": "7.7",
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "## MOSS-TTS Field Guide\n\nMOSS-TTS uses separate structured fields. Users should not put everything into `instruction`.\n\n| Field | Use For | Examples |\n|---|---|---|\n| `text` | Actual words to speak | Dialogue, narration, `[pause 1.2s]`, Pinyin / IPA |\n| `instruction` | Performance / delivery | emotion, pace, accent, narrator style |\n| `quality` | Recording quality | clean studio speech, broadcast quality |\n| `sound_event` | Foreground vocal/audio event | soft laugh, sigh, gasp, breath |\n| `ambient_sound` | Background environment | quiet room tone, soft rain, distant city ambience |\n\n## `quality`\n\nUse for fidelity / cleanliness / recording style.\n\n- clean studio speech\n- high fidelity voice recording\n- broadcast quality narration\n- natural clean speech\n- clear voice recording with minimal noise\n- professional audiobook recording\n- close-mic studio vocal\n\n## `sound_event`\n\nUse for foreground events, especially vocal events.\n\n- soft laugh\n- gentle sigh\n- brief inhale before speaking\n- quiet chuckle\n- small gasp\n- clears throat softly\n- whispered breath\n\n## `ambient_sound`\n\nUse for background environment.\n\n- quiet room tone\n- subtle studio ambience\n- soft rain outside\n- distant city ambience\n- quiet office background\n- gentle cafe ambience\n- faint outdoor wind\n\n## `instruction`\n\nUse for how the speaker performs the line.\n\n- Speak in a calm, natural audiobook narrator style.\n- Use a warm conversational tone with medium pacing.\n- Sound excited but still realistic and clear.\n- Read slowly with careful pronunciation.\n- Use a serious documentary narrator delivery.\n- Continue seamlessly from the reference audio with the same speaker style.\n\n## Complete Examples\n\n| Use | `text` | `instruction` | `quality` | `sound_event` | `ambient_sound` |\n|---|---|---|---|---|---|\n| Clean Narration | The door opened slowly, and the room beyond it was filled with pale blue light. | Read as a calm audiobook narrator with gentle suspense. | clean studio speech |  |  |\n| Voice Clone, Natural | Thanks for listening. I will walk you through the setup step by step. | Match the reference speaker naturally with relaxed pacing. | natural clean speech |  | quiet room tone |\n| Emotional Line | I never thought we would make it this far, but here we are. | Speak with gentle relief and quiet emotion. | clean voice recording | soft sigh |  |\n| Atmospheric Scene | I found the letter on the kitchen table just after midnight. | Speak softly, like telling someone a secret. | natural close-mic speech | brief inhale before speaking | soft rain outside |\n\n## Rule Of Thumb\n\n- `text`: spoken words\n- `instruction`: acting / delivery\n- `quality`: recording cleanliness\n- `sound_event`: foreground event\n- `ambient_sound`: background environment\n- Leave unused fields blank."
+      ],
+      "color": "#222",
+      "bgcolor": "#000"
+    },
+    {
+      "id": 1,
+      "type": "MossTTSModelLoader",
+      "pos": [
+        846.7234543563212,
+        4948.550590433545
+      ],
+      "size": [
+        281.9140625,
+        130
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "mosstts_model",
+          "type": "MOSSTTS_MODEL",
+          "links": [
+            18
+          ]
+        }
+      ],
+      "title": "#1 MOSS-TTS Load Model",
+      "properties": {
+        "cnr_id": "Moss_TTS-ComfyUI",
+        "ver": "unknown",
+        "Node name for S&R": "MossTTSModelLoader",
+        "aux_id": "Saganaki22/Moss_TTS-ComfyUI",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {},
+          "version": "7.8"
+        }
+      },
+      "widgets_values": [
+        "MOSS-TTS Local Transformer v1.5 BF16 - OpenMOSS-Team (auto-download)",
+        "auto",
+        "auto",
+        false
+      ]
+    },
+    {
+      "id": 4,
+      "type": "LoadAudio",
+      "pos": [
+        802.3382998863585,
+        5358.891474819321
+      ],
+      "size": [
+        317.5202467558629,
+        136
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "AUDIO",
+          "type": "AUDIO",
+          "links": [
+            3
+          ]
+        }
+      ],
+      "title": "#4 参考音频文件",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.25.0",
+        "Node name for S&R": "LoadAudio",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {},
+          "version": "7.8"
+        }
+      },
+      "widgets_values": [
+        "56eb3a72-cffc-4645-814b-99a03afb9fd4.wav",
+        null,
+        null
+      ]
+    },
+    {
+      "id": 2,
+      "type": "MossTTSVoiceClone",
+      "pos": [
+        1243.8825227900006,
+        4972.153064838285
+      ],
+      "size": [
+        422.8220420398602,
+        760.8362433680522
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "mosstts_model",
+          "type": "MOSSTTS_MODEL",
+          "link": 18
+        },
+        {
+          "name": "reference_audio",
+          "type": "AUDIO",
+          "link": 3
+        },
+        {
+          "name": "text",
+          "type": "STRING",
+          "widget": {
+            "name": "text"
+          },
+          "link": 23
+        }
+      ],
+      "outputs": [
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "links": [
+            13
+          ]
+        }
+      ],
+      "title": "#2 MOSS-TTS Voice Clone",
+      "properties": {
+        "cnr_id": "Moss_TTS-ComfyUI",
+        "ver": "unknown",
+        "Node name for S&R": "MossTTSVoiceClone",
+        "aux_id": "Saganaki22/Moss_TTS-ComfyUI",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {},
+          "version": "7.8"
+        }
+      },
+      "widgets_values": [
+        "I tried being productive today. I made a to-do list, got a coffee, opened my laptop… and then spent 45 minutes researching whether penguins have knees. They do, by the way. So technically, I learned something. That counts as education, not procrastination. Then I cleaned my room by moving everything from the chair to the bed, which means I now have nowhere to sit or sleep. Honestly, I’m thriving. Tomorrow I’ll fix it. Or I’ll research whether bears can use Wi-Fi. Priorities.",
+        "auto",
+        "clean studio speech",
+        0,
+        "",
+        "",
+        "",
+        4096,
+        true,
+        1,
+        1,
+        50,
+        1.7,
+        0.8,
+        25,
+        1,
+        71403494821280,
+        "randomize"
+      ]
+    },
+    {
+      "id": 11,
+      "type": "SaveAudioAdvanced",
+      "pos": [
+        1690.5368160171454,
+        5035.337792929448
+      ],
+      "size": [
+        270,
+        136
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "link": 13
+        }
+      ],
+      "outputs": [
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "links": null
+        }
+      ],
+      "title": "#11 Save Audio (Advanced)",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.25.0",
+        "Node name for S&R": "SaveAudioAdvanced",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {},
+          "version": "7.8"
+        }
+      },
+      "widgets_values": [
+        "audio/ComfyUI",
+        "flac"
+      ]
+    },
+    {
+      "id": 16,
+      "type": "JjkText",
+      "pos": [
+        813.2431352637984,
+        5187.908877700174
+      ],
+      "size": [
+        271.75746117862116,
+        108.15158610350409
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "text",
+          "type": "STRING",
+          "links": [
+            23
+          ]
+        }
+      ],
+      "title": "#16 台词",
+      "properties": {
+        "cnr_id": "ComfyUI-Jjk-Nodes",
+        "ver": "b3c99bb78a99551776b5eab1a820e1cd58f84f31",
+        "Node name for S&R": "JjkText",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {},
+          "version": "7.7"
+        }
+      },
+      "widgets_values": [
+        "霸闻吕布已死，张辽已降，遂亦引本部军投降。操厚赏之"
+      ]
+    }
+  ],
+  "links": [
+    [
+      3,
+      4,
+      0,
+      2,
+      1,
+      "AUDIO"
+    ],
+    [
+      13,
+      2,
+      0,
+      11,
+      0,
+      "AUDIO"
+    ],
+    [
+      18,
+      1,
+      0,
+      2,
+      0,
+      "MOSSTTS_MODEL"
+    ],
+    [
+      23,
+      16,
+      0,
+      2,
+      2,
+      "STRING"
+    ]
+  ],
+  "groups": [
+    {
+      "id": 3,
+      "title": "Voice Clone",
+      "bounding": [
+        1203.1238801772781,
+        4876.930450500237,
+        884.0761202446567,
+        876.8493096149296
+      ],
+      "color": "#3f789e",
+      "flags": {}
+    },
+    {
+      "id": 4,
+      "title": "Model Loader",
+      "bounding": [
+        827.8731521255075,
+        4872.804206727292,
+        301.9140625,
+        210
+      ],
+      "color": "#8A8",
+      "flags": {}
+    },
+    {
+      "id": 5,
+      "title": "ref_audio / ASR",
+      "bounding": [
+        786.2306316550563,
+        5113.726474438444,
+        379.83512854326466,
+        404.66219002958314
+      ],
+      "color": "#b06634",
+      "flags": {}
+    }
+  ],
+  "config": {},
+  "extra": {
+    "ue_links": [],
+    "ds": {
+      "scale": 1.087794927585114,
+      "offset": [
+        -104.04054402063593,
+        -4698.226533173422
+      ]
+    },
+    "links_added_by_ue": [],
+    "frontendVersion": "1.45.19",
+    "VHS_latentpreview": false,
+    "VHS_latentpreviewrate": 0,
+    "VHS_MetadataImage": true,
+    "VHS_KeepIntermediate": true
+  },
+  "version": 0.4
+}

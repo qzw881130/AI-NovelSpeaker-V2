@@ -1,0 +1,84 @@
+{
+  "1": {
+    "inputs": {
+      "model": "MOSS-TTS Local Transformer v1.5 BF16 - OpenMOSS-Team (auto-download)",
+      "dtype": "auto",
+      "attention": "auto",
+      "download_if_missing": false
+    },
+    "class_type": "MossTTSModelLoader",
+    "_meta": {
+      "title": "#1 MOSS-TTS Load Model"
+    }
+  },
+  "2": {
+    "inputs": {
+      "text": [
+        "16",
+        0
+      ],
+      "language": "auto",
+      "instruction": "clean studio speech",
+      "duration_tokens": 0,
+      "quality": "",
+      "sound_event": "",
+      "ambient_sound": "",
+      "max_new_tokens": 4096,
+      "do_sample": true,
+      "text_temperature": 1,
+      "text_top_p": 1,
+      "text_top_k": 50,
+      "audio_temperature": 1.7,
+      "audio_top_p": 0.8,
+      "audio_top_k": 25,
+      "audio_repetition_penalty": 1,
+      "seed": 71403494821280,
+      "mosstts_model": [
+        "1",
+        0
+      ],
+      "reference_audio": [
+        "4",
+        0
+      ]
+    },
+    "class_type": "MossTTSVoiceClone",
+    "_meta": {
+      "title": "#2 MOSS-TTS Voice Clone"
+    }
+  },
+  "4": {
+    "inputs": {
+      "audio": "56eb3a72-cffc-4645-814b-99a03afb9fd4.wav",
+      "audioUI": "/api/view?filename=56eb3a72-cffc-4645-814b-99a03afb9fd4.wav&type=input&subfolder=&rand=0.9708643970010715"
+    },
+    "class_type": "LoadAudio",
+    "_meta": {
+      "title": "#4 参考音频文件"
+    }
+  },
+  "11": {
+    "inputs": {
+      "filename_prefix": "audio/ComfyUI",
+      "format": "flac",
+      "audioUI": "/api/view?filename=ComfyUI_00271.flac&type=output&subfolder=audio&rand=0.14930945968176268",
+      "audio": [
+        "2",
+        0
+      ]
+    },
+    "class_type": "SaveAudioAdvanced",
+    "_meta": {
+      "title": "#11 Save Audio (Advanced)"
+    }
+  },
+  "16": {
+    "inputs": {
+      "text": "霸闻吕布已死，张辽已降，遂亦引本部军投降。操厚赏之"
+    },
+    "class_type": "JjkText",
+    "_meta": {
+      "title": "#16 台词"
+    }
+  }
+}
