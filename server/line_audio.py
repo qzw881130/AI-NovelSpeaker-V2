@@ -1491,7 +1491,7 @@ def run_line_audio_queue_once() -> bool:
         SELECT id,scheduled_at
         FROM line_audio_tasks
         WHERE status='pending'
-        ORDER BY COALESCE(queue_priority, 0) DESC, id ASC
+        ORDER BY COALESCE(queue_priority, 0) DESC, chapter_id ASC, line_index ASC, id ASC
         """
     ).fetchall()
     picked_id: int | None = None
@@ -1534,9 +1534,15 @@ def delete_line_audio_task(task_id: int) -> tuple[bool, str]:
         conn.close()
         return False, "任务不存在"
 
-    if str(row["status"]) == "running":
-        conn.close()
-        return False, "无法删除运行中的任务"
+    current_status = str(row["status"] or "").strip()
+    if current_status in {"running", "processing"}:
+        settings = fetch_settings(conn)
+        comfy_url = str(settings.get("comfyUrl") or "").strip()
+        if comfy_url:
+            try:
+                comfy_interrupt_execution(comfy_url)
+            except Exception:
+                pass
 
     conn.execute("DELETE FROM line_audio_tasks WHERE id=?", (task_id,))
     conn.commit()

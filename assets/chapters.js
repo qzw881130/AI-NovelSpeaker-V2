@@ -69,6 +69,7 @@ let lineAudioEditorLineIndex = -1;
 let lineAudioEditorReady = false;
 let lineAudioEditorDetectToken = 0;
 let lineAudioEditorSpaceKeyHandler = null;
+let lineAudioEditorZoom = 0;
 let activeLineAudioRowIndex = -1;
 let lineAudioSilenceMarks = new Map();
 let lineAudioBatchProcessingIndex = -1;
@@ -1270,6 +1271,35 @@ function bindActions() {
     }
   });
 
+  document.getElementById("enqueueNonNarrationLineAudioBtn")?.addEventListener("click", async () => {
+    if (!activeNovel || !activeChapterNum) return;
+    const indexes = getNonNarrationLineIndexesForQueue();
+    if (!indexes.length) {
+      toast(translateText("当前没有可加入队列的非旁白台词"));
+      return;
+    }
+    try {
+      const schedule = getLineAudioQueueSchedule();
+      let queuedCount = 0;
+      for (const lineIndex of indexes) {
+        await enqueueLineAudio(activeNovel.id, activeChapterNum, lineIndex, {
+          scheduledAt: schedule.scheduledAt,
+        });
+        queuedCount += 1;
+      }
+      if (queuedCount > 0) {
+        incrementNavBadge("lineAudio", queuedCount);
+        renderNav();
+      }
+      setStatus(schedule.label);
+      toast(`${translateText("非旁白台词已加入队列")}: ${queuedCount}`);
+      await loadLineAudios();
+      startLineAudioRefreshLoop();
+    } catch (err) {
+      toast(err.message);
+    }
+  });
+
   document.getElementById("mergeLineAudioBtn")?.addEventListener("click", async () => {
     if (!activeNovel || !activeChapterNum) return;
     const url = `./novel-download.html?novelId=${encodeURIComponent(activeNovel.id)}`;
@@ -1394,6 +1424,18 @@ function bindActions() {
 
   document.getElementById("lineAudioEditorStart")?.addEventListener("change", updateLineAudioEditorRegionFromInputs);
   document.getElementById("lineAudioEditorEnd")?.addEventListener("change", updateLineAudioEditorRegionFromInputs);
+  document.getElementById("lineAudioEditorZoomRange")?.addEventListener("input", (event) => {
+    setLineAudioEditorZoom(Number(event.target.value || 0));
+  });
+  document.getElementById("lineAudioEditorZoomOutBtn")?.addEventListener("click", () => {
+    setLineAudioEditorZoom(lineAudioEditorZoom - 20);
+  });
+  document.getElementById("lineAudioEditorZoomInBtn")?.addEventListener("click", () => {
+    setLineAudioEditorZoom(lineAudioEditorZoom + 20);
+  });
+  document.getElementById("lineAudioEditorZoomResetBtn")?.addEventListener("click", () => {
+    setLineAudioEditorZoom(0);
+  });
 
   const player = document.getElementById("chapterAudioPlayer");
   const duration = document.getElementById("chapterAudioDuration");
@@ -1710,9 +1752,20 @@ function getFilteredLineIndexesForQueue() {
     .filter((row) => {
       const entry = getLineAudioEntry(row.index);
       if (!entry || !entry.canGenerate) return false;
-      if (entry.hasAudio && entry.streamUrl) return false;
       const taskStatus = String(entry.task?.status || "").trim();
-      return !["pending", "processing", "running", "completed"].includes(taskStatus);
+      return !["pending", "processing", "running"].includes(taskStatus);
+    })
+    .map((row) => row.index);
+}
+
+function getNonNarrationLineIndexesForQueue() {
+  return linePreviewRows
+    .filter((row) => String(row.roleName || "").trim() !== "旁白")
+    .filter((row) => {
+      const entry = getLineAudioEntry(row.index);
+      if (!entry || !entry.canGenerate) return false;
+      const taskStatus = String(entry.task?.status || "").trim();
+      return !["pending", "processing", "running"].includes(taskStatus);
     })
     .map((row) => row.index);
 }
@@ -2199,6 +2252,7 @@ function destroyLineAudioEditor() {
   lineAudioEditorLineIndex = -1;
   lineAudioEditorReady = false;
   lineAudioEditorDetectToken += 1;
+  setLineAudioEditorZoom(0);
   const playBtn = document.getElementById("lineAudioEditorPlayBtn");
   if (playBtn) playBtn.textContent = "播放选中";
 }
@@ -2236,6 +2290,16 @@ function syncLineAudioEditorInputs(start, end) {
   const endInput = document.getElementById("lineAudioEditorEnd");
   if (startInput) startInput.value = Number(start || 0).toFixed(1);
   if (endInput) endInput.value = Number(end || 0).toFixed(1);
+}
+
+function setLineAudioEditorZoom(value) {
+  const zoom = Math.max(0, Math.min(300, Math.round(Number(value || 0))));
+  lineAudioEditorZoom = zoom;
+  const range = document.getElementById("lineAudioEditorZoomRange");
+  if (range) range.value = String(zoom);
+  if (lineAudioEditorWaveSurfer?.zoom) {
+    lineAudioEditorWaveSurfer.zoom(zoom);
+  }
 }
 
 function updateLineAudioEditorRegionFromInputs() {
@@ -2430,6 +2494,7 @@ async function openLineAudioEditor(lineIndex) {
   destroyLineAudioEditor();
   lineAudioEditorTaskId = Number(entry.task.id);
   lineAudioEditorLineIndex = Number(lineIndex);
+  setLineAudioEditorZoom(0);
   if (textEl) textEl.textContent = `${String(lineIndex + 1).padStart(3, "0")} ${entry.rawLine || entry.lineText || ""}`;
   if (durationEl) durationEl.textContent = `时长：${formatLineAudioSeconds(entry.durationSeconds)}`;
   syncLineAudioEditorInputs(0, Number(entry.durationSeconds || 0));

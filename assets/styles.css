@@ -2677,6 +2677,18 @@ menu {
   line-height: 1.6;
 }
 
+.line-audio-editor-zoom-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 8px 0 10px;
+}
+
+.line-audio-editor-zoom-row input[type="range"] {
+  width: min(360px, 46vw);
+}
+
 .line-audio-waveform {
   min-height: 170px;
   margin: 12px 0;
@@ -2684,6 +2696,7 @@ menu {
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--panel-strong);
+  overflow-x: auto;
 }
 
 .line-audio-editor-time-row {

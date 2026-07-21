@@ -224,6 +224,7 @@
           <button id="removeAllLineAudioMarkedSegmentsBtn" class="ghost-btn line-audio-marked-remove-btn" type="button">删除所有音频标记片段<span id="removeAllLineAudioMarkedSegmentsBadge" class="line-audio-edit-badge hidden">0</span></button>
           <button id="mergeAdjacentSameRoleLinesBtn" class="ghost-btn" type="button">合并同角色相邻台词</button>
           <button id="enqueueFilteredLineAudioBtn" class="ghost-btn" type="button">批量生成当前所列</button>
+          <button id="enqueueNonNarrationLineAudioBtn" class="ghost-btn" type="button">批量生成所有非旁白</button>
           <button id="enqueueRemainingLineAudioBtn" class="ghost-btn" type="button">批量生成剩余</button>
           <button id="enqueueAllLineAudioBtn" class="primary-btn" type="button">批量生成所有</button>
         </menu>
@@ -235,6 +236,13 @@
         <button class="dialog-close-btn" type="submit" aria-label="关闭">×</button>
         <h3>编辑台词音频</h3>
         <p id="lineAudioEditorText" class="line-audio-editor-text"></p>
+        <div class="line-audio-editor-zoom-row">
+          <span class="meta">波形缩放</span>
+          <button id="lineAudioEditorZoomOutBtn" class="ghost-btn btn-sm" type="button">-</button>
+          <input id="lineAudioEditorZoomRange" type="range" min="0" max="300" step="10" value="0" />
+          <button id="lineAudioEditorZoomInBtn" class="ghost-btn btn-sm" type="button">+</button>
+          <button id="lineAudioEditorZoomResetBtn" class="ghost-btn btn-sm" type="button">重置</button>
+        </div>
         <div id="lineAudioWaveform" class="line-audio-waveform"></div>
         <div class="line-audio-editor-time-row">
           <span id="lineAudioEditorDuration" class="meta">时长：-</span>
