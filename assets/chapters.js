@@ -70,6 +70,7 @@ let lineAudioEditorReady = false;
 let lineAudioEditorDetectToken = 0;
 let lineAudioEditorSpaceKeyHandler = null;
 let lineAudioEditorZoom = 0;
+let lineAudioEditorHoverTime = null;
 let activeLineAudioRowIndex = -1;
 let lineAudioSilenceMarks = new Map();
 let lineAudioBatchProcessingIndex = -1;
@@ -2230,9 +2231,13 @@ async function loadWaveSurferModules() {
     waveSurferModulesPromise = Promise.all([
       import("https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.esm.js"),
       import("https://unpkg.com/wavesurfer.js@7/dist/plugins/regions.esm.js"),
-    ]).then(([waveSurferModule, regionsModule]) => ({
+      import("https://unpkg.com/wavesurfer.js@7/dist/plugins/timeline.esm.js"),
+      import("https://unpkg.com/wavesurfer.js@7/dist/plugins/hover.esm.js"),
+    ]).then(([waveSurferModule, regionsModule, timelineModule, hoverModule]) => ({
       WaveSurfer: waveSurferModule.default,
       RegionsPlugin: regionsModule.default,
+      TimelinePlugin: timelineModule.default,
+      HoverPlugin: hoverModule.default,
     }));
   }
   return waveSurferModulesPromise;
@@ -2240,6 +2245,9 @@ async function loadWaveSurferModules() {
 
 function destroyLineAudioEditor() {
   unbindLineAudioEditorSpaceKey();
+  const waveEl = document.getElementById("lineAudioWaveform");
+  waveEl?.removeEventListener("pointermove", updateLineAudioEditorHoverTime);
+  waveEl?.removeEventListener("pointerleave", clearLineAudioEditorHoverTime);
   if (lineAudioEditorWaveSurfer) {
     lineAudioEditorWaveSurfer.destroy();
   }
@@ -2251,6 +2259,7 @@ function destroyLineAudioEditor() {
   lineAudioEditorTaskId = 0;
   lineAudioEditorLineIndex = -1;
   lineAudioEditorReady = false;
+  lineAudioEditorHoverTime = null;
   lineAudioEditorDetectToken += 1;
   setLineAudioEditorZoom(0);
   const playBtn = document.getElementById("lineAudioEditorPlayBtn");
@@ -2300,6 +2309,45 @@ function setLineAudioEditorZoom(value) {
   if (lineAudioEditorWaveSurfer?.zoom) {
     lineAudioEditorWaveSurfer.zoom(zoom);
   }
+}
+
+function updateLineAudioEditorHoverTime(event) {
+  if (!lineAudioEditorWaveSurfer || !lineAudioEditorReady) return;
+  const duration = lineAudioEditorWaveSurfer.getDuration() || 0;
+  const wrapper = lineAudioEditorWaveSurfer.getWrapper?.();
+  if (!wrapper || duration <= 0) return;
+  const rect = wrapper.getBoundingClientRect();
+  const x = event.clientX - rect.left + wrapper.scrollLeft;
+  const width = Math.max(wrapper.scrollWidth, wrapper.clientWidth, 1);
+  lineAudioEditorHoverTime = Math.max(0, Math.min(duration, (x / width) * duration));
+  if (lineAudioEditorSelectionPlaying) {
+    playLineAudioEditorSelectionFromCurrentHover();
+  }
+}
+
+function clearLineAudioEditorHoverTime() {
+  lineAudioEditorHoverTime = null;
+}
+
+function getLineAudioEditorPlaybackRange() {
+  const duration = lineAudioEditorWaveSurfer?.getDuration?.() || 0;
+  if (lineAudioEditorHoverTime != null) {
+    return {
+      start: Math.max(0, Math.min(Number(lineAudioEditorHoverTime || 0), Math.max(0, duration - 0.05))),
+      end: duration,
+    };
+  }
+  const selection = getLineAudioEditorSelection();
+  const end = Math.max(0, Math.min(Number(selection.end || 0), duration));
+  const start = Math.max(0, Math.min(Number(selection.start || 0), Math.max(0, end - 0.05)));
+  return { start, end };
+}
+
+function playLineAudioEditorSelectionFromCurrentHover() {
+  if (!lineAudioEditorWaveSurfer || !lineAudioEditorReady) return;
+  const { start, end } = getLineAudioEditorPlaybackRange();
+  if (end <= start || end - start < 0.05) return;
+  lineAudioEditorWaveSurfer.play(start, end);
 }
 
 function updateLineAudioEditorRegionFromInputs() {
@@ -2503,7 +2551,7 @@ async function openLineAudioEditor(lineIndex) {
   bindLineAudioEditorSpaceKey();
 
   try {
-    const { WaveSurfer, RegionsPlugin } = await loadWaveSurferModules();
+    const { WaveSurfer, RegionsPlugin, TimelinePlugin, HoverPlugin } = await loadWaveSurferModules();
     waveEl.textContent = "";
     lineAudioEditorRegions = RegionsPlugin.create();
     lineAudioEditorWaveSurfer = WaveSurfer.create({
@@ -2513,8 +2561,28 @@ async function openLineAudioEditor(lineIndex) {
       cursorColor: "#2b2118",
       height: 140,
       normalize: true,
-      plugins: [lineAudioEditorRegions],
+      plugins: [
+        TimelinePlugin.create({
+          height: 22,
+          insertPosition: "afterend",
+          style: {
+            fontSize: "11px",
+            color: "#7d6752",
+          },
+        }),
+        HoverPlugin.create({
+          lineColor: "#a85224",
+          lineWidth: 2,
+          labelBackground: "#2b2118",
+          labelColor: "#fffaf2",
+          labelSize: 13,
+          formatTimeCallback: (seconds) => formatLineAudioSeconds(seconds),
+        }),
+        lineAudioEditorRegions,
+      ],
     });
+    waveEl.addEventListener("pointermove", updateLineAudioEditorHoverTime);
+    waveEl.addEventListener("pointerleave", clearLineAudioEditorHoverTime);
 
     lineAudioEditorRegions.on("region-updated", (region) => {
       if (region === lineAudioEditorRegion) {
@@ -2570,12 +2638,7 @@ function playLineAudioEditorSelection() {
   }
   lineAudioEditorSelectionPlaying = true;
   if (playBtn) playBtn.textContent = "暂停播放";
-  if (lineAudioEditorRegion?.play) {
-    lineAudioEditorRegion.play();
-    return;
-  }
-  const { start, end } = getLineAudioEditorSelection();
-  lineAudioEditorWaveSurfer.play(start, end);
+  playLineAudioEditorSelectionFromCurrentHover();
 }
 
 async function saveLineAudioEditorSelection() {
