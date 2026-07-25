@@ -37,6 +37,7 @@ from .line_audio import (
     prioritize_line_audio_task,
     edit_line_audio_task_audio,
     detect_line_audio_task_silences,
+    analyze_line_audio_task_loudness,
 )
 from .audio_asr import (
     cancel_chapter_audio_asr_task,
@@ -1520,6 +1521,26 @@ class Handler(BaseHTTPRequestHandler):
                 task_id,
                 noise_db=noise_db,
                 min_duration=min_duration,
+            )
+            if not ok:
+                code = 404 if "不存在" in msg or "not found" in msg else 409
+                self.send_json({"error": msg}, code)
+                return
+            self.send_json(data)
+            return
+
+        m_line_audio_loudness = re.match(r"^/api/line-audio-tasks/(\d+)/loudness$", route)
+        if m_line_audio_loudness:
+            task_id = int(m_line_audio_loudness.group(1))
+            query = parse_qs(parsed.query or "")
+            try:
+                target_lufs = float((query.get("targetLufs") or ["-20"])[0] or -20)
+            except (TypeError, ValueError):
+                self.send_json({"error": "invalid target LUFS"}, 400)
+                return
+            ok, msg, data = analyze_line_audio_task_loudness(
+                task_id,
+                target_lufs=target_lufs,
             )
             if not ok:
                 code = 404 if "不存在" in msg or "not found" in msg else 409
@@ -3059,6 +3080,8 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 start_seconds = float(body.get("startSeconds") or 0)
                 end_seconds = float(body.get("endSeconds") or 0)
+                volume_factor = float(body.get("volumeFactor") or 1)
+                speed_factor = float(body.get("speedFactor") or 1)
             except (TypeError, ValueError):
                 self.send_json({"error": "invalid audio range"}, 400)
                 return
@@ -3067,6 +3090,8 @@ class Handler(BaseHTTPRequestHandler):
                 mode=str(body.get("mode") or "keep"),
                 start_seconds=start_seconds,
                 end_seconds=end_seconds,
+                volume_factor=volume_factor,
+                speed_factor=speed_factor,
                 segments=body.get("segments") if isinstance(body.get("segments"), list) else None,
             )
             if not ok:

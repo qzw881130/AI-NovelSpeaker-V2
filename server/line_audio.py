@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import random
 import re
 import shutil
@@ -1618,16 +1619,26 @@ def edit_line_audio_task_audio(
     mode: str,
     start_seconds: float,
     end_seconds: float,
+    volume_factor: float = 1.0,
+    speed_factor: float = 1.0,
     segments: list | None = None,
 ) -> tuple[bool, str, dict]:
-    """编辑台词音频文件。支持保留选中片段或删除多个片段后替换原文件。"""
+    """编辑台词音频文件。支持裁剪、删除片段、调整音量或语速后替换原文件。"""
     edit_mode = str(mode or "keep").strip().lower()
-    if edit_mode not in {"keep", "remove"}:
+    if edit_mode not in {"keep", "remove", "volume", "speed"}:
         return False, "不支持的音频编辑模式", {}
     start = max(0.0, float(start_seconds or 0))
     end = max(0.0, float(end_seconds or 0))
     if edit_mode == "keep" and (end <= start or end - start < 0.05):
         return False, "请选择有效的音频片段", {}
+    gain = float(volume_factor or 1.0)
+    if not math.isfinite(gain):
+        return False, "无效的音量倍率", {}
+    gain = max(0.1, min(gain, 4.0))
+    speed = float(speed_factor or 1.0)
+    if not math.isfinite(speed):
+        return False, "无效的语速倍率", {}
+    speed = max(0.8, min(speed, 1.2))
 
     conn = db_conn()
     row = conn.execute(
@@ -1653,7 +1664,35 @@ def edit_line_audio_task_audio(
     original_duration = float(probe_audio_duration_seconds(audio_path))
     if original_duration <= 0:
         return False, "无法读取音频时长", {}
-    if edit_mode == "keep":
+    if edit_mode == "volume":
+        ffmpeg_cmd = [
+            "ffmpeg",
+            "-y",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-i",
+            str(audio_path),
+            "-af",
+            f"volume={gain:.3f}",
+            "-c:a",
+            "flac",
+        ]
+    elif edit_mode == "speed":
+        ffmpeg_cmd = [
+            "ffmpeg",
+            "-y",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-i",
+            str(audio_path),
+            "-filter:a",
+            f"atempo={speed:.3f}",
+            "-c:a",
+            "flac",
+        ]
+    elif edit_mode == "keep":
         if start >= original_duration:
             return False, "片段开始时间超出音频时长", {}
         end = min(end, original_duration)
@@ -1876,6 +1915,110 @@ def detect_line_audio_task_silences(
         "durationSeconds": round(audio_duration, 1),
         "noiseDb": noise,
         "minDuration": duration,
+    }
+
+
+def _get_completed_line_audio_path(task_id: int) -> tuple[bool, str, Path | None]:
+    conn = db_conn()
+    row = conn.execute(
+        "SELECT id, status, downloaded_file_path FROM line_audio_tasks WHERE id=?",
+        (task_id,),
+    ).fetchone()
+    conn.close()
+    if not row:
+        return False, "任务不存在", None
+    if str(row["status"] or "") != "completed":
+        return False, "只有已完成任务可以分析音频", None
+    rel_path = str(row["downloaded_file_path"] or "").strip()
+    if not rel_path:
+        return False, "任务没有可分析的音频文件", None
+
+    audio_path = (ROOT_DIR / rel_path).resolve()
+    root_resolved = ROOT_DIR.resolve()
+    if root_resolved not in audio_path.parents and audio_path != root_resolved:
+        return False, "无效的音频路径", None
+    if not audio_path.exists() or not audio_path.is_file():
+        return False, "音频文件不存在", None
+    return True, "ok", audio_path
+
+
+def analyze_line_audio_task_loudness(
+    task_id: int, *, target_lufs: float = -20.0
+) -> tuple[bool, str, dict]:
+    """分析台词音频响度，并给出匹配目标 LUFS 的建议增益。"""
+    ok, msg, audio_path = _get_completed_line_audio_path(task_id)
+    if not ok or audio_path is None:
+        return False, msg, {}
+    target = float(target_lufs or -20.0)
+    if not math.isfinite(target):
+        return False, "无效的目标 LUFS", {}
+    target = max(-35.0, min(target, -12.0))
+
+    try:
+        loudnorm_proc = subprocess.run(
+            [
+                "ffmpeg",
+                "-hide_banner",
+                "-nostats",
+                "-i",
+                str(audio_path),
+                "-af",
+                f"loudnorm=I={target:.1f}:TP=-1.5:LRA=11:print_format=json",
+                "-f",
+                "null",
+                "-",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        peak_proc = subprocess.run(
+            [
+                "ffmpeg",
+                "-hide_banner",
+                "-nostats",
+                "-i",
+                str(audio_path),
+                "-af",
+                "volumedetect",
+                "-f",
+                "null",
+                "-",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError as exc:
+        return False, f"ffmpeg 响度分析失败: {exc}", {}
+
+    loudnorm_text = "\n".join([loudnorm_proc.stdout or "", loudnorm_proc.stderr or ""])
+    json_match = re.search(r"\{\s*\"input_i\".*?\}\s*", loudnorm_text, re.S)
+    if not json_match:
+        return False, "无法读取音频响度", {}
+    try:
+        loudness = json.loads(json_match.group(0))
+        input_lufs = float(loudness.get("input_i"))
+        true_peak = float(loudness.get("input_tp"))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return False, "无法解析音频响度", {}
+    if not math.isfinite(input_lufs) or not math.isfinite(true_peak):
+        return False, "无法解析音频响度", {}
+
+    peak_text = "\n".join([peak_proc.stdout or "", peak_proc.stderr or ""])
+    peak_match = re.search(r"max_volume:\s*(-?\d+(?:\.\d+)?)\s*dB", peak_text)
+    peak_dbfs = float(peak_match.group(1)) if peak_match else true_peak
+
+    raw_gain = target - input_lufs
+    max_safe_gain = -1.0 - peak_dbfs
+    suggested_gain = max(-20.0, min(12.0, raw_gain, max_safe_gain))
+    return True, "analyzed", {
+        "targetLufs": round(target, 1),
+        "inputLufs": round(input_lufs, 1),
+        "truePeakDb": round(true_peak, 1),
+        "peakDbfs": round(peak_dbfs, 1),
+        "suggestedGainDb": round(suggested_gain, 1),
+        "rawGainDb": round(raw_gain, 1),
     }
 
 
