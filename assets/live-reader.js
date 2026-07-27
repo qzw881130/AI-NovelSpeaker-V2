@@ -306,6 +306,27 @@ function segmentRenderRanges(segment) {
   return [];
 }
 
+function buildParagraphRangeMap(asrSegments) {
+  const rangeMap = new Map();
+  for (const segment of asrSegments) {
+    const segmentIndex = Number(segment.index || 0);
+    for (const range of segmentRenderRanges(segment)) {
+      const paragraphIndex = Number(range.paragraphIndex);
+      if (!Number.isInteger(paragraphIndex)) continue;
+      const ranges = rangeMap.get(paragraphIndex) || [];
+      ranges.push({
+        ...range,
+        index: segmentIndex,
+      });
+      rangeMap.set(paragraphIndex, ranges);
+    }
+  }
+  for (const ranges of rangeMap.values()) {
+    ranges.sort((a, b) => a.startChar - b.startChar);
+  }
+  return rangeMap;
+}
+
 function getNovelByQueryOrActive() {
   const url = new URL(window.location.href);
   const queryId = String(url.searchParams.get("novelId") || "");
@@ -1542,14 +1563,15 @@ async function mapAsrSegmentsToOriginalText(originalText, asrSegments) {
     }
   }
   let cursor = 0;
+  const normalizedSegments = asrSegments.map((segment) => normalizeSearchText(segment.text).normalized);
   for (let index = 0; index < asrSegments.length; index += 1) {
     const segment = asrSegments[index];
-    const normalizedSegment = normalizeSearchText(segment.text).normalized;
+    const normalizedSegment = normalizedSegments[index];
     if (!normalizedSegment) continue;
     let match = findBestSegmentMatch(globalNormalized, normalizedSegment, cursor);
     if (!match) {
-      const previousNormalized = index > 0 ? normalizeSearchText(asrSegments[index - 1]?.text || "").normalized : "";
-      const nextNormalized = index < asrSegments.length - 1 ? normalizeSearchText(asrSegments[index + 1]?.text || "").normalized : "";
+      const previousNormalized = index > 0 ? normalizedSegments[index - 1] : "";
+      const nextNormalized = index < asrSegments.length - 1 ? normalizedSegments[index + 1] : "";
       match = findCombinedSegmentMatch(globalNormalized, normalizedSegment, cursor, previousNormalized, nextNormalized);
     }
     if (!match) continue;
@@ -1598,18 +1620,10 @@ async function mapAsrSegmentsToOriginalText(originalText, asrSegments) {
 
 async function renderOriginalParagraphsWithHighlights(originalText, asrSegments) {
   const { paragraphs } = await mapAsrSegmentsToOriginalText(originalText, asrSegments);
+  const rangeMap = buildParagraphRangeMap(asrSegments);
   const html = paragraphs
     .map((paragraphText, paragraphIndex) => {
-      const ranges = asrSegments
-        .flatMap((segment) =>
-          segmentRenderRanges(segment)
-            .filter((range) => Number(range.paragraphIndex) === paragraphIndex)
-            .map((range) => ({
-              ...range,
-              index: Number(segment.index || 0),
-            }))
-        )
-        .sort((a, b) => a.startChar - b.startChar);
+      const ranges = rangeMap.get(paragraphIndex) || [];
       if (!ranges.length) {
         return `<p class="live-reader-paragraph">${escapeHtml(paragraphText)}</p>`;
       }

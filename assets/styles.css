@@ -1070,17 +1070,33 @@ textarea {
   margin-bottom: 10px;
 }
 
+.chapter-quick-jump-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+}
+
 .chapter-quick-jump {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 6px;
-  margin: 10px 0;
+  margin: 6px 0 10px;
   padding: 8px;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: #fffdf8;
-  max-height: 376px;
+  max-height: 406px;
   overflow: auto;
+}
+
+.chapter-side.quick-jump-expanded .chapter-quick-jump {
+  max-height: min(68vh, 760px);
+}
+
+.chapter-side.quick-jump-expanded .chapter-items {
+  min-height: 96px;
 }
 
 .quick-chip {

@@ -41,11 +41,14 @@ let lastJsonFindIndex = -1;
 const CHAPTER_FONT_SIZE_KEY = "ai_novel_reader_font_size";
 const JSON_VIEW_FONT_SIZE_KEY = "ai_novel_json_view_font_size";
 const LINE_AUDIO_REFRESH_INTERVAL_KEY = "ai_novel_line_audio_refresh_interval";
+const CHAPTER_QUICK_JUMP_EXPANDED_KEY = "ai_novel_chapter_quick_jump_expanded";
 const LAST_CHAPTER_KEY_PREFIX = "ai_novel_last_chapter";
 const LAST_LINE_AUDIO_ROW_KEY_PREFIX = "ai_novel_last_line_audio_row";
 const LINE_AUDIO_REFRESH_INTERVALS = new Set([0, 5, 20, 60]);
+const LINE_AUDIO_EDITOR_MAX_ZOOM = 1200;
 let jsonAutosaveTimerId = null;
 let jsonAutosaveSaving = false;
+let chapterQuickJumpExpanded = localStorage.getItem(CHAPTER_QUICK_JUMP_EXPANDED_KEY) === "1";
 
 // 台词音频状态
 let lineAudioEntries = [];
@@ -273,8 +276,15 @@ function renderNovelSelect() {
 
 function renderQuickJump(list) {
   const wrap = document.getElementById("chapterQuickJump");
+  const count = document.getElementById("chapterQuickJumpCount");
+  const toggle = document.getElementById("toggleChapterQuickJumpBtn");
+  document.querySelector(".chapter-side")?.classList.toggle("quick-jump-expanded", chapterQuickJumpExpanded);
+  if (count) count.textContent = `${list.length} 回编号`;
+  if (toggle) {
+    toggle.textContent = chapterQuickJumpExpanded ? "收起编号" : "展开编号";
+    toggle.setAttribute("aria-expanded", chapterQuickJumpExpanded ? "true" : "false");
+  }
   wrap.innerHTML = list
-    .slice(0, 200)
     .map((c) => {
       const progress = c.hasAudio ? 100 : c.hasJson ? 55 : 0;
       const activeClass = c.chapterNum === activeChapterNum ? "active" : "";
@@ -284,6 +294,11 @@ function renderQuickJump(list) {
   wrap.querySelectorAll("[data-chapter-num]").forEach((el) => {
     el.addEventListener("click", () => loadChapter(Number(el.dataset.chapterNum)));
   });
+  if (!chapterQuickJumpExpanded) {
+    window.requestAnimationFrame(() => {
+      wrap.querySelector(".quick-chip.active")?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    });
+  }
 }
 
 function renderChapterList() {
@@ -1166,6 +1181,11 @@ function bindActions() {
   }
 
   document.getElementById("chapterSearch").addEventListener("input", renderChapterList);
+  document.getElementById("toggleChapterQuickJumpBtn")?.addEventListener("click", () => {
+    chapterQuickJumpExpanded = !chapterQuickJumpExpanded;
+    localStorage.setItem(CHAPTER_QUICK_JUMP_EXPANDED_KEY, chapterQuickJumpExpanded ? "1" : "0");
+    renderQuickJump(chapterState);
+  });
   document.getElementById("prevChapterBtn").addEventListener("click", () => {
     const idx = chapterState.findIndex((item) => item.chapterNum === activeChapterNum);
     if (idx > 0) {
@@ -2369,7 +2389,7 @@ function syncLineAudioEditorInputs(start, end) {
 }
 
 function setLineAudioEditorZoom(value) {
-  const zoom = Math.max(0, Math.min(300, Math.round(Number(value || 0))));
+  const zoom = Math.max(0, Math.min(LINE_AUDIO_EDITOR_MAX_ZOOM, Math.round(Number(value || 0))));
   lineAudioEditorZoom = zoom;
   const range = document.getElementById("lineAudioEditorZoomRange");
   if (range) range.value = String(zoom);
