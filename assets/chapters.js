@@ -17,6 +17,8 @@ import {
   editLineAudioTaskAudio,
   detectLineAudioTaskSilences,
   analyzeLineAudioTaskLoudness,
+  previewLineAudioReplacementTargets,
+  replaceMatchingLineAudios,
   mergeChapterLineAudio,
 } from "./store.js";
 import { fmtDateTime, fmtNumber, incrementNavBadge, renderNav, showPageError, toast } from "./ui.js";
@@ -1464,6 +1466,10 @@ function bindActions() {
     matchLineAudioEditorLoudness();
   });
 
+  document.getElementById("lineAudioEditorReplaceMatchingBtn")?.addEventListener("click", async () => {
+    await replaceMatchingLineAudioFromEditor();
+  });
+
   document.getElementById("lineAudioEditorStart")?.addEventListener("change", updateLineAudioEditorRegionFromInputs);
   document.getElementById("lineAudioEditorEnd")?.addEventListener("change", updateLineAudioEditorRegionFromInputs);
   document.getElementById("lineAudioEditorDbRange")?.addEventListener("input", (event) => {
@@ -2282,29 +2288,39 @@ async function removeAllLineAudioMarkedSegments() {
     toast("当前没有已标记的音频片段");
     return;
   }
-  if (!window.confirm(`确定删除 ${items.length} 条台词音频中的已标记片段吗？`)) return;
+  const groupedItems = Array.from(items.reduce((map, item) => {
+    const taskId = Number(item.mark.taskId || 0);
+    if (!taskId) return map;
+    const group = map.get(taskId) || { taskId, segments: [], lineIndexes: [] };
+    group.segments.push(...item.mark.segments);
+    group.lineIndexes.push(item.lineIndex);
+    map.set(taskId, group);
+    return map;
+  }, new Map()).values());
+  if (!window.confirm(`确定删除 ${groupedItems.length} 个台词音频任务中的已标记片段吗？`)) return;
   setLineAudioBatchButtonsDisabled(true);
   let editedCount = 0;
   try {
-    for (const item of items) {
-      setLineAudioBatchProcessingLine(item.lineIndex, { scroll: true });
+    for (const item of groupedItems) {
+      const primaryLineIndex = item.lineIndexes[0];
+      setLineAudioBatchProcessingLine(primaryLineIndex, { scroll: true });
       try {
-        await editLineAudioTaskAudio(item.mark.taskId, {
+        await editLineAudioTaskAudio(item.taskId, {
           mode: "remove",
-          segments: item.mark.segments,
+          segments: item.segments,
         });
-        lineAudioSilenceMarks.delete(item.lineIndex);
+        item.lineIndexes.forEach((lineIndex) => lineAudioSilenceMarks.delete(lineIndex));
         updateLineAudioMarkedSegmentsBadge();
         editedCount += 1;
-        await loadLineAudios({ silent: true, partialLineIndex: item.lineIndex });
-        setLineAudioBatchProcessingLine(item.lineIndex, { scroll: false });
+        await loadLineAudios({ silent: true, partialLineIndex: primaryLineIndex });
+        setLineAudioBatchProcessingLine(primaryLineIndex, { scroll: false });
       } catch (err) {
-        toast(`第 ${item.lineIndex + 1} 行处理失败: ${err.message || "未知错误"}`);
+        toast(`第 ${primaryLineIndex + 1} 行处理失败: ${err.message || "未知错误"}`);
       }
-      updateLineAudioRow(item.lineIndex);
+      item.lineIndexes.forEach((lineIndex) => updateLineAudioRow(lineIndex));
     }
     await updateChapterActionWarnings();
-    toast(`已删除 ${editedCount} 条台词音频的标记片段`);
+    toast(`已删除 ${editedCount} 个台词音频任务的标记片段`);
   } finally {
     clearLineAudioBatchProcessingLine();
     setLineAudioBatchButtonsDisabled(false);
@@ -2911,6 +2927,59 @@ async function saveLineAudioEditorDeleteRegions() {
   } finally {
     if (saveBtn) saveBtn.disabled = false;
   }
+}
+
+async function replaceMatchingLineAudioFromEditor() {
+  if (!lineAudioEditorTaskId) return;
+  const btn = document.getElementById("lineAudioEditorReplaceMatchingBtn");
+  if (btn) btn.disabled = true;
+  try {
+    const preview = await previewLineAudioReplacementTargets(lineAudioEditorTaskId);
+    const totalCount = Number(preview.totalCount || 0);
+    if (!totalCount) {
+      toast("没有找到其他相同角色+台词");
+      return;
+    }
+    const confirmed = await confirmLineAudioReplacement(preview);
+    if (!confirmed) return;
+    const result = await replaceMatchingLineAudios(lineAudioEditorTaskId);
+    await loadLineAudios({ preserveEditing: true });
+    await updateChapterActionWarnings();
+    toast(`已替换 ${Number(result.replacedCount || 0)} 个台词音频任务，共匹配 ${Number(result.totalCount || 0)} 处`);
+  } catch (err) {
+    toast(err.message || "替换相同台词音频失败");
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function confirmLineAudioReplacement(preview) {
+  const dialog = document.getElementById("lineAudioReplaceConfirmDialog");
+  if (!dialog) return Promise.resolve(false);
+  const source = preview?.source || {};
+  const chapters = Array.isArray(preview?.chapters) ? preview.chapters : [];
+  const totalCount = Number(preview?.totalCount || 0);
+  const summary = document.getElementById("lineAudioReplaceConfirmSummary");
+  const roleEl = document.getElementById("lineAudioReplaceConfirmRole");
+  const textEl = document.getElementById("lineAudioReplaceConfirmText");
+  const chaptersEl = document.getElementById("lineAudioReplaceConfirmChapters");
+  if (summary) summary.textContent = `找到 ${totalCount} 处其他相同角色+台词。确定用当前音频替换以下所有台词音频吗？`;
+  if (roleEl) roleEl.textContent = source.roleName || "-";
+  if (textEl) textEl.textContent = source.lineText || "-";
+  if (chaptersEl) {
+    chaptersEl.innerHTML = chapters
+      .map((item) => `<div class="line-audio-replace-confirm-item"><strong>第 ${String(item.chapterNum).padStart(3, "0")} 回</strong><span>${escapeHtml(item.chapterTitle || "未命名")}</span><span class="line-audio-replace-confirm-count">${Number(item.count || 0)} 处</span></div>`)
+      .join("");
+  }
+  return new Promise((resolve) => {
+    const onClose = () => {
+      dialog.removeEventListener("close", onClose);
+      resolve(dialog.returnValue === "confirm");
+    };
+    dialog.addEventListener("close", onClose);
+    dialog.returnValue = "cancel";
+    dialog.showModal();
+  });
 }
 
 function bindLineAudioButtons(root) {

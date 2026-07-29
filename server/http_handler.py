@@ -38,6 +38,8 @@ from .line_audio import (
     edit_line_audio_task_audio,
     detect_line_audio_task_silences,
     analyze_line_audio_task_loudness,
+    preview_line_audio_replacement_targets,
+    replace_matching_line_audio_tasks,
 )
 from .audio_asr import (
     cancel_chapter_audio_asr_task,
@@ -1542,6 +1544,17 @@ class Handler(BaseHTTPRequestHandler):
                 task_id,
                 target_lufs=target_lufs,
             )
+            if not ok:
+                code = 404 if "不存在" in msg or "not found" in msg else 409
+                self.send_json({"error": msg}, code)
+                return
+            self.send_json(data)
+            return
+
+        m_line_audio_replacements = re.match(r"^/api/line-audio-tasks/(\d+)/replacement-targets$", route)
+        if m_line_audio_replacements:
+            task_id = int(m_line_audio_replacements.group(1))
+            ok, msg, data = preview_line_audio_replacement_targets(task_id)
             if not ok:
                 code = 404 if "不存在" in msg or "not found" in msg else 409
                 self.send_json({"error": msg}, code)
@@ -3094,6 +3107,17 @@ class Handler(BaseHTTPRequestHandler):
                 speed_factor=speed_factor,
                 segments=body.get("segments") if isinstance(body.get("segments"), list) else None,
             )
+            if not ok:
+                code = 404 if "不存在" in msg or "not found" in msg else 409
+                self.send_json({"error": msg}, code)
+                return
+            self.send_json({"status": msg, **data})
+            return
+
+        m_replace_line_audio = re.match(r"^/api/line-audio-tasks/(\d+)/replace-matching$", route)
+        if m_replace_line_audio:
+            task_id = int(m_replace_line_audio.group(1))
+            ok, msg, data = replace_matching_line_audio_tasks(task_id)
             if not ok:
                 code = 404 if "不存在" in msg or "not found" in msg else 409
                 self.send_json({"error": msg}, code)

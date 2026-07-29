@@ -929,6 +929,17 @@ async function analyzeLineAudioTaskLoudness(taskId, options = {}) {
   return await api(`/api/line-audio-tasks/${Number(taskId)}/loudness?${query.toString()}`);
 }
 
+async function previewLineAudioReplacementTargets(taskId) {
+  return await api(`/api/line-audio-tasks/${Number(taskId)}/replacement-targets`);
+}
+
+async function replaceMatchingLineAudios(taskId) {
+  return await api(`/api/line-audio-tasks/${Number(taskId)}/replace-matching`, {
+    method: "POST",
+    body: "{}",
+  });
+}
+
 function getLineAudioFileUrl(taskId) {
   return `/api/line-audio-tasks/${Number(taskId)}/file`;
 }
@@ -1088,6 +1099,8 @@ export {
   editLineAudioTaskAudio,
   detectLineAudioTaskSilences,
   analyzeLineAudioTaskLoudness,
+  previewLineAudioReplacementTargets,
+  replaceMatchingLineAudios,
   getLineAudioFileUrl,
   getMergedAudioUrl,
   // 视频导出

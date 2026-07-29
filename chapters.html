@@ -246,6 +246,7 @@
           <input id="lineAudioEditorZoomRange" type="range" min="0" max="1200" step="10" value="0" />
           <button id="lineAudioEditorZoomInBtn" class="ghost-btn btn-sm" type="button">+</button>
           <button id="lineAudioEditorZoomResetBtn" class="ghost-btn btn-sm" type="button">重置</button>
+          <button id="lineAudioEditorReplaceMatchingBtn" class="ghost-btn btn-sm line-audio-replace-matching-btn" type="button">检查&替换其他所有</button>
         </div>
         <div class="line-audio-waveform-layout">
           <div id="lineAudioWaveform" class="line-audio-waveform"></div>
@@ -285,6 +286,29 @@
           <button id="lineAudioEditorSaveBtn" class="primary-btn" type="button">保留选中并保存</button>
           <button id="lineAudioEditorRemoveSaveBtn" class="primary-btn" type="button">删除标记片段并保存</button>
           <button class="ghost-btn" type="submit">取消</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <dialog id="lineAudioReplaceConfirmDialog" class="modal line-audio-replace-confirm-dialog">
+      <form method="dialog" class="line-audio-replace-confirm-form">
+        <button class="dialog-close-btn" type="submit" value="cancel" aria-label="关闭">×</button>
+        <h3>确认替换相同台词音频</h3>
+        <p id="lineAudioReplaceConfirmSummary" class="line-audio-replace-confirm-summary"></p>
+        <dl class="line-audio-replace-confirm-meta">
+          <div>
+            <dt>角色</dt>
+            <dd id="lineAudioReplaceConfirmRole">-</dd>
+          </div>
+          <div>
+            <dt>台词</dt>
+            <dd id="lineAudioReplaceConfirmText">-</dd>
+          </div>
+        </dl>
+        <div id="lineAudioReplaceConfirmChapters" class="line-audio-replace-confirm-chapters"></div>
+        <menu class="dialog-actions">
+          <button class="ghost-btn" type="submit" value="cancel">取消</button>
+          <button class="primary-btn line-audio-replace-confirm-submit" type="submit" value="confirm">确定替换所有</button>
         </menu>
       </form>
     </dialog>

@@ -1827,6 +1827,260 @@ def edit_line_audio_task_audio(
                 pass
 
 
+def _find_matching_line_audio_rows(source_task_id: int) -> tuple[bool, str, dict]:
+    conn = db_conn()
+    source = conn.execute(
+        """
+        SELECT t.*, c.title AS source_chapter_title, n.english_dir
+        FROM line_audio_tasks t
+        JOIN chapters c ON c.id = t.chapter_id
+        JOIN novels n ON n.id = t.novel_id
+        WHERE t.id=?
+        """,
+        (source_task_id,),
+    ).fetchone()
+    if not source:
+        conn.close()
+        return False, "任务不存在", {}
+    if str(source["status"] or "") != "completed":
+        conn.close()
+        return False, "只有已完成任务可以替换其他台词音频", {}
+    source_rel_path = str(source["downloaded_file_path"] or "").strip()
+    if not source_rel_path:
+        conn.close()
+        return False, "当前任务没有可替换的音频文件", {}
+    source_audio_path = (ROOT_DIR / source_rel_path).resolve()
+    root_resolved = ROOT_DIR.resolve()
+    if root_resolved not in source_audio_path.parents and source_audio_path != root_resolved:
+        conn.close()
+        return False, "无效的音频路径", {}
+    if not source_audio_path.exists() or not source_audio_path.is_file():
+        conn.close()
+        return False, "当前任务音频文件不存在", {}
+
+    novel_id = int(source["novel_id"])
+    target_role = _normalize_role_name(source["role_name"])
+    target_text = _clean_line_text(source["line_text"])
+    if not target_role or not target_text:
+        conn.close()
+        return False, "当前台词缺少角色或文本", {}
+
+    chapters = conn.execute(
+        """
+        SELECT c.id AS chapter_id, c.chapter_num, c.title AS chapter_title,
+               (
+                 SELECT jt.merged_result_json
+                 FROM json_tasks jt
+                 WHERE jt.novel_id = c.novel_id
+                   AND jt.chapter_num = c.chapter_num
+                   AND jt.status = 'completed'
+                   AND jt.merged_result_json IS NOT NULL
+                 ORDER BY jt.id DESC
+                 LIMIT 1
+               ) AS merged_result_json
+        FROM chapters c
+        WHERE c.novel_id=?
+        ORDER BY c.chapter_num ASC, c.id ASC
+        """,
+        (novel_id,),
+    ).fetchall()
+    existing_rows = conn.execute(
+        "SELECT * FROM line_audio_tasks WHERE novel_id=? ORDER BY id DESC",
+        (novel_id,),
+    ).fetchall()
+    conn.close()
+
+    existing_by_key: dict[tuple[int, str], Any] = {}
+    for row in existing_rows:
+        key = (int(row["chapter_id"]), str(row["line_hash"] or ""))
+        existing_by_key.setdefault(key, row)
+
+    matches: list[dict] = []
+    chapter_counts: dict[int, dict] = {}
+    for chapter in chapters:
+        merged_json = str(chapter["merged_result_json"] or "").strip()
+        if not merged_json:
+            continue
+        chapter_id = int(chapter["chapter_id"])
+        for line in parse_juben_lines_from_json_text(merged_json):
+            role_name = _normalize_role_name(line.get("role_name"))
+            line_text = _clean_line_text(line.get("line_text"))
+            if role_name != target_role or line_text != target_text:
+                continue
+            line_index = int(line.get("line_index", -1))
+            if chapter_id == int(source["chapter_id"]) and line_index == int(source["line_index"]):
+                continue
+            line_hash = str(line.get("line_hash") or "")
+            if not line_hash:
+                continue
+            raw_line = str(line.get("raw_line") or "")
+            existing = existing_by_key.get((chapter_id, line_hash))
+            chapter_num = int(chapter["chapter_num"])
+            chapter_info = chapter_counts.setdefault(
+                chapter_num,
+                {
+                    "chapterId": chapter_id,
+                    "chapterNum": chapter_num,
+                    "chapterTitle": str(chapter["chapter_title"] or ""),
+                    "count": 0,
+                },
+            )
+            chapter_info["count"] += 1
+            matches.append(
+                {
+                    "chapterId": chapter_id,
+                    "chapterNum": chapter_num,
+                    "chapterTitle": str(chapter["chapter_title"] or ""),
+                    "lineIndex": line_index,
+                    "lineNo": line_index + 1,
+                    "rawLine": raw_line,
+                    "roleName": role_name,
+                    "lineText": line_text,
+                    "lineHash": line_hash,
+                    "existingTaskId": int(existing["id"]) if existing else 0,
+                }
+            )
+
+    source_dict = _line_audio_task_row_to_dict(source)
+    source_dict["audioPath"] = str(source_audio_path)
+    source_dict["englishDir"] = str(source["english_dir"] or "")
+    return True, "ok", {
+        "source": source_dict,
+        "matches": matches,
+        "chapters": sorted(chapter_counts.values(), key=lambda item: item["chapterNum"]),
+        "totalCount": len(matches),
+    }
+
+
+def preview_line_audio_replacement_targets(task_id: int) -> tuple[bool, str, dict]:
+    """预检同角色+台词的其他出现位置。"""
+    ok, msg, data = _find_matching_line_audio_rows(task_id)
+    if not ok:
+        return ok, msg, {}
+    return True, "ok", {
+        "source": {
+            "taskId": int(data["source"].get("id") or 0),
+            "roleName": str(data["source"].get("roleName") or ""),
+            "lineText": str(data["source"].get("lineText") or ""),
+            "chapterNum": int(data["source"].get("chapterNum") or 0),
+            "lineNo": int(data["source"].get("lineIndex") or 0) + 1,
+        },
+        "totalCount": int(data.get("totalCount") or 0),
+        "chapters": data.get("chapters") or [],
+    }
+
+
+def replace_matching_line_audio_tasks(task_id: int) -> tuple[bool, str, dict]:
+    """将当前台词音频复制到所有同角色+台词的其他台词任务。"""
+    ok, msg, data = _find_matching_line_audio_rows(task_id)
+    if not ok:
+        return ok, msg, {}
+    matches = data.get("matches") or []
+    if not matches:
+        return True, "replaced", {"replacedCount": 0, "totalCount": 0, "chapters": []}
+
+    source = data["source"]
+    source_audio_path = Path(str(source.get("audioPath") or ""))
+    if not source_audio_path.exists() or not source_audio_path.is_file():
+        return False, "当前任务音频文件不存在", {}
+    duration = round(float(probe_audio_duration_seconds(source_audio_path)), 1)
+    if duration <= 0:
+        return False, "无法读取当前音频时长", {}
+
+    novel_id = int(source.get("novelId") or 0)
+    english_dir = str(source.get("englishDir") or "").strip()
+    role_name = str(source.get("roleName") or "").strip()
+    line_text = str(source.get("lineText") or "")
+    role_map = get_novel_role_library_map(novel_id)
+    role = role_map.get(role_name) or {}
+    reference_text = str(role.get("sample_text") or source.get("referenceText") or "").strip()
+    reference_audio_path = str(role.get("sample_audio_path") or source.get("referenceAudioPath") or "").strip()
+
+    targets: dict[tuple[int, str], dict] = {}
+    for match in matches:
+        key = (int(match["chapterId"]), str(match["lineHash"]))
+        targets.setdefault(key, match)
+
+    replaced_count = 0
+    conn = db_conn()
+    try:
+        for match in targets.values():
+            chapter_num = int(match["chapterNum"])
+            line_hash = str(match["lineHash"])
+            dest_path = _chapter_line_audio_path(english_dir, chapter_num, line_hash)
+            dest_path.parent.mkdir(parents=True, exist_ok=True)
+            if source_audio_path.resolve() != dest_path.resolve():
+                shutil.copy2(source_audio_path, dest_path)
+            rel_path = db_rel_path(dest_path)
+            existing = conn.execute(
+                "SELECT id FROM line_audio_tasks WHERE novel_id=? AND chapter_id=? AND line_hash=?",
+                (novel_id, int(match["chapterId"]), line_hash),
+            ).fetchone()
+            if existing:
+                if int(existing["id"]) == int(task_id):
+                    continue
+                conn.execute(
+                    """
+                    UPDATE line_audio_tasks
+                    SET chapter_num=?, chapter_title=?, line_index=?, role_name=?, line_text=?,
+                        reference_text=?, reference_audio_path=?, status='completed', comfy_status='replaced',
+                        comfy_prompt_id=NULL, output_filename='', output_subfolder='', output_type='',
+                        downloaded_file_path=?, duration_seconds=?, queue_priority=0, error_message=NULL,
+                        comfy_started_at=NULL, comfy_finished_at=CURRENT_TIMESTAMP, scheduled_at=NULL,
+                        updated_at=CURRENT_TIMESTAMP
+                    WHERE id=?
+                    """,
+                    (
+                        chapter_num,
+                        str(match["chapterTitle"]),
+                        int(match["lineIndex"]),
+                        role_name,
+                        line_text,
+                        reference_text,
+                        reference_audio_path,
+                        rel_path,
+                        duration,
+                        int(existing["id"]),
+                    ),
+                )
+            else:
+                conn.execute(
+                    """
+                    INSERT INTO line_audio_tasks(
+                        novel_id, chapter_id, chapter_num, chapter_title,
+                        line_index, role_name, line_text, reference_text, reference_audio_path,
+                        line_hash, status, comfy_status, output_filename, output_subfolder, output_type,
+                        downloaded_file_path, duration_seconds, queue_priority, error_message,
+                        comfy_started_at, comfy_finished_at, scheduled_at
+                    ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', 'replaced', '', '', '', ?, ?, 0, NULL, NULL, CURRENT_TIMESTAMP, NULL)
+                    """,
+                    (
+                        novel_id,
+                        int(match["chapterId"]),
+                        chapter_num,
+                        str(match["chapterTitle"]),
+                        int(match["lineIndex"]),
+                        role_name,
+                        line_text,
+                        reference_text,
+                        reference_audio_path,
+                        line_hash,
+                        rel_path,
+                        duration,
+                    ),
+                )
+            replaced_count += 1
+        conn.commit()
+    finally:
+        conn.close()
+    return True, "replaced", {
+        "replacedCount": replaced_count,
+        "totalCount": int(data.get("totalCount") or 0),
+        "chapters": data.get("chapters") or [],
+        "durationSeconds": duration,
+    }
+
+
 def detect_line_audio_task_silences(
     task_id: int, *, noise_db: str = "-45dB", min_duration: float = 1.2
 ) -> tuple[bool, str, dict]:
