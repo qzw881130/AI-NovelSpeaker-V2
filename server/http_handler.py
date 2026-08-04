@@ -1,7 +1,9 @@
 import zipfile
 import base64
+import shutil
+import subprocess
 from pathlib import Path
-from urllib.parse import parse_qs, quote
+from urllib.parse import parse_qs, quote, unquote
 
 from .services import *  # noqa: F401,F403
 from .services import normalize_live_ending_audio_items
@@ -36,7 +38,9 @@ from .line_audio import (
     retry_line_audio_task,
     prioritize_line_audio_task,
     edit_line_audio_task_audio,
+    record_line_audio_noise_false_positive,
     detect_line_audio_task_silences,
+    detect_line_audio_task_noise,
     analyze_line_audio_task_loudness,
     preview_line_audio_replacement_targets,
     replace_matching_line_audio_tasks,
@@ -84,6 +88,173 @@ VISUAL_STYLE_OPTIONS = {
     "吉卜力动画风格",
 }
 DEFAULT_VISUAL_STYLE = "3D皮克斯动画电影风格"
+
+
+LINE_AUDIO_NOISE_SAMPLE_LABEL_DIRS = {
+    "manual-abnormal": "manual_abnormal",
+    "abnormal": "abnormal",
+    "false-positive-normal": "false_positive_normal",
+}
+
+
+def _line_audio_noise_sample_dir(label: str) -> Path | None:
+    directory = LINE_AUDIO_NOISE_SAMPLE_LABEL_DIRS.get(str(label or "").strip())
+    if not directory:
+        return None
+    return ROOT_DIR / "models" / "line_audio_noise_samples" / directory
+
+
+def _resolve_line_audio_noise_sample(label: str, name: str) -> Path | None:
+    file_name = Path(str(name or "")).name
+    if not file_name or file_name in {".", ".."}:
+        return None
+    raw_sample_dir = _line_audio_noise_sample_dir(label)
+    if raw_sample_dir is None:
+        return None
+    sample_dir = raw_sample_dir.resolve()
+    sample_path = (sample_dir / file_name).resolve()
+    try:
+        sample_path.relative_to(sample_dir)
+    except ValueError:
+        return None
+    return sample_path
+
+
+def _sample_label_display_name(label: str) -> str:
+    return LINE_AUDIO_NOISE_SAMPLE_LABEL_DIRS.get(str(label or "").strip(), str(label or ""))
+
+
+def _probe_manual_sample_duration(sample_path: Path) -> float:
+    return float(probe_audio_duration_seconds(sample_path))
+
+
+def _edit_manual_abnormal_sample(sample_path: Path, body: dict) -> tuple[bool, str, dict]:
+    mode = str(body.get("mode") or "keep").strip().lower()
+    if mode not in {"keep", "remove"}:
+        return False, "unsupported edit mode", {}
+    original_duration = _probe_manual_sample_duration(sample_path)
+    if original_duration <= 0:
+        return False, "无法读取样本时长", {}
+
+    ffmpeg_cmd: list[str]
+    if mode == "keep":
+        try:
+            start = max(0.0, min(float(body.get("startSeconds") or 0), original_duration))
+            end = max(0.0, min(float(body.get("endSeconds") or 0), original_duration))
+        except (TypeError, ValueError):
+            return False, "invalid edit range", {}
+        if end <= start or end - start < 0.05:
+            return False, "请选择有效的保留片段", {}
+        ffmpeg_cmd = [
+            "ffmpeg",
+            "-y",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-ss",
+            f"{start:.3f}",
+            "-to",
+            f"{end:.3f}",
+            "-i",
+            str(sample_path),
+            "-c:a",
+            "flac",
+        ]
+    else:
+        raw_segments = body.get("segments") if isinstance(body.get("segments"), list) else []
+        delete_segments: list[dict[str, float]] = []
+        for item in raw_segments:
+            if not isinstance(item, dict):
+                continue
+            try:
+                segment_start = max(0.0, min(float(item.get("start") or 0), original_duration))
+                segment_end = max(0.0, min(float(item.get("end") or 0), original_duration))
+            except (TypeError, ValueError):
+                continue
+            if segment_end - segment_start >= 0.05:
+                delete_segments.append({"start": segment_start, "end": segment_end})
+        delete_segments.sort(key=lambda item: item["start"])
+        normalized_segments: list[dict[str, float]] = []
+        for item in delete_segments:
+            if normalized_segments and item["start"] <= normalized_segments[-1]["end"] + 0.02:
+                normalized_segments[-1]["end"] = max(normalized_segments[-1]["end"], item["end"])
+            else:
+                normalized_segments.append(dict(item))
+        if not normalized_segments:
+            return False, "请先标记要删除的样本片段", {}
+        keep_segments: list[dict[str, float]] = []
+        cursor = 0.0
+        for item in normalized_segments:
+            if item["start"] - cursor >= 0.05:
+                keep_segments.append({"start": cursor, "end": item["start"]})
+            cursor = max(cursor, item["end"])
+        if original_duration - cursor >= 0.05:
+            keep_segments.append({"start": cursor, "end": original_duration})
+        if not keep_segments:
+            return False, "不能删除整段样本", {}
+        if len(keep_segments) == 1:
+            keep = keep_segments[0]
+            ffmpeg_cmd = [
+                "ffmpeg",
+                "-y",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-ss",
+                f"{keep['start']:.3f}",
+                "-to",
+                f"{keep['end']:.3f}",
+                "-i",
+                str(sample_path),
+                "-c:a",
+                "flac",
+            ]
+        else:
+            filter_parts = []
+            concat_inputs = []
+            for index, keep in enumerate(keep_segments):
+                label = f"a{index}"
+                filter_parts.append(
+                    f"[0:a]atrim=start={keep['start']:.3f}:end={keep['end']:.3f},asetpts=PTS-STARTPTS[{label}]"
+                )
+                concat_inputs.append(f"[{label}]")
+            filter_parts.append(f"{''.join(concat_inputs)}concat=n={len(keep_segments)}:v=0:a=1[outa]")
+            ffmpeg_cmd = [
+                "ffmpeg",
+                "-y",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-i",
+                str(sample_path),
+                "-filter_complex",
+                ";".join(filter_parts),
+                "-map",
+                "[outa]",
+                "-c:a",
+                "flac",
+            ]
+
+    tmp_path = sample_path.with_name(f"{sample_path.stem}.edit-tmp{sample_path.suffix}")
+    try:
+        subprocess.run([*ffmpeg_cmd, str(tmp_path)], check=True, capture_output=True)
+        if not tmp_path.exists() or tmp_path.stat().st_size <= 0:
+            return False, "样本编辑输出为空", {}
+        new_duration = round(_probe_manual_sample_duration(tmp_path), 3)
+        if new_duration <= 0:
+            return False, "无法读取编辑后的样本时长", {}
+        shutil.move(str(tmp_path), str(sample_path))
+        stat = sample_path.stat()
+        return True, "edited", {"durationSeconds": new_duration, "size": int(stat.st_size), "updatedAt": int(stat.st_mtime)}
+    except subprocess.CalledProcessError as exc:
+        error_text = (exc.stderr or b"").decode("utf-8", errors="ignore").strip()
+        return False, error_text or "ffmpeg 样本编辑失败", {}
+    finally:
+        if tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
 
 
 def _resolve_storage_path(raw_path: str) -> Path | None:
@@ -1549,6 +1720,52 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": msg}, code)
                 return
             self.send_json(data)
+            return
+
+        m_line_audio_noise = re.match(r"^/api/line-audio-tasks/(\d+)/noise$", route)
+        if m_line_audio_noise:
+            task_id = int(m_line_audio_noise.group(1))
+            sensitivity = str((parse_qs(parsed.query or "").get("sensitivity") or ["balanced"])[0] or "balanced")
+            ok, msg, data = detect_line_audio_task_noise(task_id, sensitivity=sensitivity)
+            if not ok:
+                code = 404 if "不存在" in msg or "not found" in msg else 409
+                self.send_json({"error": msg}, code)
+                return
+            self.send_json(data)
+            return
+
+        m_noise_samples = re.match(r"^/api/line-audio-noise-samples/(manual-abnormal|abnormal|false-positive-normal)$", route)
+        if m_noise_samples:
+            label = m_noise_samples.group(1)
+            sample_dir = _line_audio_noise_sample_dir(label)
+            samples = []
+            if sample_dir and sample_dir.exists() and sample_dir.is_dir():
+                for path in sorted(sample_dir.iterdir(), key=lambda item: item.stat().st_mtime if item.exists() else 0, reverse=True):
+                    if not path.is_file() or path.suffix.lower() not in {".flac", ".wav", ".mp3", ".m4a", ".ogg"}:
+                        continue
+                    stat = path.stat()
+                    name = path.name
+                    samples.append(
+                        {
+                            "label": label,
+                            "directory": _sample_label_display_name(label),
+                            "name": name,
+                            "size": int(stat.st_size),
+                            "updatedAt": int(stat.st_mtime),
+                            "url": f"/api/line-audio-noise-samples/{label}/files/{quote(name)}",
+                        }
+                    )
+            self.send_json({"label": label, "directory": _sample_label_display_name(label), "samples": samples, "count": len(samples)})
+            return
+
+        m_noise_sample_file = re.match(r"^/api/line-audio-noise-samples/(manual-abnormal|abnormal|false-positive-normal)/files/(.+)$", route)
+        if m_noise_sample_file:
+            sample_path = _resolve_line_audio_noise_sample(m_noise_sample_file.group(1), unquote(m_noise_sample_file.group(2)))
+            if sample_path is None or not sample_path.exists() or not sample_path.is_file():
+                self.send_json({"error": "sample not found"}, 404)
+                return
+            ctype = mimetypes.guess_type(sample_path.name)[0] or "audio/flac"
+            self.send_file_response(sample_path, ctype, cache_control="no-store")
             return
 
         m_line_audio_replacements = re.match(r"^/api/line-audio-tasks/(\d+)/replacement-targets$", route)
@@ -3106,10 +3323,40 @@ class Handler(BaseHTTPRequestHandler):
                 volume_factor=volume_factor,
                 speed_factor=speed_factor,
                 segments=body.get("segments") if isinstance(body.get("segments"), list) else None,
+                collect_training_samples=body.get("collectTrainingSamples") is not False,
             )
             if not ok:
                 code = 404 if "不存在" in msg or "not found" in msg else 409
                 self.send_json({"error": msg}, code)
+                return
+            self.send_json({"status": msg, **data})
+            return
+
+        m_false_positive_noise = re.match(r"^/api/line-audio-tasks/(\d+)/noise/false-positive$", route)
+        if m_false_positive_noise:
+            task_id = int(m_false_positive_noise.group(1))
+            body = self.read_json()
+            ok, msg, data = record_line_audio_noise_false_positive(
+                task_id,
+                body.get("segments") if isinstance(body.get("segments"), list) else [],
+            )
+            if not ok:
+                code = 404 if "不存在" in msg or "not found" in msg else 409
+                self.send_json({"error": msg}, code)
+                return
+            self.send_json({"status": msg, **data})
+            return
+
+        m_edit_noise_sample = re.match(r"^/api/line-audio-noise-samples/(manual-abnormal|abnormal|false-positive-normal)/files/(.+)/edit$", route)
+        if m_edit_noise_sample:
+            sample_path = _resolve_line_audio_noise_sample(m_edit_noise_sample.group(1), unquote(m_edit_noise_sample.group(2)))
+            if sample_path is None or not sample_path.exists() or not sample_path.is_file():
+                self.send_json({"error": "sample not found"}, 404)
+                return
+            body = self.read_json()
+            ok, msg, data = _edit_manual_abnormal_sample(sample_path, body)
+            if not ok:
+                self.send_json({"error": msg}, 409)
                 return
             self.send_json({"status": msg, **data})
             return
@@ -3808,6 +4055,20 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": msg}, code)
                 return
             kick_line_audio_queue_once()
+            self.send_json({"status": "deleted"})
+            return
+
+        m_delete_noise_sample = re.match(r"^/api/line-audio-noise-samples/(manual-abnormal|abnormal|false-positive-normal)/files/(.+)$", route)
+        if m_delete_noise_sample:
+            sample_path = _resolve_line_audio_noise_sample(m_delete_noise_sample.group(1), unquote(m_delete_noise_sample.group(2)))
+            if sample_path is None or not sample_path.exists() or not sample_path.is_file():
+                self.send_json({"error": "sample not found"}, 404)
+                return
+            try:
+                sample_path.unlink()
+            except OSError as exc:
+                self.send_json({"error": f"delete failed: {exc}"}, 409)
+                return
             self.send_json({"status": "deleted"})
             return
 

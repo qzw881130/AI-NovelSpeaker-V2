@@ -29,3 +29,10 @@ temp/*
 # Keep logs directory, ignore runtime log files
 logs/*
 !logs/.gitkeep
+
+# Local AI models
+models/*
+!models/.gitkeep
+
+# Local audio classifier training data
+data/line_audio_noise_samples.jsonl

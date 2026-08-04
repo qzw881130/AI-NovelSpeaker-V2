@@ -223,14 +223,19 @@
           <div id="lineAudioTableBody"></div>
         </div>
         <menu class="line-audio-footer">
-          <span id="lineAudioFilteredCount" class="line-audio-footer-count">筛选 0 条</span>
-          <button id="detectAllLineAudioSilencesBtn" class="ghost-btn" type="button">识别所有长空音频</button>
-          <button id="removeAllLineAudioMarkedSegmentsBtn" class="ghost-btn line-audio-marked-remove-btn" type="button">删除音频标记片段<span id="removeAllLineAudioMarkedSegmentsBadge" class="line-audio-edit-badge hidden">0</span></button>
-          <button id="mergeAdjacentSameRoleLinesBtn" class="ghost-btn" type="button">合并相邻台词</button>
-          <button id="enqueueFilteredLineAudioBtn" class="ghost-btn" type="button">生成当前所列</button>
-          <button id="enqueueNonNarrationLineAudioBtn" class="ghost-btn" type="button">生成所有非旁白</button>
-          <button id="enqueueRemainingLineAudioBtn" class="ghost-btn" type="button">生成剩余</button>
-          <button id="enqueueAllLineAudioBtn" class="primary-btn" type="button">生成所有</button>
+          <div class="line-audio-footer-row">
+            <span id="lineAudioFilteredCount" class="line-audio-footer-count">筛选 0 条</span>
+            <button id="detectLineAudioNoiseBtn" class="ghost-btn line-audio-noise-detect-btn" type="button">检测噪音<span id="detectLineAudioNoiseBadge" class="line-audio-edit-badge hidden">0</span></button>
+            <button id="detectAllLineAudioSilencesBtn" class="ghost-btn" type="button">识别所有长空音频</button>
+            <button id="removeAllLineAudioMarkedSegmentsBtn" class="ghost-btn line-audio-marked-remove-btn" type="button">删除音频标记片段<span id="removeAllLineAudioMarkedSegmentsBadge" class="line-audio-edit-badge hidden">0</span></button>
+            <button id="mergeAdjacentSameRoleLinesBtn" class="ghost-btn" type="button">合并相邻台词</button>
+          </div>
+          <div class="line-audio-footer-row line-audio-footer-row-secondary">
+            <button id="enqueueFilteredLineAudioBtn" class="ghost-btn" type="button">生成当前所列</button>
+            <button id="enqueueNonNarrationLineAudioBtn" class="ghost-btn" type="button">生成所有非旁白</button>
+            <button id="enqueueRemainingLineAudioBtn" class="ghost-btn" type="button">生成剩余</button>
+            <button id="enqueueAllLineAudioBtn" class="primary-btn" type="button">生成所有</button>
+          </div>
         </menu>
       </form>
     </dialog>
@@ -239,7 +244,11 @@
       <form method="dialog" class="line-audio-editor-form">
         <button class="dialog-close-btn" type="submit" aria-label="关闭">×</button>
         <h3>编辑台词音频</h3>
-        <p id="lineAudioEditorText" class="line-audio-editor-text"></p>
+        <p class="line-audio-editor-text">
+          <span id="lineAudioEditorTextContent"></span>
+          <span id="lineAudioEditorCharCount" class="juben-line-count line-audio-editor-char-count"></span>
+        </p>
+        <div id="lineAudioEditorWarning" class="line-audio-editor-warning hidden"></div>
         <div class="line-audio-editor-zoom-row">
           <span class="meta">波形缩放</span>
           <button id="lineAudioEditorZoomOutBtn" class="ghost-btn btn-sm" type="button">-</button>
@@ -280,11 +289,15 @@
           <button id="lineAudioEditorPlayBtn" class="ghost-btn" type="button">播放选中</button>
           <button id="lineAudioEditorMarkDeleteBtn" class="ghost-btn" type="button">标记删除片段</button>
           <button id="lineAudioEditorClearDeleteBtn" class="ghost-btn" type="button">清空删除片段</button>
+          <button id="lineAudioEditorSilenceSaveBtn" class="ghost-btn" type="button">静音选中并保存</button>
           <button id="lineAudioEditorVolumeSaveBtn" class="ghost-btn" type="button">调整音量并保存</button>
           <button id="lineAudioEditorSpeedSaveBtn" class="ghost-btn" type="button">调整语速并保存</button>
+          <button id="lineAudioEditorNoiseDetectBtn" class="ghost-btn line-audio-editor-noise-btn" type="button">检查噪音</button>
+          <button id="lineAudioEditorNoiseFalsePositiveBtn" class="ghost-btn hidden" type="button">不是噪音</button>
           <span class="line-audio-editor-action-break" aria-hidden="true"></span>
           <button id="lineAudioEditorSaveBtn" class="primary-btn" type="button">保留选中并保存</button>
           <button id="lineAudioEditorRemoveSaveBtn" class="primary-btn" type="button">删除标记片段并保存</button>
+          <button id="lineAudioEditorRemoveNoTrainSaveBtn" class="ghost-btn" type="button">删除但不训练</button>
           <button class="ghost-btn" type="submit">取消</button>
         </menu>
       </form>

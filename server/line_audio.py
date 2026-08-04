@@ -8,8 +8,11 @@ import math
 import random
 import re
 import shutil
+import struct
 import subprocess
+import tempfile
 import time
+import wave
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -32,6 +35,12 @@ from .services import (
     update_workflow_log_json,
     workflow_json_to_prompt_json,
 )
+
+
+SILERO_VAD_ONNX_PATH = ROOT_DIR / "models" / "silero_vad.onnx"
+LINE_AUDIO_NOISE_MODEL_PATH = ROOT_DIR / "models" / "line_audio_noise_classifier.json"
+LINE_AUDIO_NOISE_SAMPLE_DIR = ROOT_DIR / "models" / "line_audio_noise_samples"
+LINE_AUDIO_NOISE_SAMPLE_LOG_PATH = ROOT_DIR / "data" / "line_audio_noise_samples.jsonl"
 
 
 def _safe_filename(text: str) -> str:
@@ -1622,14 +1631,15 @@ def edit_line_audio_task_audio(
     volume_factor: float = 1.0,
     speed_factor: float = 1.0,
     segments: list | None = None,
+    collect_training_samples: bool = True,
 ) -> tuple[bool, str, dict]:
-    """编辑台词音频文件。支持裁剪、删除片段、调整音量或语速后替换原文件。"""
+    """编辑台词音频文件。支持裁剪、删除片段、局部静音、调整音量或语速后替换原文件。"""
     edit_mode = str(mode or "keep").strip().lower()
-    if edit_mode not in {"keep", "remove", "volume", "speed"}:
+    if edit_mode not in {"keep", "remove", "silence", "volume", "speed"}:
         return False, "不支持的音频编辑模式", {}
     start = max(0.0, float(start_seconds or 0))
     end = max(0.0, float(end_seconds or 0))
-    if edit_mode == "keep" and (end <= start or end - start < 0.05):
+    if edit_mode in {"keep", "silence"} and (end <= start or end - start < 0.05):
         return False, "请选择有效的音频片段", {}
     gain = float(volume_factor or 1.0)
     if not math.isfinite(gain):
@@ -1642,7 +1652,7 @@ def edit_line_audio_task_audio(
 
     conn = db_conn()
     row = conn.execute(
-        "SELECT id, status, downloaded_file_path FROM line_audio_tasks WHERE id=?",
+        "SELECT id, status, downloaded_file_path, line_text FROM line_audio_tasks WHERE id=?",
         (task_id,),
     ).fetchone()
     conn.close()
@@ -1664,6 +1674,7 @@ def edit_line_audio_task_audio(
     original_duration = float(probe_audio_duration_seconds(audio_path))
     if original_duration <= 0:
         return False, "无法读取音频时长", {}
+    accepted_delete_segments: list[dict[str, float]] = []
     if edit_mode == "volume":
         ffmpeg_cmd = [
             "ffmpeg",
@@ -1692,6 +1703,25 @@ def edit_line_audio_task_audio(
             "-c:a",
             "flac",
         ]
+    elif edit_mode == "silence":
+        if start >= original_duration:
+            return False, "片段开始时间超出音频时长", {}
+        end = min(end, original_duration)
+        if end <= start or end - start < 0.05:
+            return False, "请选择有效的音频片段", {}
+        ffmpeg_cmd = [
+            "ffmpeg",
+            "-y",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-i",
+            str(audio_path),
+            "-af",
+            f"volume=0:enable='between(t\\,{start:.3f}\\,{end:.3f})'",
+            "-c:a",
+            "flac",
+        ]
     elif edit_mode == "keep":
         if start >= original_duration:
             return False, "片段开始时间超出音频时长", {}
@@ -1715,7 +1745,7 @@ def edit_line_audio_task_audio(
         ]
     else:
         raw_segments = segments or []
-        delete_segments: list[dict[str, float]] = []
+        delete_segments: list[dict[str, Any]] = []
         for item in raw_segments:
             if not isinstance(item, dict):
                 continue
@@ -1725,16 +1755,26 @@ def edit_line_audio_task_audio(
             except (TypeError, ValueError):
                 continue
             if segment_end - segment_start >= 0.05:
-                delete_segments.append({"start": segment_start, "end": segment_end})
+                delete_segments.append(
+                    {
+                        "start": segment_start,
+                        "end": segment_end,
+                        "type": str(item.get("type") or "").strip(),
+                        "reason": str(item.get("reason") or "").strip(),
+                    }
+                )
         delete_segments.sort(key=lambda item: item["start"])
-        normalized_segments: list[dict[str, float]] = []
+        normalized_segments: list[dict[str, Any]] = []
         for item in delete_segments:
             if normalized_segments and item["start"] <= normalized_segments[-1]["end"] + 0.02:
                 normalized_segments[-1]["end"] = max(normalized_segments[-1]["end"], item["end"])
+                if normalized_segments[-1].get("type") != item.get("type"):
+                    normalized_segments[-1]["type"] = "mixed"
             else:
                 normalized_segments.append(dict(item))
         if not normalized_segments:
             return False, "请先标记要删除的音频片段", {}
+        accepted_delete_segments = [dict(item) for item in normalized_segments]
 
         keep_segments: list[dict[str, float]] = []
         cursor = 0.0
@@ -1803,6 +1843,13 @@ def edit_line_audio_task_audio(
         new_duration = round(float(probe_audio_duration_seconds(tmp_path)), 1)
         if new_duration <= 0:
             return False, "无法读取编辑后的音频时长", {}
+        if edit_mode == "remove" and accepted_delete_segments and collect_training_samples:
+            _collect_line_audio_noise_training_samples(
+                audio_path,
+                task_id=task_id,
+                line_text=str(row["line_text"] or ""),
+                segments=accepted_delete_segments,
+            )
         shutil.move(str(tmp_path), str(audio_path))
         conn = db_conn()
         conn.execute(
@@ -2092,7 +2139,7 @@ def detect_line_audio_task_silences(
 
     conn = db_conn()
     row = conn.execute(
-        "SELECT id, status, downloaded_file_path FROM line_audio_tasks WHERE id=?",
+        "SELECT id, status, downloaded_file_path, line_text FROM line_audio_tasks WHERE id=?",
         (task_id,),
     ).fetchone()
     conn.close()
@@ -2152,6 +2199,8 @@ def detect_line_audio_task_silences(
                     {
                         "start": round(max(0.0, min(current_start, audio_duration)), 3),
                         "end": round(max(0.0, min(end, audio_duration)), 3),
+                        "type": "silence_gap",
+                        "reason": f"检测到 {end - current_start:.1f} 秒长空白音频",
                     }
                 )
             current_start = None
@@ -2161,11 +2210,21 @@ def detect_line_audio_task_silences(
             {
                 "start": round(max(0.0, min(current_start, audio_duration)), 3),
                 "end": round(audio_duration, 3),
+                "type": "silence_gap",
+                "reason": f"检测到 {audio_duration - current_start:.1f} 秒长空白音频",
             }
         )
 
+    repeat_segments = _detect_repeated_short_line_audio_segments(
+        audio_path,
+        line_text=str(row["line_text"] or ""),
+        audio_duration=audio_duration,
+    )
+    segments.extend(repeat_segments)
+
     return True, "detected", {
         "segments": segments,
+        "repeatSegments": repeat_segments,
         "durationSeconds": round(audio_duration, 1),
         "noiseDb": noise,
         "minDuration": duration,
@@ -2194,6 +2253,2817 @@ def _get_completed_line_audio_path(task_id: int) -> tuple[bool, str, Path | None
     if not audio_path.exists() or not audio_path.is_file():
         return False, "音频文件不存在", None
     return True, "ok", audio_path
+
+
+def _get_line_audio_task_text(task_id: int) -> str:
+    conn = db_conn()
+    row = conn.execute(
+        "SELECT role_name, line_text FROM line_audio_tasks WHERE id=?",
+        (task_id,),
+    ).fetchone()
+    conn.close()
+    if not row:
+        return ""
+    role_name = str(row["role_name"] or "").strip()
+    line_text = str(row["line_text"] or "").strip()
+    return f"{role_name}:{line_text}" if role_name else line_text
+
+
+def _rms_db_from_samples(samples: tuple[int, ...]) -> float:
+    if not samples:
+        return -120.0
+    mean_square = sum(sample * sample for sample in samples) / len(samples)
+    if mean_square <= 0:
+        return -120.0
+    return 20.0 * math.log10(math.sqrt(mean_square) / 32768.0)
+
+
+def _next_power_of_two(value: int) -> int:
+    size = 1
+    while size < value:
+        size <<= 1
+    return size
+
+
+def _fft(values: list[complex]) -> list[complex]:
+    size = len(values)
+    if size <= 1:
+        return values
+    even = _fft(values[0::2])
+    odd = _fft(values[1::2])
+    combined = [0j] * size
+    half = size // 2
+    for index in range(half):
+        angle = -2.0 * math.pi * index / size
+        factor = complex(math.cos(angle), math.sin(angle)) * odd[index]
+        combined[index] = even[index] + factor
+        combined[index + half] = even[index] - factor
+    return combined
+
+
+def _spectral_features(samples: tuple[int, ...], sample_rate: int) -> dict:
+    if not samples or sample_rate <= 0:
+        return {"flatness": 0.0, "centroid": 0.0, "highRatio": 0.0}
+    window_size = min(1024, _next_power_of_two(len(samples)))
+    if len(samples) < window_size:
+        padded = list(samples) + [0] * (window_size - len(samples))
+    else:
+        padded = list(samples[:window_size])
+    windowed = []
+    for index, sample in enumerate(padded):
+        hann = 0.5 - 0.5 * math.cos((2.0 * math.pi * index) / max(1, window_size - 1))
+        windowed.append(complex((sample / 32768.0) * hann, 0.0))
+    spectrum = _fft(windowed)
+    powers: list[tuple[float, float]] = []
+    for bin_index, value in enumerate(spectrum[1 : window_size // 2], start=1):
+        freq = bin_index * sample_rate / window_size
+        power = (value.real * value.real) + (value.imag * value.imag)
+        powers.append((freq, power))
+    total_power = sum(power for _, power in powers)
+    if total_power <= 1e-12:
+        return {"flatness": 0.0, "centroid": 0.0, "highRatio": 0.0}
+    eps = 1e-12
+    mean_log_power = sum(math.log(max(power, eps)) for _, power in powers) / len(powers)
+    arithmetic_mean = total_power / len(powers)
+    flatness = math.exp(mean_log_power) / max(arithmetic_mean, eps)
+    centroid = sum(freq * power for freq, power in powers) / total_power
+    high_power = sum(power for freq, power in powers if freq >= 3500.0)
+    return {
+        "flatness": max(0.0, min(1.0, flatness)),
+        "centroid": centroid,
+        "highRatio": high_power / total_power,
+    }
+
+
+def _sample_frame_features(samples: tuple[int, ...], sample_rate: int) -> dict:
+    if not samples:
+        return {
+            "rmsDb": -120.0,
+            "peakDb": -120.0,
+            "crestDb": 0.0,
+            "zeroCrossings": 0,
+            "flatness": 0.0,
+            "centroid": 0.0,
+            "highRatio": 0.0,
+        }
+    mean_square = sum(sample * sample for sample in samples) / len(samples)
+    rms = math.sqrt(mean_square) / 32768.0 if mean_square > 0 else 0.0
+    peak = max(abs(sample) for sample in samples) / 32768.0
+    zero_crossings = sum(
+        1
+        for index in range(1, len(samples))
+        if (samples[index - 1] < 0 <= samples[index]) or (samples[index - 1] >= 0 > samples[index])
+    )
+    rms_db = 20.0 * math.log10(rms) if rms > 0 else -120.0
+    peak_db = 20.0 * math.log10(peak) if peak > 0 else -120.0
+    crest_db = peak_db - rms_db if rms > 0 and peak > 0 else 0.0
+    return {
+        "rmsDb": rms_db,
+        "peakDb": peak_db,
+        "crestDb": crest_db,
+        "zeroCrossings": zero_crossings,
+        **_spectral_features(samples, sample_rate),
+    }
+
+
+def _read_wav_rms_frames(wav_path: Path, frame_seconds: float = 0.1) -> tuple[float, list[dict]]:
+    with wave.open(str(wav_path), "rb") as wav_file:
+        sample_rate = int(wav_file.getframerate() or 0)
+        channels = int(wav_file.getnchannels() or 0)
+        sample_width = int(wav_file.getsampwidth() or 0)
+        total_frames = int(wav_file.getnframes() or 0)
+        if sample_rate <= 0 or channels != 1 or sample_width != 2 or total_frames <= 0:
+            return 0.0, []
+        frame_size = max(1, int(sample_rate * frame_seconds))
+        items: list[dict] = []
+        cursor = 0
+        while cursor < total_frames:
+            read_count = min(frame_size, total_frames - cursor)
+            raw = wav_file.readframes(read_count)
+            if not raw:
+                break
+            sample_count = len(raw) // 2
+            samples = struct.unpack(f"<{sample_count}h", raw[: sample_count * 2])
+            start = cursor / sample_rate
+            end = (cursor + read_count) / sample_rate
+            features = _sample_frame_features(samples, sample_rate)
+            duration = max(0.001, end - start)
+            items.append(
+                {
+                    "start": start,
+                    "end": end,
+                    "rmsDb": features["rmsDb"],
+                    "peakDb": features["peakDb"],
+                    "crestDb": features["crestDb"],
+                    "zcr": features["zeroCrossings"] / duration,
+                    "flatness": features["flatness"],
+                    "centroid": features["centroid"],
+                    "highRatio": features["highRatio"],
+                }
+            )
+            cursor += read_count
+        return total_frames / sample_rate, items
+
+
+def _read_wav_float_samples(wav_path: Path) -> tuple[int, list[float]]:
+    with wave.open(str(wav_path), "rb") as wav_file:
+        sample_rate = int(wav_file.getframerate() or 0)
+        channels = int(wav_file.getnchannels() or 0)
+        sample_width = int(wav_file.getsampwidth() or 0)
+        total_frames = int(wav_file.getnframes() or 0)
+        if sample_rate <= 0 or channels != 1 or sample_width != 2 or total_frames <= 0:
+            return 0, []
+        raw = wav_file.readframes(total_frames)
+    sample_count = len(raw) // 2
+    if sample_count <= 0:
+        return 0, []
+    samples = struct.unpack(f"<{sample_count}h", raw[: sample_count * 2])
+    return sample_rate, [max(-1.0, min(1.0, sample / 32768.0)) for sample in samples]
+
+
+LINE_AUDIO_NOISE_FEATURE_KEYS = [
+    "duration",
+    "mean_rms_db",
+    "std_rms_db",
+    "min_rms_db",
+    "max_rms_db",
+    "rms_growth_db",
+    "mean_peak_db",
+    "mean_crest_db",
+    "low_crest_ratio",
+    "mean_zcr",
+    "std_zcr",
+    "mean_flatness",
+    "std_flatness",
+    "mean_centroid_hz",
+    "std_centroid_hz",
+    "mean_high_ratio",
+    "std_high_ratio",
+    "silence_ratio",
+    "low_level_ratio",
+    "loud_ratio",
+    "high_frequency_ratio",
+    "tonal_ratio",
+]
+
+
+def _mean_values(values: list[float], default: float = 0.0) -> float:
+    return sum(values) / len(values) if values else default
+
+
+def _std_values(values: list[float]) -> float:
+    if len(values) < 2:
+        return 0.0
+    mean = _mean_values(values)
+    return math.sqrt(sum((value - mean) ** 2 for value in values) / len(values))
+
+
+def _line_audio_noise_feature_dict(frames: list[dict], segment: dict | None = None) -> dict[str, float]:
+    segment_frames = _segment_frames(frames, segment) if segment else list(frames)
+    if not segment_frames:
+        return {key: 0.0 for key in LINE_AUDIO_NOISE_FEATURE_KEYS}
+    start = float(segment_frames[0]["start"])
+    end = float(segment_frames[-1]["end"])
+    duration = max(0.001, end - start)
+    rms_values = [float(item.get("rmsDb", -120.0)) for item in segment_frames]
+    peak_values = [float(item.get("peakDb", -120.0)) for item in segment_frames]
+    crest_values = [float(item.get("crestDb", 0.0)) for item in segment_frames]
+    zcr_values = [float(item.get("zcr", 0.0)) for item in segment_frames]
+    flatness_values = [float(item.get("flatness", 0.0)) for item in segment_frames]
+    centroid_values = [float(item.get("centroid", 0.0)) for item in segment_frames]
+    high_ratio_values = [float(item.get("highRatio", 0.0)) for item in segment_frames]
+    edge_count = max(1, min(4, len(rms_values) // 3 or 1))
+    return {
+        "duration": duration,
+        "mean_rms_db": _mean_values(rms_values, -120.0),
+        "std_rms_db": _std_values(rms_values),
+        "min_rms_db": min(rms_values),
+        "max_rms_db": max(rms_values),
+        "rms_growth_db": _mean_values(rms_values[-edge_count:]) - _mean_values(rms_values[:edge_count]),
+        "mean_peak_db": _mean_values(peak_values, -120.0),
+        "mean_crest_db": _mean_values(crest_values),
+        "low_crest_ratio": sum(1 for value in crest_values if value <= 10.0) / len(crest_values),
+        "mean_zcr": _mean_values(zcr_values),
+        "std_zcr": _std_values(zcr_values),
+        "mean_flatness": _mean_values(flatness_values),
+        "std_flatness": _std_values(flatness_values),
+        "mean_centroid_hz": _mean_values(centroid_values),
+        "std_centroid_hz": _std_values(centroid_values),
+        "mean_high_ratio": _mean_values(high_ratio_values),
+        "std_high_ratio": _std_values(high_ratio_values),
+        "silence_ratio": sum(1 for value in rms_values if value <= -58.0) / len(rms_values),
+        "low_level_ratio": sum(1 for value in rms_values if -65.0 <= value <= -38.0) / len(rms_values),
+        "loud_ratio": sum(1 for value in rms_values if value >= -28.0) / len(rms_values),
+        "high_frequency_ratio": sum(
+            1
+            for zcr, high_ratio, flatness in zip(zcr_values, high_ratio_values, flatness_values)
+            if zcr >= 3500.0 and high_ratio >= 0.12 and flatness >= 0.035
+        )
+        / len(segment_frames),
+        "tonal_ratio": sum(
+            1
+            for crest, flatness, zcr, high_ratio in zip(crest_values, flatness_values, zcr_values, high_ratio_values)
+            if crest <= 9.5 and flatness <= 0.035 and zcr <= 1600.0 and high_ratio <= 0.06
+        )
+        / len(segment_frames),
+    }
+
+
+def _line_audio_noise_feature_vector(features: dict[str, float]) -> list[float]:
+    return [float(features.get(key, 0.0) or 0.0) for key in LINE_AUDIO_NOISE_FEATURE_KEYS]
+
+
+def _load_line_audio_noise_classifier() -> dict | None:
+    try:
+        if not LINE_AUDIO_NOISE_MODEL_PATH.exists():
+            return None
+        data = json.loads(LINE_AUDIO_NOISE_MODEL_PATH.read_text(encoding="utf-8"))
+        if not isinstance(data, dict) or data.get("featureKeys") != LINE_AUDIO_NOISE_FEATURE_KEYS:
+            return None
+        return data
+    except Exception:
+        return None
+
+
+def _classifier_distance(vector: list[float], mean: list[float], std: list[float]) -> float:
+    total = 0.0
+    for value, mean_value, std_value in zip(vector, mean, std):
+        scale = max(float(std_value or 0.0), 1e-6)
+        total += ((float(value) - float(mean_value)) / scale) ** 2
+    return math.sqrt(total / max(1, len(vector)))
+
+
+def _classify_line_audio_noise_segment(frames: list[dict], segment: dict) -> dict | None:
+    model = _load_line_audio_noise_classifier()
+    if not model:
+        return None
+    try:
+        features = _line_audio_noise_feature_dict(frames, segment)
+        vector = _line_audio_noise_feature_vector(features)
+        normal = model.get("normal") or {}
+        abnormal = model.get("abnormal") or {}
+        normal_distance = _classifier_distance(vector, normal.get("mean") or [], normal.get("std") or [])
+        abnormal_distance = _classifier_distance(vector, abnormal.get("mean") or [], abnormal.get("std") or [])
+        probability = 1.0 / (1.0 + math.exp(max(-40.0, min(40.0, abnormal_distance - normal_distance))))
+        threshold = float(model.get("threshold", 0.58) or 0.58)
+        return {
+            "status": "abnormal" if probability >= threshold else "normal",
+            "probability": round(probability, 3),
+            "threshold": round(threshold, 3),
+            "normalDistance": round(normal_distance, 3),
+            "abnormalDistance": round(abnormal_distance, 3),
+            "modelVersion": str(model.get("version") or "unknown"),
+        }
+    except Exception as exc:
+        return {"status": "error", "message": str(exc)}
+
+
+def _apply_line_audio_noise_classifier(segments: list[dict], frames: list[dict]) -> None:
+    if not segments or not _load_line_audio_noise_classifier():
+        return
+    weak_rule_types = {"post_speech_tail_noise", "sensitive_low_level_noise", "vad_non_speech_noise"}
+    for segment in segments:
+        result = _classify_line_audio_noise_segment(frames, segment)
+        if not result:
+            continue
+        segment["classifier"] = result
+        if result.get("status") == "abnormal":
+            probability = float(result.get("probability", 0.0) or 0.0)
+            segment_type = str(segment.get("type") or "")
+            if segment_type not in weak_rule_types:
+                segment["score"] = max(int(segment.get("score", 0) or 0), int(round(probability * 100)))
+                segment["confidence"] = max(float(segment.get("confidence", 0.0) or 0.0), round(probability, 2))
+            reasons = segment.setdefault("reasons", [])
+            if isinstance(reasons, list):
+                reasons.append(f"本地音频分类器确认异常，概率 {probability:.2f}")
+
+
+def _append_line_audio_noise_sample_log(record: dict) -> None:
+    try:
+        LINE_AUDIO_NOISE_SAMPLE_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with LINE_AUDIO_NOISE_SAMPLE_LOG_PATH.open("a", encoding="utf-8") as file:
+            file.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
+    except Exception:
+        pass
+
+
+def _collect_line_audio_noise_training_samples(
+    audio_path: Path,
+    *,
+    task_id: int,
+    line_text: str,
+    segments: list[dict[str, Any]],
+    label: str | None = None,
+    source: str = "accepted_remove",
+) -> None:
+    if not segments or not audio_path.exists():
+        return
+    for index, segment in enumerate(segments):
+        start = max(0.0, float(segment.get("start") or 0.0))
+        end = max(start, float(segment.get("end") or start))
+        if end - start < 0.05:
+            continue
+        segment_type = str(segment.get("type") or "").strip()
+        segment_label = label or _line_audio_training_sample_label(segment_type)
+        sample_dir = LINE_AUDIO_NOISE_SAMPLE_DIR / segment_label
+        try:
+            sample_dir.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            continue
+        sample_name = f"task-{int(task_id)}-{int(time.time() * 1000)}-{index:02d}.flac"
+        sample_path = sample_dir / sample_name
+        try:
+            subprocess.run(
+                [
+                    "ffmpeg",
+                    "-y",
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-ss",
+                    f"{start:.3f}",
+                    "-to",
+                    f"{end:.3f}",
+                    "-i",
+                    str(audio_path),
+                    "-c:a",
+                    "flac",
+                    str(sample_path),
+                ],
+                check=True,
+                capture_output=True,
+            )
+            if not sample_path.exists() or sample_path.stat().st_size <= 0:
+                continue
+            rel_sample_path = db_rel_path(sample_path)
+            _append_line_audio_noise_sample_log(
+                {
+                    "label": segment_label,
+                    "source": source,
+                    "segmentType": segment_type,
+                    "taskId": int(task_id),
+                    "lineText": str(line_text or ""),
+                    "audioPath": rel_sample_path,
+                    "start": round(start, 3),
+                    "end": round(end, 3),
+                    "duration": round(end - start, 3),
+                    "createdAt": int(time.time()),
+                }
+            )
+        except Exception:
+            try:
+                if sample_path.exists():
+                    sample_path.unlink()
+            except OSError:
+                pass
+
+
+def record_line_audio_noise_false_positive(task_id: int, segments: list[dict[str, Any]]) -> tuple[bool, str, dict]:
+    ok, msg, audio_path = _get_completed_line_audio_path(task_id)
+    if not ok or audio_path is None:
+        return False, msg, {}
+    duration = float(probe_audio_duration_seconds(audio_path))
+    if duration <= 0:
+        return False, "无法读取音频时长", {}
+    normalized_segments: list[dict[str, Any]] = []
+    for item in segments or []:
+        if not isinstance(item, dict):
+            continue
+        try:
+            start = max(0.0, min(float(item.get("start") or 0.0), duration))
+            end = max(0.0, min(float(item.get("end") or 0.0), duration))
+        except (TypeError, ValueError):
+            continue
+        if end - start < 0.05:
+            continue
+        normalized_segments.append(
+            {
+                "start": start,
+                "end": end,
+                "type": str(item.get("type") or "false_positive_noise").strip() or "false_positive_noise",
+                "reason": "误报：人工确认不是噪音",
+            }
+        )
+    if not normalized_segments:
+        return False, "没有可保存的误报片段", {}
+    _collect_line_audio_noise_training_samples(
+        audio_path,
+        task_id=task_id,
+        line_text=_get_line_audio_task_text(task_id),
+        segments=normalized_segments,
+        label="false_positive_normal",
+        source="false_positive_noise",
+    )
+    return True, "recorded", {"count": len(normalized_segments), "label": "false_positive_normal"}
+
+
+def _line_audio_training_sample_label(segment_type: str) -> str:
+    normalized_type = str(segment_type or "").strip()
+    if normalized_type == "silence_gap":
+        return "silence_gap"
+    if normalized_type == "repeated_short_line_audio":
+        return "repeated_speech"
+    if not normalized_type or normalized_type == "mixed":
+        return "manual_abnormal"
+    non_noise_types = {"incomplete_long_line_audio", "short_line_audio_too_long"}
+    if normalized_type in non_noise_types:
+        return "content_issue"
+    return "abnormal"
+
+
+def _merge_speech_frames_to_segments(speech_frames: list[dict], *, max_gap: float = 0.2, min_duration: float = 0.1) -> list[dict]:
+    if not speech_frames:
+        return []
+    segments: list[dict] = []
+    start = float(speech_frames[0]["start"])
+    end = float(speech_frames[0]["end"])
+    max_probability = float(speech_frames[0].get("probability", 0.0))
+    for frame in speech_frames[1:]:
+        frame_start = float(frame["start"])
+        frame_end = float(frame["end"])
+        if frame_start - end <= max_gap:
+            end = max(end, frame_end)
+            max_probability = max(max_probability, float(frame.get("probability", 0.0)))
+            continue
+        if end - start >= min_duration:
+            segments.append({"start": start, "end": end, "probability": max_probability})
+        start = frame_start
+        end = frame_end
+        max_probability = float(frame.get("probability", 0.0))
+    if end - start >= min_duration:
+        segments.append({"start": start, "end": end, "probability": max_probability})
+    return segments
+
+
+def _detect_silero_onnx_speech_segments(wav_path: Path) -> tuple[str, list[dict], str]:
+    if not SILERO_VAD_ONNX_PATH.exists():
+        return "rule", [], "silero_vad.onnx not found"
+    try:
+        import numpy as np  # type: ignore
+        import onnxruntime as ort  # type: ignore
+    except Exception as exc:
+        return "rule", [], f"onnxruntime unavailable: {exc}"
+    sample_rate, samples = _read_wav_float_samples(wav_path)
+    if sample_rate != 16000 or not samples:
+        return "rule", [], "invalid wav for silero vad"
+    try:
+        session = ort.InferenceSession(str(SILERO_VAD_ONNX_PATH), providers=["CPUExecutionProvider"])
+        input_names = {item.name for item in session.get_inputs()}
+        state = np.zeros((2, 1, 128), dtype=np.float32)
+        speech_frames: list[dict] = []
+        window_size = 512
+        for offset in range(0, len(samples), window_size):
+            chunk = samples[offset : offset + window_size]
+            if len(chunk) < window_size:
+                chunk = chunk + [0.0] * (window_size - len(chunk))
+            inputs: dict[str, Any] = {}
+            if "input" in input_names:
+                inputs["input"] = np.asarray(chunk, dtype=np.float32).reshape(1, -1)
+            if "state" in input_names:
+                inputs["state"] = state
+            if "sr" in input_names:
+                inputs["sr"] = np.asarray(sample_rate, dtype=np.int64)
+            outputs = session.run(None, inputs)
+            probability = float(np.asarray(outputs[0]).reshape(-1)[0]) if outputs else 0.0
+            if len(outputs) > 1:
+                next_state = np.asarray(outputs[1])
+                if next_state.shape == state.shape:
+                    state = next_state.astype(np.float32)
+            if probability >= 0.5:
+                speech_frames.append(
+                    {
+                        "start": offset / sample_rate,
+                        "end": min(len(samples), offset + window_size) / sample_rate,
+                        "probability": probability,
+                    }
+                )
+        return "silero_onnx", _merge_speech_frames_to_segments(speech_frames), "ok"
+    except Exception as exc:
+        return "rule", [], f"silero vad failed: {exc}"
+
+
+def _short_line_audio_char_count(text: str) -> int:
+    content = re.sub(r"\s+", "", str(text or ""))
+    prefix_match = re.match(r"^([^:：]{1,6})[:：](.+)$", content)
+    if prefix_match and not re.search(r"[，。！？、；,.!?;]", prefix_match.group(1)):
+        content = prefix_match.group(2)
+    content = re.sub(r"[，。！？、；：,.!?;:\"'“”‘’（）()《》]+", "", content)
+    return len(content)
+
+
+def _active_audio_groups(frames: list[dict], threshold: float = -45.0) -> list[dict]:
+    groups: list[dict] = []
+    index = 0
+    while index < len(frames):
+        if float(frames[index]["rmsDb"]) < threshold:
+            index += 1
+            continue
+        start_index = index
+        gap = 0
+        index += 1
+        while index < len(frames):
+            if float(frames[index]["rmsDb"]) >= threshold:
+                gap = 0
+                index += 1
+                continue
+            gap += 1
+            if gap > 1:
+                break
+            index += 1
+        end_index = min(len(frames) - 1, max(start_index, index - gap))
+        group_frames = frames[start_index : end_index + 1]
+        start = float(group_frames[0]["start"])
+        end = float(group_frames[-1]["end"])
+        duration = end - start
+        if duration >= 0.18:
+            groups.append(
+                {
+                    "start": start,
+                    "end": end,
+                    "duration": duration,
+                    "meanRmsDb": _mean_rms_db(group_frames),
+                    "meanZcr": _mean_frame_value(group_frames, "zcr"),
+                    "meanCentroid": _mean_frame_value(group_frames, "centroid"),
+                }
+            )
+    return groups
+
+
+def _groups_look_similar(left: dict, right: dict) -> bool:
+    left_duration = max(0.01, float(left.get("duration") or 0.0))
+    right_duration = max(0.01, float(right.get("duration") or 0.0))
+    duration_ratio = min(left_duration, right_duration) / max(left_duration, right_duration)
+    rms_delta = abs(float(left.get("meanRmsDb") or -120.0) - float(right.get("meanRmsDb") or -120.0))
+    zcr_delta = abs(float(left.get("meanZcr") or 0.0) - float(right.get("meanZcr") or 0.0))
+    centroid_delta = abs(float(left.get("meanCentroid") or 0.0) - float(right.get("meanCentroid") or 0.0))
+    return duration_ratio >= 0.45 and rms_delta <= 10.0 and zcr_delta <= 2500.0 and centroid_delta <= 900.0
+
+
+def _detect_repeated_short_line_audio_segments(
+    audio_path: Path, *, line_text: str, audio_duration: float
+) -> list[dict]:
+    char_count = _short_line_audio_char_count(line_text)
+    if char_count > 4 or audio_duration < 1.45:
+        return []
+    expected_duration = max(0.7, 0.22 * max(1, char_count) + 0.45)
+    if audio_duration < max(1.45, expected_duration * 1.6):
+        return []
+
+    tmp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_file:
+            tmp_path = Path(tmp_file.name)
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-i",
+                str(audio_path),
+                "-ac",
+                "1",
+                "-ar",
+                "16000",
+                "-sample_fmt",
+                "s16",
+                str(tmp_path),
+            ],
+            check=True,
+            capture_output=True,
+        )
+        _, frames = _read_wav_rms_frames(tmp_path)
+    except Exception:
+        return []
+    finally:
+        if tmp_path and tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
+
+    groups = _active_audio_groups(frames, threshold=-45.0)
+    if len(groups) < 2:
+        return []
+    first = groups[0]
+    second = groups[1]
+    gap = float(second["start"]) - float(first["end"])
+    if gap < 0.18 or not _groups_look_similar(first, second):
+        return []
+    if float(second["end"]) < audio_duration * 0.65:
+        return []
+    delete_start = max(0.0, float(first["end"]) + 0.02)
+    if audio_duration - delete_start < 0.35:
+        return []
+    return [
+        {
+            "start": round(delete_start, 3),
+            "end": round(audio_duration, 3),
+            "type": "repeated_short_line_audio",
+            "reason": "短台词音频疑似重复生成，保留第一遍并删除后续重复片段",
+        }
+    ]
+
+
+def _find_tail_noise_segment(duration: float, frames: list[dict]) -> dict | None:
+    if duration <= 0 or len(frames) < 8:
+        return None
+    active_threshold = -42.0
+    max_tail_silence_frames = 2
+    index = len(frames) - 1
+    silent_tail = 0
+    while index >= 0 and frames[index]["rmsDb"] <= active_threshold:
+        silent_tail += 1
+        if silent_tail > max_tail_silence_frames:
+            return None
+        index -= 1
+    if index < 0:
+        return None
+
+    tail_end_index = index
+    gap = 0
+    while index >= 0:
+        if frames[index]["rmsDb"] > active_threshold:
+            gap = 0
+            index -= 1
+            continue
+        gap += 1
+        if gap > max_tail_silence_frames:
+            break
+        index -= 1
+    tail_start_index = max(0, index + gap + 1)
+    tail_frames = frames[tail_start_index : tail_end_index + 1]
+    if not tail_frames:
+        return None
+
+    start = float(tail_frames[0]["start"])
+    end = float(frames[tail_end_index]["end"])
+    if duration - end > 0.35:
+        return None
+    tail_duration = max(0.0, end - start)
+    if tail_duration < 1.0:
+        return None
+
+    rms_values = [float(item["rmsDb"]) for item in tail_frames]
+    edge_count = max(1, min(3, len(rms_values)))
+    active_ratio = sum(1 for value in rms_values if value > active_threshold) / len(rms_values)
+    start_rms = sum(rms_values[:edge_count]) / edge_count
+    end_rms = sum(rms_values[-edge_count:]) / edge_count
+    mean_rms = sum(rms_values) / len(rms_values)
+    growth = end_rms - start_rms
+    slope = growth / max(tail_duration, 0.1)
+    previous_frames = frames[max(0, tail_start_index - 10) : tail_start_index]
+    previous_low_ratio = 0.0
+    if previous_frames:
+        previous_low_ratio = sum(1 for item in previous_frames if float(item["rmsDb"]) <= -45.0) / len(previous_frames)
+
+    has_strong_rising_tail = growth >= 12.0 and slope >= 4.0
+    has_moderate_rising_tail = previous_low_ratio >= 0.45 and growth >= 8.0 and slope >= 2.5
+    if not has_strong_rising_tail and not has_moderate_rising_tail:
+        return None
+
+    mean_zcr = _mean_frame_value(tail_frames, "zcr")
+    mean_flatness = _mean_frame_value(tail_frames, "flatness")
+    mean_centroid = _mean_frame_value(tail_frames, "centroid")
+    mean_high_ratio = _mean_frame_value(tail_frames, "highRatio")
+    mean_crest = _mean_frame_value(tail_frames, "crestDb")
+    is_tonal_tail = mean_crest <= 9.2 and mean_flatness <= 0.018 and mean_zcr <= 1100.0 and mean_high_ratio <= 0.025
+    is_high_frequency_tail = mean_zcr >= 4200.0 and mean_high_ratio >= 0.22 and mean_flatness >= 0.045
+    is_extreme_rising_tail = has_strong_rising_tail and growth >= 18.0 and mean_crest <= 11.0
+    if not is_tonal_tail and not is_high_frequency_tail and not is_extreme_rising_tail:
+        return None
+
+    score = 0
+    reasons: list[str] = []
+    if tail_duration >= 1.0:
+        score += 25
+        reasons.append(f"尾部非静音持续 {tail_duration:.1f} 秒")
+    if tail_duration >= 2.0:
+        score += 15
+    if active_ratio >= 0.9:
+        score += 10
+        reasons.append("异常声音一直延续到文件末尾")
+    if previous_low_ratio >= 0.45:
+        score += 15
+        reasons.append("人声结束后出现独立尾部声音")
+    if growth >= 12.0:
+        score += 15
+        reasons.append(f"尾部音量增长 {growth:.1f}dB")
+    if slope >= 4.0:
+        score += 15
+        reasons.append(f"尾部音量增长斜率 {slope:.1f}dB/秒")
+    if end_rms >= -30.0:
+        score += 10
+        reasons.append(f"尾部结束音量较高 {end_rms:.1f}dBFS")
+    if mean_rms >= -40.0:
+        score += 10
+        reasons.append(f"尾部平均音量 {mean_rms:.1f}dBFS")
+
+    if score < 55:
+        return None
+    status = "abnormal"
+    noise_type = "rising_non_speech_noise" if growth >= 12.0 else "tail_non_speech_noise"
+    return {
+        "start": round(start, 2),
+        "end": round(duration, 2),
+        "duration": round(max(0.0, duration - start), 2),
+        "type": noise_type,
+        "confidence": round(min(0.99, max(0.3, score / 100)), 2),
+        "score": int(score),
+        "status": status,
+        "features": {
+            "mean_rms_db": round(mean_rms, 1),
+            "start_rms_db": round(start_rms, 1),
+            "end_rms_db": round(end_rms, 1),
+            "rms_growth_db": round(growth, 1),
+            "rms_slope_db_per_second": round(slope, 1),
+            "active_ratio": round(active_ratio, 2),
+            "previous_low_ratio": round(previous_low_ratio, 2),
+            "mean_zcr": round(mean_zcr, 1),
+            "mean_flatness": round(mean_flatness, 4),
+            "mean_centroid_hz": round(mean_centroid, 1),
+            "mean_high_ratio": round(mean_high_ratio, 3),
+            "mean_crest_db": round(mean_crest, 1),
+        },
+        "reasons": reasons,
+    }
+
+
+def _mean_rms_db(frames: list[dict]) -> float:
+    if not frames:
+        return -120.0
+    return sum(float(item["rmsDb"]) for item in frames) / len(frames)
+
+
+def _mean_frame_value(frames: list[dict], key: str, default: float = 0.0) -> float:
+    if not frames:
+        return default
+    return sum(float(item.get(key, default)) for item in frames) / len(frames)
+
+
+def _segment_frames(frames: list[dict], segment: dict) -> list[dict]:
+    start = float(segment.get("start", 0.0) or 0.0)
+    end = float(segment.get("end", start) or start)
+    return [item for item in frames if float(item["start"]) < end and float(item["end"]) > start]
+
+
+def _frame_voice_state(frame: dict) -> str:
+    rms_db = float(frame.get("rmsDb", -120.0))
+    if rms_db <= -48.0:
+        return "silence"
+    zcr = float(frame.get("zcr", 0.0))
+    flatness = float(frame.get("flatness", 0.0))
+    centroid = float(frame.get("centroid", 0.0))
+    high_ratio = float(frame.get("highRatio", 0.0))
+    crest_db = float(frame.get("crestDb", 0.0))
+    tonal_artifact = crest_db <= 8.8 and flatness <= 0.016 and zcr <= 900.0 and high_ratio <= 0.025
+    high_frequency_noise = zcr >= 5200.0 and high_ratio >= 0.22 and flatness >= 0.04
+    if tonal_artifact or high_frequency_noise:
+        return "noise"
+    speech_like = rms_db >= -38.0 and (
+        crest_db >= 10.0
+        or zcr >= 1200.0
+        or flatness >= 0.018
+        or high_ratio >= 0.025
+        or centroid >= 500.0
+    )
+    return "speech" if speech_like else "noise"
+
+
+def _overlap_seconds(start: float, end: float, other_start: float, other_end: float) -> float:
+    return max(0.0, min(end, other_end) - max(start, other_start))
+
+
+def _voice_activity_summary(frames: list[dict], segment: dict, speech_segments: list[dict] | None = None) -> dict:
+    segment_frames = _segment_frames(frames, segment)
+    start = float(segment.get("start", 0.0) or 0.0)
+    end = float(segment.get("end", start) or start)
+    duration = max(0.001, end - start)
+    if speech_segments is not None:
+        overlaps = [
+            _overlap_seconds(start, end, float(item.get("start", 0.0) or 0.0), float(item.get("end", 0.0) or 0.0))
+            for item in speech_segments
+        ]
+        speech_seconds = sum(overlaps)
+        max_speech_run = max(overlaps, default=0.0)
+        silence_seconds = sum(
+            max(0.0, min(end, float(item["end"])) - max(start, float(item["start"])))
+            for item in segment_frames
+            if float(item.get("rmsDb", -120.0)) <= -48.0
+        )
+        noise_seconds = max(0.0, duration - speech_seconds - silence_seconds)
+        return {
+            "speech_ratio": round(min(1.0, speech_seconds / duration), 3),
+            "noise_ratio": round(min(1.0, noise_seconds / duration), 3),
+            "silence_ratio": round(min(1.0, silence_seconds / duration), 3),
+            "max_speech_run_seconds": round(max_speech_run, 2),
+        }
+    if not segment_frames:
+        return {"speech_ratio": 0.0, "noise_ratio": 0.0, "silence_ratio": 0.0, "max_speech_run_seconds": 0.0}
+    speech_count = 0
+    noise_count = 0
+    silence_count = 0
+    current_speech_run = 0.0
+    max_speech_run = 0.0
+    for frame in segment_frames:
+        state = _frame_voice_state(frame)
+        frame_duration = max(0.0, float(frame["end"]) - float(frame["start"]))
+        if state == "speech":
+            speech_count += 1
+            current_speech_run += frame_duration
+            max_speech_run = max(max_speech_run, current_speech_run)
+        else:
+            current_speech_run = 0.0
+            if state == "silence":
+                silence_count += 1
+            else:
+                noise_count += 1
+    total = max(1, len(segment_frames))
+    return {
+        "speech_ratio": round(speech_count / total, 3),
+        "noise_ratio": round(noise_count / total, 3),
+        "silence_ratio": round(silence_count / total, 3),
+        "max_speech_run_seconds": round(max_speech_run, 2),
+    }
+
+
+def _filter_segments_with_voice_activity(
+    segments: list[dict], frames: list[dict], *, sensitivity: str = "balanced", speech_segments: list[dict] | None = None
+) -> list[dict]:
+    filtered: list[dict] = []
+    speech_gated_types = {"sustained_tts_artifact", "tail_non_speech_noise", "rising_non_speech_noise"}
+    mode = str(sensitivity or "balanced")
+    is_strict = mode in {"strict", "aggressive"}
+    is_aggressive = mode == "aggressive"
+    for segment in segments:
+        voice = _voice_activity_summary(frames, segment, speech_segments)
+        segment["voiceActivity"] = voice
+        segment_type = str(segment.get("type") or "")
+        if segment_type in speech_gated_types:
+            speech_ratio = float(voice.get("speech_ratio", 0.0) or 0.0)
+            noise_ratio = float(voice.get("noise_ratio", 0.0) or 0.0)
+            max_speech_run = float(voice.get("max_speech_run_seconds", 0.0) or 0.0)
+            speech_limit = 0.8 if is_aggressive else (0.55 if is_strict else 0.35)
+            noise_limit = 0.15 if is_aggressive else (0.35 if is_strict else 0.55)
+            speech_run_limit = 1.8 if is_aggressive else (0.9 if is_strict else 0.5)
+            if speech_ratio >= speech_limit and noise_ratio < noise_limit and max_speech_run >= speech_run_limit:
+                continue
+        filtered.append(segment)
+    return filtered
+
+
+def _find_line_audio_quality_issue_segments(line_text: str, duration: float) -> list[dict]:
+    char_count = _line_text_char_count(line_text)
+    if duration <= 0 or char_count <= 0:
+        return []
+    efficiency = char_count / duration
+    segments: list[dict] = []
+    if char_count >= 180:
+        min_expected = char_count * 0.20
+        is_clearly_too_short = duration < min_expected and efficiency >= 5.6
+        if is_clearly_too_short:
+            score = 90 if duration < char_count * 0.16 or efficiency >= 6.5 else 80
+            segments.append(
+                {
+                    "start": 0.0,
+                    "end": round(duration, 2),
+                    "duration": round(duration, 2),
+                    "type": "incomplete_long_line_audio",
+                    "confidence": round(score / 100, 2),
+                    "score": score,
+                    "status": "abnormal",
+                    "features": {
+                        "char_count": char_count,
+                        "duration_seconds": round(duration, 1),
+                        "chars_per_second": round(efficiency, 2),
+                        "min_expected_seconds": round(min_expected, 1),
+                    },
+                    "reasons": [
+                        f"长台词 {char_count} 字，但音频仅 {duration:.1f} 秒",
+                        f"字符效率 {efficiency:.1f} 字/秒，且低于保守预计 {min_expected:.1f} 秒，疑似未完整读完",
+                        "建议重新生成该台词音频",
+                    ],
+                }
+            )
+    elif char_count <= 6 and duration > 4.0:
+        segments.append(
+            {
+                "start": 0.0,
+                "end": round(duration, 2),
+                "duration": round(duration, 2),
+                "type": "short_line_audio_too_long",
+                "confidence": 0.85,
+                "score": 85,
+                "status": "abnormal",
+                "features": {"char_count": char_count, "duration_seconds": round(duration, 1)},
+                "reasons": [f"超短台词 {char_count} 字，音频 {duration:.1f} 秒，疑似生成异常"],
+            }
+        )
+    elif char_count <= 15 and duration > 15.0:
+        segments.append(
+            {
+                "start": 0.0,
+                "end": round(duration, 2),
+                "duration": round(duration, 2),
+                "type": "short_line_audio_too_long",
+                "confidence": 0.8,
+                "score": 80,
+                "status": "abnormal",
+                "features": {"char_count": char_count, "duration_seconds": round(duration, 1)},
+                "reasons": [f"短台词 {char_count} 字，音频 {duration:.1f} 秒，疑似生成异常"],
+            }
+        )
+    return segments
+
+
+def _frame_low_ratio(frames: list[dict], threshold: float = -46.0) -> float:
+    if not frames:
+        return 0.0
+    return sum(1 for item in frames if float(item["rmsDb"]) <= threshold) / len(frames)
+
+
+def _adjacent_low_gap_seconds(
+    frames: list[dict], index: int, *, direction: int, threshold: float = -46.0
+) -> tuple[float, int]:
+    cursor = int(index)
+    total = 0.0
+    last_index = cursor
+    while 0 <= cursor < len(frames) and float(frames[cursor]["rmsDb"]) <= threshold:
+        total += float(frames[cursor]["end"]) - float(frames[cursor]["start"])
+        last_index = cursor
+        cursor += int(direction)
+    return total, last_index
+
+
+def _find_isolated_noise_segments(duration: float, frames: list[dict]) -> list[dict]:
+    if duration <= 0 or len(frames) < 8:
+        return []
+    active_threshold = -37.0
+    low_threshold = -46.0
+    adjacent_low_threshold = -45.0
+    max_gap_frames = 1
+    results: list[dict] = []
+    index = 0
+    while index < len(frames):
+        if float(frames[index]["rmsDb"]) < active_threshold:
+            index += 1
+            continue
+        start_index = index
+        gap = 0
+        index += 1
+        while index < len(frames):
+            if float(frames[index]["rmsDb"]) >= active_threshold:
+                gap = 0
+                index += 1
+                continue
+            gap += 1
+            if gap > max_gap_frames:
+                break
+            index += 1
+        end_index = min(len(frames) - 1, max(start_index, index - gap))
+        group_frames = frames[start_index : end_index + 1]
+        if not group_frames:
+            continue
+
+        start = float(group_frames[0]["start"])
+        end = float(group_frames[-1]["end"])
+        segment_duration = end - start
+        if segment_duration < 0.08 or segment_duration > 1.4:
+            continue
+
+        context_size = 6
+        before_frames = frames[max(0, start_index - context_size) : start_index]
+        after_frames = frames[end_index + 1 : min(len(frames), end_index + 1 + context_size)]
+        if len(before_frames) < 3 or len(after_frames) < 3:
+            continue
+
+        before_low_ratio = _frame_low_ratio(before_frames, low_threshold)
+        after_low_ratio = _frame_low_ratio(after_frames, low_threshold)
+        before_gap_seconds, _ = _adjacent_low_gap_seconds(
+            frames, start_index - 1, direction=-1, threshold=adjacent_low_threshold
+        )
+        after_gap_seconds, after_gap_end_index = _adjacent_low_gap_seconds(
+            frames, end_index + 1, direction=1, threshold=adjacent_low_threshold
+        )
+
+        mean_rms = _mean_rms_db(group_frames)
+        peak_rms = max(float(item["rmsDb"]) for item in group_frames)
+        mean_zcr = _mean_frame_value(group_frames, "zcr")
+        context_mean = _mean_rms_db(before_frames + after_frames)
+        contrast = mean_rms - context_mean
+        is_short_burst = (
+            segment_duration <= 0.55
+            and before_low_ratio >= 0.5
+            and after_low_ratio >= 0.5
+            and peak_rms >= -25.0
+            and contrast >= 14.0
+        )
+        is_stray_short_sound = (
+            0.55 < segment_duration <= 1.4
+            and before_gap_seconds >= 0.18
+            and after_gap_seconds >= 0.55
+            and peak_rms >= -30.0
+            and context_mean <= -42.0
+            and mean_zcr <= 2800.0
+        )
+        if not is_short_burst and not is_stray_short_sound:
+            continue
+
+        score = 55
+        reasons = [f"低能量间隙中出现 {segment_duration:.1f} 秒独立声音"]
+        if peak_rms >= -20.0:
+            score += 15
+            reasons.append(f"独立声音峰值较高 {peak_rms:.1f}dBFS")
+        if contrast >= 20.0:
+            score += 15
+            reasons.append(f"相对前后静音高出 {contrast:.1f}dB")
+        if before_low_ratio >= 0.8 and after_low_ratio >= 0.8:
+            score += 10
+            reasons.append("独立声音前后均接近静音")
+        if is_stray_short_sound:
+            score += 10
+            reasons.append(f"后方低电平间隔持续 {after_gap_seconds:.1f} 秒")
+
+        end_with_gap = end
+        if is_stray_short_sound and 0 <= after_gap_end_index < len(frames):
+            end_with_gap = float(frames[after_gap_end_index]["end"])
+
+        results.append(
+            {
+                "start": round(max(0.0, start - 0.03), 2),
+                "end": round(min(duration, end_with_gap + 0.03), 2),
+                "duration": round(max(0.0, end_with_gap - start), 2),
+                "type": "isolated_short_noise" if is_stray_short_sound else "isolated_noise_burst",
+                "confidence": round(min(0.99, max(0.3, score / 100)), 2),
+                "score": int(score),
+                "status": "abnormal",
+                "features": {
+                    "mean_rms_db": round(mean_rms, 1),
+                    "peak_rms_db": round(peak_rms, 1),
+                    "context_mean_rms_db": round(context_mean, 1),
+                    "contrast_db": round(contrast, 1),
+                    "mean_zcr": round(mean_zcr, 1),
+                    "before_low_ratio": round(before_low_ratio, 2),
+                    "after_low_ratio": round(after_low_ratio, 2),
+                    "before_low_gap_seconds": round(before_gap_seconds, 2),
+                    "after_low_gap_seconds": round(after_gap_seconds, 2),
+                },
+                "reasons": reasons,
+            }
+        )
+    return results
+
+
+def _segments_overlap(left: dict, right: dict) -> bool:
+    return float(left.get("start", 0.0)) < float(right.get("end", 0.0)) and float(right.get("start", 0.0)) < float(left.get("end", 0.0))
+
+
+def _find_low_zcr_artifact_segments(duration: float, frames: list[dict]) -> list[dict]:
+    if duration <= 0 or len(frames) < 8:
+        return []
+    results: list[dict] = []
+    index = 0
+    while index < len(frames):
+        rms_db = float(frames[index]["rmsDb"])
+        zcr = float(frames[index].get("zcr", 0.0))
+        crest_db = float(frames[index].get("crestDb", 0.0))
+        if rms_db < -24.0 or zcr > 420.0 or crest_db > 6.5:
+            index += 1
+            continue
+        start_index = index
+        index += 1
+        while index < len(frames):
+            rms_db = float(frames[index]["rmsDb"])
+            zcr = float(frames[index].get("zcr", 0.0))
+            crest_db = float(frames[index].get("crestDb", 0.0))
+            if rms_db < -24.0 or zcr > 520.0 or crest_db > 7.5:
+                break
+            index += 1
+        end_index = index - 1
+        segment_frames = frames[start_index : end_index + 1]
+        if not segment_frames:
+            continue
+        start = float(segment_frames[0]["start"])
+        end = float(segment_frames[-1]["end"])
+        segment_duration = end - start
+        if segment_duration < 1.6:
+            continue
+        mean_rms = _mean_rms_db(segment_frames)
+        mean_zcr = _mean_frame_value(segment_frames, "zcr")
+        mean_crest = _mean_frame_value(segment_frames, "crestDb")
+        if mean_rms < -18.0 or mean_zcr > 320.0 or mean_crest > 5.8:
+            continue
+        reasons = [f"检测到 {segment_duration:.1f} 秒低过零率持续异常声音"]
+        score = 60
+        if segment_duration >= 1.4:
+            score += 15
+            reasons.append(f"异常声音持续 {segment_duration:.1f} 秒")
+        if mean_zcr <= 400.0:
+            score += 10
+            reasons.append(f"过零率偏低 {mean_zcr:.0f}/秒")
+        if mean_crest <= 6.5:
+            score += 10
+            reasons.append(f"峰均比较低 {mean_crest:.1f}dB")
+        results.append(
+            {
+                "start": round(max(0.0, start - 0.08), 2),
+                "end": round(min(duration, end + 0.12), 2),
+                "duration": round(segment_duration, 2),
+                "type": "low_zcr_sustained_artifact",
+                "confidence": round(min(0.99, max(0.3, score / 100)), 2),
+                "score": int(score),
+                "status": "abnormal",
+                "features": {
+                    "mean_rms_db": round(mean_rms, 1),
+                    "mean_zcr": round(mean_zcr, 1),
+                    "mean_crest_db": round(mean_crest, 1),
+                },
+                "reasons": reasons,
+            }
+        )
+    return results
+
+
+def _find_high_frequency_noise_segments(duration: float, frames: list[dict]) -> list[dict]:
+    if duration <= 0 or len(frames) < 10:
+        return []
+    results: list[dict] = []
+    index = 0
+    while index < len(frames):
+        frame = frames[index]
+        is_noisy = (
+            float(frame["rmsDb"]) >= -23.0
+            and float(frame.get("zcr", 0.0)) >= 4500.0
+            and float(frame.get("highRatio", 0.0)) >= 0.24
+            and float(frame.get("centroid", 0.0)) >= 1900.0
+            and float(frame.get("flatness", 0.0)) >= 0.08
+        )
+        if not is_noisy:
+            index += 1
+            continue
+        start_index = index
+        gap = 0
+        index += 1
+        while index < len(frames):
+            frame = frames[index]
+            is_noisy = (
+                float(frame["rmsDb"]) >= -24.5
+                and float(frame.get("zcr", 0.0)) >= 3800.0
+                and float(frame.get("highRatio", 0.0)) >= 0.20
+                and float(frame.get("centroid", 0.0)) >= 1700.0
+                and float(frame.get("flatness", 0.0)) >= 0.06
+            )
+            if is_noisy:
+                gap = 0
+                index += 1
+                continue
+            gap += 1
+            if gap > 1:
+                break
+            index += 1
+        end_index = max(start_index, index - gap)
+        segment_frames = frames[start_index : end_index + 1]
+        if not segment_frames:
+            continue
+        segment_duration = float(segment_frames[-1]["end"]) - float(segment_frames[0]["start"])
+        if segment_duration < 0.8:
+            continue
+        mean_rms = _mean_rms_db(segment_frames)
+        mean_zcr = _mean_frame_value(segment_frames, "zcr")
+        mean_flatness = _mean_frame_value(segment_frames, "flatness")
+        mean_centroid = _mean_frame_value(segment_frames, "centroid")
+        mean_high_ratio = _mean_frame_value(segment_frames, "highRatio")
+        if mean_rms < -22.0 or mean_zcr < 4800.0 or mean_high_ratio < 0.25 or mean_centroid < 2000.0:
+            continue
+
+        expanded_start_index = start_index
+        cursor = start_index - 1
+        while cursor >= 0 and start_index - cursor <= 25:
+            if float(frames[cursor]["rmsDb"]) > -12.0:
+                break
+            expanded_start_index = cursor
+            cursor -= 1
+
+        score = 70
+        reasons = [f"检测到 {segment_duration:.1f} 秒高频宽带噪声"]
+        if mean_zcr >= 5600.0:
+            score += 10
+            reasons.append(f"过零率明显偏高 {mean_zcr:.0f}/秒")
+        if mean_high_ratio >= 0.32:
+            score += 10
+            reasons.append(f"高频能量占比较高 {mean_high_ratio:.2f}")
+        if mean_centroid >= 2500.0:
+            score += 10
+            reasons.append(f"频谱重心偏高 {mean_centroid:.0f}Hz")
+        results.append(
+            {
+                "start": round(max(0.0, float(frames[expanded_start_index]["start"])), 2),
+                "end": round(min(duration, float(segment_frames[-1]["end"]) + 0.12), 2),
+                "duration": round(
+                    float(segment_frames[-1]["end"]) - float(frames[expanded_start_index]["start"]),
+                    2,
+                ),
+                "type": "high_frequency_broadband_noise",
+                "confidence": round(min(0.99, max(0.3, score / 100)), 2),
+                "score": int(score),
+                "status": "abnormal",
+                "features": {
+                    "mean_rms_db": round(mean_rms, 1),
+                    "mean_zcr": round(mean_zcr, 1),
+                    "mean_flatness": round(mean_flatness, 3),
+                    "mean_centroid_hz": round(mean_centroid, 1),
+                    "mean_high_ratio": round(mean_high_ratio, 3),
+                },
+                "reasons": reasons,
+            }
+        )
+    return results
+
+
+def _find_low_level_noise_bed_segments(duration: float, frames: list[dict]) -> list[dict]:
+    if duration <= 0 or len(frames) < 16:
+        return []
+    results: list[dict] = []
+    index = 0
+    while index < len(frames):
+        frame = frames[index]
+        is_bed = -52.0 <= float(frame["rmsDb"]) <= -38.0
+        is_bed = is_bed and 550.0 <= float(frame.get("zcr", 0.0)) <= 1800.0
+        is_bed = is_bed and 120.0 <= float(frame.get("centroid", 0.0)) <= 520.0
+        is_bed = is_bed and float(frame.get("highRatio", 0.0)) <= 0.05
+        if not is_bed:
+            index += 1
+            continue
+        start_index = index
+        gap = 0
+        index += 1
+        while index < len(frames):
+            frame = frames[index]
+            is_bed = -53.5 <= float(frame["rmsDb"]) <= -37.0
+            is_bed = is_bed and 450.0 <= float(frame.get("zcr", 0.0)) <= 2100.0
+            is_bed = is_bed and 100.0 <= float(frame.get("centroid", 0.0)) <= 650.0
+            is_bed = is_bed and float(frame.get("highRatio", 0.0)) <= 0.07
+            if is_bed:
+                gap = 0
+                index += 1
+                continue
+            gap += 1
+            if gap > 1:
+                break
+            index += 1
+        end_index = max(start_index, index - gap)
+        segment_frames = frames[start_index : end_index + 1]
+        if not segment_frames:
+            continue
+        segment_duration = float(segment_frames[-1]["end"]) - float(segment_frames[0]["start"])
+        if segment_duration < 1.5:
+            continue
+        mean_rms = _mean_rms_db(segment_frames)
+        mean_zcr = _mean_frame_value(segment_frames, "zcr")
+        mean_flatness = _mean_frame_value(segment_frames, "flatness")
+        mean_centroid = _mean_frame_value(segment_frames, "centroid")
+        mean_high_ratio = _mean_frame_value(segment_frames, "highRatio")
+        mean_crest = _mean_frame_value(segment_frames, "crestDb")
+        if not (-48.0 <= mean_rms <= -39.0):
+            continue
+        if not (650.0 <= mean_zcr <= 1600.0 and 180.0 <= mean_centroid <= 450.0):
+            continue
+        if mean_high_ratio > 0.04 or mean_crest > 10.0:
+            continue
+        previous_frames = frames[max(0, start_index - 5) : start_index]
+        next_frames = frames[end_index + 1 : min(len(frames), end_index + 6)]
+        previous_louder = any(float(item["rmsDb"]) >= -28.0 for item in previous_frames)
+        next_louder = any(float(item["rmsDb"]) >= -28.0 for item in next_frames)
+        if not previous_louder and not next_louder:
+            continue
+        score = 65
+        reasons = [f"检测到 {segment_duration:.1f} 秒低电平持续底噪"]
+        if segment_duration >= 2.0:
+            score += 10
+            reasons.append(f"底噪持续 {segment_duration:.1f} 秒")
+        if mean_rms >= -45.0:
+            score += 10
+            reasons.append(f"底噪平均音量 {mean_rms:.1f}dBFS")
+        if mean_centroid <= 350.0 and mean_high_ratio <= 0.02:
+            score += 10
+            reasons.append("低频窄带特征明显")
+        results.append(
+            {
+                "start": round(max(0.0, float(segment_frames[0]["start"]) - 0.05), 2),
+                "end": round(min(duration, float(segment_frames[-1]["end"]) + 0.08), 2),
+                "duration": round(segment_duration, 2),
+                "type": "low_level_noise_bed",
+                "confidence": round(min(0.99, max(0.3, score / 100)), 2),
+                "score": int(score),
+                "status": "abnormal",
+                "features": {
+                    "mean_rms_db": round(mean_rms, 1),
+                    "mean_zcr": round(mean_zcr, 1),
+                    "mean_flatness": round(mean_flatness, 3),
+                    "mean_centroid_hz": round(mean_centroid, 1),
+                    "mean_high_ratio": round(mean_high_ratio, 3),
+                    "mean_crest_db": round(mean_crest, 1),
+                },
+                "reasons": reasons,
+            }
+        )
+    return results
+
+
+def _find_sensitive_low_level_noise_segments(duration: float, frames: list[dict]) -> list[dict]:
+    if duration <= 0 or len(frames) < 12:
+        return []
+    results: list[dict] = []
+    index = 0
+    while index < len(frames):
+        frame = frames[index]
+        is_noise = -65.0 <= float(frame["rmsDb"]) <= -38.0
+        is_noise = is_noise and float(frame.get("zcr", 0.0)) >= 700.0
+        is_noise = is_noise and float(frame.get("flatness", 0.0)) >= 0.018
+        if not is_noise:
+            index += 1
+            continue
+        start_index = index
+        gap = 0
+        index += 1
+        while index < len(frames):
+            frame = frames[index]
+            is_noise = -66.0 <= float(frame["rmsDb"]) <= -36.0
+            is_noise = is_noise and float(frame.get("zcr", 0.0)) >= 550.0
+            is_noise = is_noise and float(frame.get("flatness", 0.0)) >= 0.012
+            if is_noise:
+                gap = 0
+                index += 1
+                continue
+            gap += 1
+            if gap > 1:
+                break
+            index += 1
+        end_index = max(start_index, index - gap)
+        segment_frames = frames[start_index : end_index + 1]
+        if not segment_frames:
+            continue
+        segment_duration = float(segment_frames[-1]["end"]) - float(segment_frames[0]["start"])
+        if segment_duration < 0.8:
+            continue
+        mean_rms = _mean_rms_db(segment_frames)
+        mean_zcr = _mean_frame_value(segment_frames, "zcr")
+        mean_flatness = _mean_frame_value(segment_frames, "flatness")
+        mean_centroid = _mean_frame_value(segment_frames, "centroid")
+        mean_high_ratio = _mean_frame_value(segment_frames, "highRatio")
+        if mean_zcr < 850.0 or mean_flatness < 0.022:
+            continue
+        before_frames = frames[max(0, start_index - 8) : start_index]
+        after_frames = frames[end_index + 1 : min(len(frames), end_index + 9)]
+        has_neighbor_speech = any(float(item["rmsDb"]) >= -30.0 for item in before_frames + after_frames)
+        if not has_neighbor_speech:
+            continue
+        score = 55
+        reasons = [f"严格模式检测到 {segment_duration:.1f} 秒连续低能量非静音噪声"]
+        if segment_duration >= 1.2:
+            score += 10
+            reasons.append(f"可疑底噪持续 {segment_duration:.1f} 秒")
+        if mean_rms >= -50.0:
+            score += 10
+            reasons.append(f"可疑底噪平均音量 {mean_rms:.1f}dBFS")
+        results.append(
+            {
+                "start": round(max(0.0, float(segment_frames[0]["start"]) - 0.04), 2),
+                "end": round(min(duration, float(segment_frames[-1]["end"]) + 0.06), 2),
+                "duration": round(segment_duration, 2),
+                "type": "sensitive_low_level_noise",
+                "confidence": round(min(0.89, max(0.3, score / 100)), 2),
+                "score": int(min(89, score)),
+                "status": "suspicious",
+                "features": {
+                    "mean_rms_db": round(mean_rms, 1),
+                    "mean_zcr": round(mean_zcr, 1),
+                    "mean_flatness": round(mean_flatness, 4),
+                    "mean_centroid_hz": round(mean_centroid, 1),
+                    "mean_high_ratio": round(mean_high_ratio, 3),
+                },
+                "reasons": reasons,
+            }
+        )
+    return results
+
+
+def _find_aggressive_quality_segments(duration: float, frames: list[dict]) -> list[dict]:
+    if duration <= 0 or len(frames) < 8:
+        return []
+    results: list[dict] = []
+
+    def append_segment(start_index: int, end_index: int, segment_type: str, score: int, reasons: list[str]) -> None:
+        segment_frames = frames[start_index : end_index + 1]
+        if not segment_frames:
+            return
+        start = float(segment_frames[0]["start"])
+        end = float(segment_frames[-1]["end"])
+        results.append(
+            {
+                "start": round(max(0.0, start - 0.03), 2),
+                "end": round(min(duration, end + 0.05), 2),
+                "duration": round(end - start, 2),
+                "type": segment_type,
+                "confidence": round(min(0.95, max(0.3, score / 100)), 2),
+                "score": int(min(95, score)),
+                "status": "suspicious",
+                "features": {
+                    "mean_rms_db": round(_mean_rms_db(segment_frames), 1),
+                    "mean_zcr": round(_mean_frame_value(segment_frames, "zcr"), 1),
+                    "mean_flatness": round(_mean_frame_value(segment_frames, "flatness"), 4),
+                    "mean_centroid_hz": round(_mean_frame_value(segment_frames, "centroid"), 1),
+                    "mean_high_ratio": round(_mean_frame_value(segment_frames, "highRatio"), 3),
+                    "mean_crest_db": round(_mean_frame_value(segment_frames, "crestDb"), 1),
+                },
+                "reasons": reasons,
+            }
+        )
+
+    index = 0
+    while index < len(frames):
+        is_gap = float(frames[index]["rmsDb"]) <= -47.0
+        if not is_gap:
+            index += 1
+            continue
+        start_index = index
+        index += 1
+        while index < len(frames) and float(frames[index]["rmsDb"]) <= -45.0:
+            index += 1
+        end_index = index - 1
+        segment_duration = float(frames[end_index]["end"]) - float(frames[start_index]["start"])
+        if segment_duration >= 1.0:
+            before = frames[max(0, start_index - 8) : start_index]
+            after = frames[end_index + 1 : min(len(frames), end_index + 9)]
+            if any(float(item["rmsDb"]) >= -32.0 for item in before) or any(float(item["rmsDb"]) >= -32.0 for item in after):
+                append_segment(
+                    start_index,
+                    end_index,
+                    "aggressive_long_low_energy_gap",
+                    60 + (10 if segment_duration >= 1.5 else 0),
+                    [f"激进模式检测到 {segment_duration:.1f} 秒长低能量间隙"],
+                )
+
+    index = 0
+    while index < len(frames):
+        frame = frames[index]
+        is_burst = (
+            float(frame["rmsDb"]) >= -42.0
+            and float(frame.get("zcr", 0.0)) >= 5000.0
+            and float(frame.get("highRatio", 0.0)) >= 0.18
+            and float(frame.get("flatness", 0.0)) >= 0.035
+        )
+        if not is_burst:
+            index += 1
+            continue
+        start_index = index
+        index += 1
+        while index < len(frames):
+            frame = frames[index]
+            is_burst = (
+                float(frame["rmsDb"]) >= -45.0
+                and float(frame.get("zcr", 0.0)) >= 4200.0
+                and float(frame.get("highRatio", 0.0)) >= 0.12
+                and float(frame.get("flatness", 0.0)) >= 0.025
+            )
+            if not is_burst:
+                break
+            index += 1
+        end_index = index - 1
+        segment_duration = float(frames[end_index]["end"]) - float(frames[start_index]["start"])
+        if segment_duration >= 0.18:
+            append_segment(
+                start_index,
+                end_index,
+                "aggressive_high_frequency_burst",
+                62 + (10 if segment_duration >= 0.4 else 0),
+                [f"激进模式检测到 {segment_duration:.1f} 秒高频突发/摩擦噪声"],
+            )
+
+    return results
+
+
+def _find_vad_non_speech_noise_segments(duration: float, frames: list[dict], speech_segments: list[dict]) -> list[dict]:
+    if duration <= 0 or not frames or not speech_segments:
+        return []
+    results: list[dict] = []
+    sorted_speech = sorted(
+        [
+            {"start": max(0.0, float(item.get("start", 0.0) or 0.0)), "end": min(duration, float(item.get("end", 0.0) or 0.0))}
+            for item in speech_segments
+        ],
+        key=lambda item: item["start"],
+    )
+    gaps: list[tuple[float, float]] = []
+    cursor = 0.0
+    for segment in sorted_speech:
+        start = float(segment["start"])
+        end = float(segment["end"])
+        if start - cursor >= 0.8:
+            gaps.append((cursor, start))
+        cursor = max(cursor, end)
+    if duration - cursor >= 0.8:
+        gaps.append((cursor, duration))
+
+    for start, end in gaps:
+        gap_frames = [item for item in frames if float(item["start"]) < end and float(item["end"]) > start]
+        if not gap_frames:
+            continue
+        gap_duration = end - start
+        mean_rms = _mean_rms_db(gap_frames)
+        mean_zcr = _mean_frame_value(gap_frames, "zcr")
+        mean_flatness = _mean_frame_value(gap_frames, "flatness")
+        mean_centroid = _mean_frame_value(gap_frames, "centroid")
+        mean_high_ratio = _mean_frame_value(gap_frames, "highRatio")
+        if mean_rms <= -58.0 and mean_flatness < 0.025 and mean_zcr < 1200.0:
+            continue
+        if mean_rms <= -64.0:
+            continue
+        score = 58
+        reasons = [f"Silero 判断为非人声区间，检测到 {gap_duration:.1f} 秒非纯静音信号"]
+        if mean_rms >= -52.0:
+            score += 8
+            reasons.append(f"非人声区间平均音量 {mean_rms:.1f}dBFS")
+        if mean_flatness >= 0.045 or mean_high_ratio >= 0.12:
+            score += 8
+            reasons.append("非人声区间含宽带/高频成分")
+        if gap_duration >= 1.4:
+            score += 6
+            reasons.append(f"非人声区间持续 {gap_duration:.1f} 秒")
+        results.append(
+            {
+                "start": round(max(0.0, start - 0.03), 2),
+                "end": round(min(duration, end + 0.03), 2),
+                "duration": round(gap_duration, 2),
+                "type": "vad_non_speech_noise",
+                "confidence": round(min(0.9, max(0.3, score / 100)), 2),
+                "score": int(min(90, score)),
+                "status": "suspicious",
+                "features": {
+                    "mean_rms_db": round(mean_rms, 1),
+                    "mean_zcr": round(mean_zcr, 1),
+                    "mean_flatness": round(mean_flatness, 4),
+                    "mean_centroid_hz": round(mean_centroid, 1),
+                    "mean_high_ratio": round(mean_high_ratio, 3),
+                },
+                "reasons": reasons,
+            }
+        )
+    return results
+
+
+def _find_mid_gap_rising_noise_segments(duration: float, frames: list[dict]) -> list[dict]:
+    if duration <= 0 or len(frames) < 35:
+        return []
+    results: list[dict] = []
+    index = 0
+    while index < len(frames):
+        frame = frames[index]
+        is_start = -70.0 <= float(frame["rmsDb"]) <= -48.0
+        is_start = is_start and float(frame.get("flatness", 0.0)) >= 0.035
+        is_start = is_start and float(frame.get("zcr", 0.0)) >= 1200.0
+        if not is_start:
+            index += 1
+            continue
+
+        start_index = index
+        gap = 0
+        index += 1
+        while index < len(frames):
+            frame = frames[index]
+            is_artifact = -72.0 <= float(frame["rmsDb"]) <= -20.0
+            is_artifact = is_artifact and float(frame.get("flatness", 0.0)) <= 0.18
+            is_artifact = is_artifact and float(frame.get("centroid", 0.0)) <= 1200.0
+            is_artifact = is_artifact and float(frame.get("highRatio", 0.0)) <= 0.1
+            is_artifact = is_artifact and float(frame.get("crestDb", 0.0)) <= 12.0
+            if is_artifact:
+                gap = 0
+                index += 1
+                continue
+            gap += 1
+            if gap > 1:
+                break
+            index += 1
+        end_index = max(start_index, index - gap)
+        segment_frames = frames[start_index : end_index + 1]
+        if not segment_frames:
+            continue
+        segment_duration = float(segment_frames[-1]["end"]) - float(segment_frames[0]["start"])
+        if segment_duration < 0.9 or segment_duration > 2.8:
+            continue
+
+        rms_values = [float(item["rmsDb"]) for item in segment_frames]
+        edge_count = max(1, min(4, len(rms_values) // 3))
+        start_rms = sum(rms_values[:edge_count]) / edge_count
+        end_rms = sum(rms_values[-edge_count:]) / edge_count
+        growth = end_rms - start_rms
+        mean_rms = sum(rms_values) / len(rms_values)
+        mean_zcr = _mean_frame_value(segment_frames, "zcr")
+        mean_flatness = _mean_frame_value(segment_frames, "flatness")
+        mean_centroid = _mean_frame_value(segment_frames, "centroid")
+        mean_high_ratio = _mean_frame_value(segment_frames, "highRatio")
+        mean_crest = _mean_frame_value(segment_frames, "crestDb")
+        quiet_ratio = sum(1 for value in rms_values if value <= -50.0) / len(rms_values)
+        low_crest_ratio = sum(1 for item in segment_frames if float(item.get("crestDb", 0.0)) <= 10.5) / len(segment_frames)
+        if growth < 24.0 or quiet_ratio < 0.18 or low_crest_ratio < 0.45:
+            continue
+        if mean_centroid > 700.0 or mean_high_ratio > 0.06 or mean_crest > 10.5:
+            continue
+
+        previous_frames = frames[max(0, start_index - 12) : start_index]
+        next_frames = frames[end_index + 1 : min(len(frames), end_index + 13)]
+        previous_louder = any(float(item["rmsDb"]) >= -28.0 for item in previous_frames)
+        next_louder = any(float(item["rmsDb"]) >= -20.0 for item in next_frames)
+        if not previous_louder or not next_louder:
+            continue
+
+        score = 72
+        reasons = [f"人声间隙中检测到 {segment_duration:.1f} 秒渐强非人声噪声"]
+        if growth >= 30.0:
+            score += 10
+            reasons.append(f"噪声音量增长 {growth:.1f}dB")
+        if mean_crest <= 9.0:
+            score += 10
+            reasons.append(f"峰均比较低 {mean_crest:.1f}dB")
+        if quiet_ratio >= 0.25:
+            score += 8
+            reasons.append("由低电平间隙逐步变响")
+        results.append(
+            {
+                "start": round(max(0.0, float(segment_frames[0]["start"]) - 0.05), 2),
+                "end": round(min(duration, float(segment_frames[-1]["end"]) + 0.08), 2),
+                "duration": round(segment_duration, 2),
+                "type": "mid_gap_rising_noise",
+                "confidence": round(min(0.99, max(0.3, score / 100)), 2),
+                "score": int(min(100, score)),
+                "status": "abnormal",
+                "features": {
+                    "mean_rms_db": round(mean_rms, 1),
+                    "start_rms_db": round(start_rms, 1),
+                    "end_rms_db": round(end_rms, 1),
+                    "rms_growth_db": round(growth, 1),
+                    "mean_zcr": round(mean_zcr, 1),
+                    "mean_flatness": round(mean_flatness, 4),
+                    "mean_centroid_hz": round(mean_centroid, 1),
+                    "mean_high_ratio": round(mean_high_ratio, 3),
+                    "mean_crest_db": round(mean_crest, 1),
+                    "quiet_ratio": round(quiet_ratio, 2),
+                    "low_crest_ratio": round(low_crest_ratio, 2),
+                },
+                "reasons": reasons,
+            }
+        )
+    return results
+
+
+def _find_low_frequency_hum_gap_segments(duration: float, frames: list[dict]) -> list[dict]:
+    if duration <= 0 or len(frames) < 12:
+        return []
+    results: list[dict] = []
+    index = 0
+    while index < len(frames):
+        frame = frames[index]
+        rms = float(frame["rmsDb"])
+        zcr = float(frame.get("zcr", 0.0))
+        centroid = float(frame.get("centroid", 0.0))
+        flatness = float(frame.get("flatness", 0.0))
+        high_ratio = float(frame.get("highRatio", 0.0))
+        crest = float(frame.get("crestDb", 0.0))
+        is_quiet_hum = -54.0 <= rms <= -36.0 and 80.0 <= zcr <= 420.0 and 45.0 <= centroid <= 180.0
+        is_quiet_hum = is_quiet_hum and flatness <= 0.012 and high_ratio <= 0.01
+        is_loud_hum = -42.0 <= rms <= -23.0 and 80.0 <= zcr <= 320.0 and 45.0 <= centroid <= 160.0
+        is_loud_hum = is_loud_hum and flatness <= 0.006 and high_ratio <= 0.006 and crest <= 8.8
+        is_hum = is_quiet_hum or is_loud_hum
+        if not is_hum:
+            index += 1
+            continue
+        start_index = index
+        gap = 0
+        index += 1
+        while index < len(frames):
+            frame = frames[index]
+            rms = float(frame["rmsDb"])
+            zcr = float(frame.get("zcr", 0.0))
+            centroid = float(frame.get("centroid", 0.0))
+            flatness = float(frame.get("flatness", 0.0))
+            high_ratio = float(frame.get("highRatio", 0.0))
+            crest = float(frame.get("crestDb", 0.0))
+            is_quiet_hum = -55.0 <= rms <= -35.0 and 60.0 <= zcr <= 520.0 and 40.0 <= centroid <= 220.0
+            is_quiet_hum = is_quiet_hum and flatness <= 0.018 and high_ratio <= 0.015
+            is_loud_hum = -58.0 <= rms <= -22.0 and 60.0 <= zcr <= 360.0 and 40.0 <= centroid <= 180.0
+            is_loud_hum = is_loud_hum and flatness <= 0.008 and high_ratio <= 0.008 and crest <= 9.2
+            is_hum = is_quiet_hum or is_loud_hum
+            if is_hum:
+                gap = 0
+                index += 1
+                continue
+            gap += 1
+            if gap > 1:
+                break
+            index += 1
+        end_index = max(start_index, index - gap)
+        segment_frames = frames[start_index : end_index + 1]
+        if not segment_frames:
+            continue
+        segment_duration = float(segment_frames[-1]["end"]) - float(segment_frames[0]["start"])
+        if segment_duration < 0.9:
+            continue
+        mean_rms = _mean_rms_db(segment_frames)
+        mean_zcr = _mean_frame_value(segment_frames, "zcr")
+        mean_flatness = _mean_frame_value(segment_frames, "flatness")
+        mean_centroid = _mean_frame_value(segment_frames, "centroid")
+        mean_high_ratio = _mean_frame_value(segment_frames, "highRatio")
+        mean_crest = _mean_frame_value(segment_frames, "crestDb")
+        quiet_hum = -49.0 <= mean_rms <= -38.0 and 100.0 <= mean_zcr <= 360.0 and 55.0 <= mean_centroid <= 130.0
+        loud_hum = -38.0 <= mean_rms <= -24.0 and 100.0 <= mean_zcr <= 300.0 and 55.0 <= mean_centroid <= 130.0
+        loud_hum = loud_hum and mean_flatness <= 0.004 and mean_high_ratio <= 0.004 and mean_crest <= 8.5
+        if not quiet_hum and not loud_hum:
+            continue
+        previous_frames = frames[max(0, start_index - 8) : start_index]
+        next_frames = frames[end_index + 1 : min(len(frames), end_index + 9)]
+        previous_louder = any(float(item["rmsDb"]) >= -28.0 for item in previous_frames)
+        next_louder = any(float(item["rmsDb"]) >= -28.0 for item in next_frames)
+        if not previous_louder or not next_louder:
+            continue
+        score = 70
+        reasons = [f"检测到 {segment_duration:.1f} 秒低频窄带嗡声"]
+        if segment_duration >= 1.2:
+            score += 10
+            reasons.append(f"嗡声持续 {segment_duration:.1f} 秒")
+        if mean_rms >= -44.0:
+            score += 10
+            reasons.append(f"嗡声平均音量 {mean_rms:.1f}dBFS")
+        if mean_flatness <= 0.004 and mean_high_ratio <= 0.003:
+            score += 10
+            reasons.append("低频窄带特征明显")
+        results.append(
+            {
+                "start": round(max(0.0, float(segment_frames[0]["start"]) - 0.05), 2),
+                "end": round(min(duration, float(segment_frames[-1]["end"]) + 0.08), 2),
+                "duration": round(segment_duration, 2),
+                "type": "low_frequency_hum_gap",
+                "confidence": round(min(0.99, max(0.3, score / 100)), 2),
+                "score": int(score),
+                "status": "abnormal",
+                "features": {
+                    "mean_rms_db": round(mean_rms, 1),
+                    "mean_zcr": round(mean_zcr, 1),
+                    "mean_flatness": round(mean_flatness, 3),
+                    "mean_centroid_hz": round(mean_centroid, 1),
+                    "mean_high_ratio": round(mean_high_ratio, 3),
+                    "mean_crest_db": round(mean_crest, 1),
+                },
+                "reasons": reasons,
+            }
+        )
+    return results
+
+
+def _find_low_level_residual_gap_segments(duration: float, frames: list[dict]) -> list[dict]:
+    if duration <= 0 or len(frames) < 16:
+        return []
+    results: list[dict] = []
+    index = 0
+    while index < len(frames):
+        frame = frames[index]
+        is_residual = -58.0 <= float(frame["rmsDb"]) <= -38.0
+        is_residual = is_residual and 180.0 <= float(frame.get("zcr", 0.0)) <= 1900.0
+        is_residual = is_residual and 80.0 <= float(frame.get("centroid", 0.0)) <= 520.0
+        is_residual = is_residual and float(frame.get("flatness", 0.0)) <= 0.028
+        is_residual = is_residual and float(frame.get("highRatio", 0.0)) <= 0.06
+        if not is_residual:
+            index += 1
+            continue
+        start_index = index
+        gap = 0
+        index += 1
+        while index < len(frames):
+            frame = frames[index]
+            is_residual = -62.0 <= float(frame["rmsDb"]) <= -37.0
+            is_residual = is_residual and 120.0 <= float(frame.get("zcr", 0.0)) <= 2100.0
+            is_residual = is_residual and 70.0 <= float(frame.get("centroid", 0.0)) <= 650.0
+            is_residual = is_residual and float(frame.get("flatness", 0.0)) <= 0.035
+            is_residual = is_residual and float(frame.get("highRatio", 0.0)) <= 0.07
+            if is_residual:
+                gap = 0
+                index += 1
+                continue
+            gap += 1
+            if gap > 1:
+                break
+            index += 1
+        end_index = max(start_index, index - gap)
+        segment_frames = frames[start_index : end_index + 1]
+        if not segment_frames:
+            continue
+        segment_duration = float(segment_frames[-1]["end"]) - float(segment_frames[0]["start"])
+        if segment_duration < 1.2:
+            continue
+        mean_rms = _mean_rms_db(segment_frames)
+        mean_zcr = _mean_frame_value(segment_frames, "zcr")
+        mean_flatness = _mean_frame_value(segment_frames, "flatness")
+        mean_centroid = _mean_frame_value(segment_frames, "centroid")
+        mean_high_ratio = _mean_frame_value(segment_frames, "highRatio")
+        mean_crest = _mean_frame_value(segment_frames, "crestDb")
+        quiet_tonal_residual = (
+            -57.5 <= mean_rms <= -48.0
+            and segment_duration >= 1.6
+            and 250.0 <= mean_zcr <= 900.0
+            and 120.0 <= mean_centroid <= 420.0
+            and mean_flatness <= 0.012
+            and mean_high_ratio <= 0.025
+            and mean_crest <= 9.0
+        )
+        if not (-49.5 <= mean_rms <= -39.0) and not quiet_tonal_residual:
+            continue
+        if mean_flatness > 0.025 or mean_high_ratio > 0.055 or mean_crest > 10.2:
+            continue
+        previous_frames = frames[max(0, start_index - 12) : start_index]
+        next_frames = frames[end_index + 1 : min(len(frames), end_index + 13)]
+        previous_louder = any(float(item["rmsDb"]) >= -28.0 for item in previous_frames)
+        next_louder = any(float(item["rmsDb"]) >= -28.0 for item in next_frames)
+        if not previous_louder or not next_louder:
+            continue
+        expanded_start_index = start_index
+        cursor = start_index - 1
+        while cursor >= 0 and start_index - cursor <= 8:
+            if float(frames[cursor]["rmsDb"]) > -38.0:
+                break
+            expanded_start_index = cursor
+            cursor -= 1
+        score = 65
+        reasons = [f"检测到 {segment_duration:.1f} 秒低电平残留噪声"]
+        if segment_duration >= 1.8:
+            score += 10
+            reasons.append(f"残留噪声持续 {segment_duration:.1f} 秒")
+        if mean_rms >= -45.0:
+            score += 10
+            reasons.append(f"残留噪声平均音量 {mean_rms:.1f}dBFS")
+        if mean_flatness <= 0.012 and mean_high_ratio <= 0.02:
+            score += 10
+            reasons.append("低频窄带残留特征明显")
+        results.append(
+            {
+                "start": round(max(0.0, float(frames[expanded_start_index]["start"]) - 0.05), 2),
+                "end": round(min(duration, float(segment_frames[-1]["end"]) + 0.08), 2),
+                "duration": round(float(segment_frames[-1]["end"]) - float(frames[expanded_start_index]["start"]), 2),
+                "type": "low_level_residual_gap",
+                "confidence": round(min(0.99, max(0.3, score / 100)), 2),
+                "score": int(min(100, score)),
+                "status": "abnormal",
+                "features": {
+                    "mean_rms_db": round(mean_rms, 1),
+                    "mean_zcr": round(mean_zcr, 1),
+                    "mean_flatness": round(mean_flatness, 3),
+                    "mean_centroid_hz": round(mean_centroid, 1),
+                    "mean_high_ratio": round(mean_high_ratio, 3),
+                    "mean_crest_db": round(mean_crest, 1),
+                },
+                "reasons": reasons,
+            }
+        )
+    return results
+
+
+def _find_rising_tonal_artifact_segments(duration: float, frames: list[dict]) -> list[dict]:
+    if duration <= 0 or len(frames) < 30:
+        return []
+    results: list[dict] = []
+    index = 0
+    while index < len(frames):
+        frame = frames[index]
+        is_tonal = -66.0 <= float(frame["rmsDb"]) <= -12.0
+        is_tonal = is_tonal and 80.0 <= float(frame.get("zcr", 0.0)) <= 850.0
+        is_tonal = is_tonal and 55.0 <= float(frame.get("centroid", 0.0)) <= 260.0
+        is_tonal = is_tonal and float(frame.get("flatness", 0.0)) <= 0.018
+        is_tonal = is_tonal and float(frame.get("highRatio", 0.0)) <= 0.01
+        if not is_tonal:
+            index += 1
+            continue
+        start_index = index
+        gap = 0
+        index += 1
+        while index < len(frames):
+            frame = frames[index]
+            is_tonal = -67.0 <= float(frame["rmsDb"]) <= -11.0
+            is_tonal = is_tonal and 60.0 <= float(frame.get("zcr", 0.0)) <= 1000.0
+            is_tonal = is_tonal and 50.0 <= float(frame.get("centroid", 0.0)) <= 320.0
+            is_tonal = is_tonal and float(frame.get("flatness", 0.0)) <= 0.026
+            is_tonal = is_tonal and float(frame.get("highRatio", 0.0)) <= 0.02
+            if is_tonal:
+                gap = 0
+                index += 1
+                continue
+            gap += 1
+            if gap > 1:
+                break
+            index += 1
+        end_index = max(start_index, index - gap)
+        segment_frames = frames[start_index : end_index + 1]
+        if not segment_frames:
+            continue
+        segment_duration = float(segment_frames[-1]["end"]) - float(segment_frames[0]["start"])
+        if segment_duration < 1.2 or segment_duration > 4.5:
+            continue
+        mean_rms = _mean_rms_db(segment_frames)
+        mean_zcr = _mean_frame_value(segment_frames, "zcr")
+        mean_flatness = _mean_frame_value(segment_frames, "flatness")
+        mean_centroid = _mean_frame_value(segment_frames, "centroid")
+        mean_high_ratio = _mean_frame_value(segment_frames, "highRatio")
+        mean_crest = _mean_frame_value(segment_frames, "crestDb")
+        if mean_flatness > 0.014 or mean_high_ratio > 0.01 or mean_crest > 8.8:
+            continue
+        if mean_zcr > 520.0 or mean_centroid > 180.0:
+            continue
+        rms_values = [float(item["rmsDb"]) for item in segment_frames]
+        edge_count = max(1, min(5, len(rms_values) // 3))
+        start_rms = sum(rms_values[:edge_count]) / edge_count
+        end_rms = sum(rms_values[-edge_count:]) / edge_count
+        growth = end_rms - start_rms
+        loud_ratio = sum(1 for value in rms_values if value >= -24.0) / len(rms_values)
+        quiet_ratio = sum(1 for value in rms_values if value <= -50.0) / len(rms_values)
+        if growth < 22.0 or loud_ratio < 0.18 or quiet_ratio < 0.18:
+            continue
+        previous_frames = frames[max(0, start_index - 12) : start_index]
+        next_frames = frames[end_index + 1 : min(len(frames), end_index + 13)]
+        previous_speech_like = any(
+            float(item["rmsDb"]) >= -28.0 and float(item.get("crestDb", 0.0)) >= 10.0 for item in previous_frames
+        )
+        next_speech_like = any(
+            float(item["rmsDb"]) >= -28.0 and float(item.get("crestDb", 0.0)) >= 10.0 for item in next_frames
+        )
+        if not previous_speech_like or not next_speech_like:
+            continue
+        score = 75
+        reasons = [f"检测到 {segment_duration:.1f} 秒低频窄带渐强伪影"]
+        if growth >= 35.0:
+            score += 10
+            reasons.append(f"伪影音量增长 {growth:.1f}dB")
+        if mean_crest <= 7.5:
+            score += 10
+            reasons.append(f"峰均比较低 {mean_crest:.1f}dB")
+        if mean_flatness <= 0.006:
+            score += 10
+            reasons.append(f"谱平坦度异常低 {mean_flatness:.3f}")
+        results.append(
+            {
+                "start": round(max(0.0, float(segment_frames[0]["start"]) - 0.05), 2),
+                "end": round(min(duration, float(segment_frames[-1]["end"]) + 0.08), 2),
+                "duration": round(segment_duration, 2),
+                "type": "rising_tonal_artifact",
+                "confidence": round(min(0.99, max(0.3, score / 100)), 2),
+                "score": int(min(100, score)),
+                "status": "abnormal",
+                "features": {
+                    "mean_rms_db": round(mean_rms, 1),
+                    "mean_zcr": round(mean_zcr, 1),
+                    "mean_flatness": round(mean_flatness, 4),
+                    "mean_centroid_hz": round(mean_centroid, 1),
+                    "mean_high_ratio": round(mean_high_ratio, 3),
+                    "mean_crest_db": round(mean_crest, 1),
+                    "rms_growth_db": round(growth, 1),
+                    "loud_ratio": round(loud_ratio, 2),
+                    "quiet_ratio": round(quiet_ratio, 2),
+                },
+                "reasons": reasons,
+            }
+        )
+    return results
+
+
+def _find_sustained_tonal_noise_segments(duration: float, frames: list[dict]) -> list[dict]:
+    if duration <= 0 or len(frames) < 80:
+        return []
+    results: list[dict] = []
+    index = 0
+    while index < len(frames):
+        frame = frames[index]
+        is_tonal_noise = (
+            -32.0 <= float(frame["rmsDb"]) <= -12.0
+            and float(frame.get("crestDb", 0.0)) <= 9.2
+            and float(frame.get("flatness", 0.0)) <= 0.028
+            and float(frame.get("highRatio", 0.0)) <= 0.08
+            and float(frame.get("centroid", 0.0)) <= 1200.0
+        )
+        if not is_tonal_noise:
+            index += 1
+            continue
+        start_index = index
+        gap = 0
+        index += 1
+        while index < len(frames):
+            frame = frames[index]
+            is_tonal_noise = (
+                -36.0 <= float(frame["rmsDb"]) <= -10.0
+                and float(frame.get("crestDb", 0.0)) <= 10.0
+                and float(frame.get("flatness", 0.0)) <= 0.04
+                and float(frame.get("highRatio", 0.0)) <= 0.12
+                and float(frame.get("centroid", 0.0)) <= 1600.0
+            )
+            if is_tonal_noise:
+                gap = 0
+                index += 1
+                continue
+            gap += 1
+            if gap > 2:
+                break
+            index += 1
+        end_index = max(start_index, index - gap)
+        segment_frames = frames[start_index : end_index + 1]
+        if not segment_frames:
+            continue
+        segment_duration = float(segment_frames[-1]["end"]) - float(segment_frames[0]["start"])
+        if segment_duration < 4.0 or segment_duration > 12.0:
+            continue
+        mean_rms = _mean_rms_db(segment_frames)
+        mean_zcr = _mean_frame_value(segment_frames, "zcr")
+        mean_flatness = _mean_frame_value(segment_frames, "flatness")
+        mean_centroid = _mean_frame_value(segment_frames, "centroid")
+        mean_high_ratio = _mean_frame_value(segment_frames, "highRatio")
+        mean_crest = _mean_frame_value(segment_frames, "crestDb")
+        low_crest_ratio = sum(1 for item in segment_frames if float(item.get("crestDb", 0.0)) <= 9.5) / len(segment_frames)
+        tonal_ratio = sum(
+            1
+            for item in segment_frames
+            if float(item.get("crestDb", 0.0)) <= 9.5
+            and float(item.get("flatness", 0.0)) <= 0.035
+            and float(item.get("highRatio", 0.0)) <= 0.12
+        ) / len(segment_frames)
+        loud_ratio = sum(1 for item in segment_frames if float(item["rmsDb"]) >= -28.0) / len(segment_frames)
+        if not (-30.0 <= mean_rms <= -16.0):
+            continue
+        if mean_crest > 8.8 or low_crest_ratio < 0.82 or tonal_ratio < 0.75 or loud_ratio < 0.45:
+            continue
+        if mean_flatness > 0.025 or mean_high_ratio > 0.09 or mean_centroid > 900.0:
+            continue
+        previous_frames = frames[max(0, start_index - 24) : start_index]
+        previous_speech_like = any(
+            float(item["rmsDb"]) >= -26.0
+            and float(item.get("crestDb", 0.0)) >= 10.0
+            and float(item.get("flatness", 0.0)) >= 0.01
+            for item in previous_frames
+        )
+        if not previous_speech_like:
+            continue
+
+        score = 78
+        reasons = [f"检测到 {segment_duration:.1f} 秒持续低峰均比窄带噪声"]
+        if segment_duration >= 6.0:
+            score += 8
+            reasons.append(f"异常段持续 {segment_duration:.1f} 秒")
+        if mean_crest <= 7.5:
+            score += 8
+            reasons.append(f"峰均比较低 {mean_crest:.1f}dB")
+        if mean_flatness <= 0.014:
+            score += 6
+            reasons.append(f"谱平坦度偏低 {mean_flatness:.3f}")
+        results.append(
+            {
+                "start": round(max(0.0, float(segment_frames[0]["start"]) - 0.05), 2),
+                "end": round(min(duration, float(segment_frames[-1]["end"]) + 0.08), 2),
+                "duration": round(segment_duration, 2),
+                "type": "sustained_tonal_noise",
+                "confidence": round(min(0.99, max(0.3, score / 100)), 2),
+                "score": int(min(100, score)),
+                "status": "abnormal",
+                "features": {
+                    "mean_rms_db": round(mean_rms, 1),
+                    "mean_zcr": round(mean_zcr, 1),
+                    "mean_flatness": round(mean_flatness, 4),
+                    "mean_centroid_hz": round(mean_centroid, 1),
+                    "mean_high_ratio": round(mean_high_ratio, 3),
+                    "mean_crest_db": round(mean_crest, 1),
+                    "low_crest_ratio": round(low_crest_ratio, 2),
+                    "tonal_ratio": round(tonal_ratio, 2),
+                    "loud_ratio": round(loud_ratio, 2),
+                },
+                "reasons": reasons,
+            }
+        )
+    return results
+
+
+def _find_sustained_non_speech_activity_segments(
+    line_text: str, duration: float, frames: list[dict], speech_segments: list[dict]
+) -> list[dict]:
+    if duration < 12.0 or len(frames) < 120 or speech_segments:
+        return []
+    if _line_text_char_count(line_text) < 40:
+        return []
+    results: list[dict] = []
+    window_size = 80
+    index = 0
+    while index <= len(frames) - window_size:
+        window = frames[index : index + window_size]
+        active_frames = [item for item in window if float(item["rmsDb"]) >= -46.0]
+        if len(active_frames) / len(window) < 0.68:
+            index += 1
+            continue
+        speech_like_frames = [
+            item
+            for item in active_frames
+            if float(item["rmsDb"]) >= -34.0
+            and float(item.get("crestDb", 0.0)) >= 10.5
+            and (
+                float(item.get("flatness", 0.0)) >= 0.018
+                or float(item.get("highRatio", 0.0)) >= 0.04
+                or float(item.get("zcr", 0.0)) >= 1200.0
+            )
+        ]
+        low_crest_frames = [item for item in active_frames if float(item.get("crestDb", 0.0)) <= 9.5]
+        tonal_frames = [
+            item
+            for item in active_frames
+            if float(item.get("flatness", 0.0)) <= 0.035 and float(item.get("highRatio", 0.0)) <= 0.14
+        ]
+        speech_like_ratio = len(speech_like_frames) / max(1, len(active_frames))
+        low_crest_ratio = len(low_crest_frames) / max(1, len(active_frames))
+        tonal_ratio = len(tonal_frames) / max(1, len(active_frames))
+        if speech_like_ratio > 0.35 or (low_crest_ratio < 0.38 and tonal_ratio < 0.55):
+            index += 1
+            continue
+
+        start_index = index
+        end_index = index + window_size - 1
+        while start_index > 0:
+            prev = frames[start_index - 1]
+            is_related = float(prev["rmsDb"]) >= -48.0 and not (
+                float(prev.get("crestDb", 0.0)) >= 12.0 and float(prev.get("flatness", 0.0)) >= 0.04
+            )
+            if not is_related:
+                break
+            start_index -= 1
+        while end_index + 1 < len(frames):
+            nxt = frames[end_index + 1]
+            is_related = float(nxt["rmsDb"]) >= -48.0 and not (
+                float(nxt.get("crestDb", 0.0)) >= 12.0 and float(nxt.get("flatness", 0.0)) >= 0.04
+            )
+            if not is_related:
+                break
+            end_index += 1
+
+        segment_frames = frames[start_index : end_index + 1]
+        segment_duration = float(segment_frames[-1]["end"]) - float(segment_frames[0]["start"])
+        if segment_duration < 6.0:
+            index += 1
+            continue
+        features = _line_audio_noise_feature_dict(frames, {"start": segment_frames[0]["start"], "end": segment_frames[-1]["end"]})
+        if float(features.get("mean_rms_db", -120.0)) < -36.0:
+            index = end_index + 1
+            continue
+        if float(features.get("silence_ratio", 1.0)) > 0.28 or float(features.get("loud_ratio", 0.0)) < 0.55:
+            index = end_index + 1
+            continue
+        if float(features.get("low_crest_ratio", 0.0)) < 0.38 or float(features.get("tonal_ratio", 0.0)) < 0.35:
+            index = end_index + 1
+            continue
+        score = 78
+        reasons = [f"Silero 未识别到人声，检测到 {segment_duration:.1f} 秒持续非人声活跃信号"]
+        if float(features.get("low_crest_ratio", 0.0)) >= 0.3:
+            score += 8
+            reasons.append(f"低峰均比片段占比 {float(features.get('low_crest_ratio', 0.0)):.2f}")
+        if float(features.get("tonal_ratio", 0.0)) >= 0.25:
+            score += 6
+            reasons.append(f"窄带/周期性特征占比 {float(features.get('tonal_ratio', 0.0)):.2f}")
+        segment = {
+            "start": round(max(0.0, float(segment_frames[0]["start"]) - 0.05), 2),
+            "end": round(min(duration, float(segment_frames[-1]["end"]) + 0.08), 2),
+            "duration": round(segment_duration, 2),
+            "type": "sustained_non_speech_activity",
+            "confidence": round(min(0.99, max(0.3, score / 100)), 2),
+            "score": int(min(100, score)),
+            "status": "abnormal",
+            "features": {
+                "mean_rms_db": round(float(features.get("mean_rms_db", 0.0)), 1),
+                "mean_zcr": round(float(features.get("mean_zcr", 0.0)), 1),
+                "mean_flatness": round(float(features.get("mean_flatness", 0.0)), 4),
+                "mean_centroid_hz": round(float(features.get("mean_centroid_hz", 0.0)), 1),
+                "mean_high_ratio": round(float(features.get("mean_high_ratio", 0.0)), 3),
+                "mean_crest_db": round(float(features.get("mean_crest_db", 0.0)), 1),
+                "low_crest_ratio": round(float(features.get("low_crest_ratio", 0.0)), 2),
+                "tonal_ratio": round(float(features.get("tonal_ratio", 0.0)), 2),
+                "loud_ratio": round(float(features.get("loud_ratio", 0.0)), 2),
+                "silence_ratio": round(float(features.get("silence_ratio", 0.0)), 2),
+            },
+            "reasons": reasons,
+        }
+        if not any(_segments_overlap(segment, item) for item in results):
+            results.append(segment)
+        index = end_index + 1
+    return results
+
+
+def _find_mid_gap_tts_artifact_segments(duration: float, frames: list[dict]) -> list[dict]:
+    if duration <= 0 or len(frames) < 55:
+        return []
+    results: list[dict] = []
+    index = 0
+    while index < len(frames):
+        frame = frames[index]
+        is_artifact = -42.0 <= float(frame["rmsDb"]) <= -18.0
+        is_artifact = is_artifact and float(frame.get("crestDb", 0.0)) <= 10.8
+        is_artifact = is_artifact and float(frame.get("flatness", 0.0)) <= 0.06
+        is_artifact = is_artifact and float(frame.get("centroid", 0.0)) <= 2300.0
+        if not is_artifact:
+            index += 1
+            continue
+        start_index = index
+        gap = 0
+        index += 1
+        while index < len(frames):
+            frame = frames[index]
+            is_artifact = -43.0 <= float(frame["rmsDb"]) <= -17.0
+            is_artifact = is_artifact and float(frame.get("crestDb", 0.0)) <= 12.2
+            is_artifact = is_artifact and float(frame.get("flatness", 0.0)) <= 0.12
+            is_artifact = is_artifact and float(frame.get("centroid", 0.0)) <= 3600.0
+            if is_artifact:
+                gap = 0
+                index += 1
+                continue
+            gap += 1
+            if gap > 5:
+                break
+            index += 1
+        end_index = min(len(frames) - 1, max(start_index, index - gap))
+        artifact_start_index = start_index
+        while artifact_start_index <= end_index:
+            frame = frames[artifact_start_index]
+            if float(frame["rmsDb"]) <= -24.0 and float(frame.get("crestDb", 0.0)) <= 10.8:
+                break
+            artifact_start_index += 1
+        lead_search_end = min(end_index, start_index + 30)
+        last_leading_speech_index: int | None = None
+        for lead_index in range(start_index, lead_search_end + 1):
+            frame = frames[lead_index]
+            if (
+                float(frame["rmsDb"]) >= -22.0
+                or float(frame.get("peakDb", -120.0)) >= -10.0
+                or float(frame.get("crestDb", 0.0)) >= 11.5
+            ):
+                last_leading_speech_index = lead_index
+        if last_leading_speech_index is not None:
+            trimmed_start_index = last_leading_speech_index + 1
+            if trimmed_start_index <= end_index and float(frames[end_index]["end"]) - float(frames[trimmed_start_index]["start"]) >= 4.0:
+                artifact_start_index = max(artifact_start_index, trimmed_start_index)
+        segment_frames = frames[artifact_start_index : end_index + 1]
+        if not segment_frames:
+            continue
+        segment_duration = float(segment_frames[-1]["end"]) - float(segment_frames[0]["start"])
+        if segment_duration < 4.0 or segment_duration > 12.0:
+            continue
+        mean_rms = _mean_rms_db(segment_frames)
+        mean_zcr = _mean_frame_value(segment_frames, "zcr")
+        mean_flatness = _mean_frame_value(segment_frames, "flatness")
+        mean_centroid = _mean_frame_value(segment_frames, "centroid")
+        mean_high_ratio = _mean_frame_value(segment_frames, "highRatio")
+        mean_crest = _mean_frame_value(segment_frames, "crestDb")
+        if not (-36.0 <= mean_rms <= -22.0):
+            continue
+        if mean_crest > 9.2 or mean_flatness > 0.035:
+            continue
+        low_crest_ratio = sum(1 for item in segment_frames if float(item.get("crestDb", 0.0)) <= 9.5) / len(segment_frames)
+        low_flat_ratio = sum(1 for item in segment_frames if float(item.get("flatness", 0.0)) <= 0.035) / len(segment_frames)
+        if low_crest_ratio < 0.62 or low_flat_ratio < 0.7:
+            continue
+        previous_frames = frames[max(0, artifact_start_index - 18) : artifact_start_index]
+        next_frames = frames[end_index + 1 : min(len(frames), end_index + 16)]
+        previous_speech_like = any(
+            float(item["rmsDb"]) >= -24.0 and float(item.get("crestDb", 0.0)) >= 10.5 for item in previous_frames
+        )
+        next_speech_like = any(
+            float(item["rmsDb"]) >= -24.0 and float(item.get("crestDb", 0.0)) >= 10.5 for item in next_frames
+        )
+        next_silence_like = any(float(item["rmsDb"]) <= -55.0 for item in next_frames)
+        if not previous_speech_like or not (next_speech_like or next_silence_like):
+            continue
+        score = 70
+        reasons = [f"检测到 {segment_duration:.1f} 秒人声间合成伪影"]
+        if segment_duration >= 6.0:
+            score += 10
+            reasons.append(f"异常段持续 {segment_duration:.1f} 秒")
+        if mean_crest <= 8.5:
+            score += 10
+            reasons.append(f"峰均比较低 {mean_crest:.1f}dB")
+        if mean_flatness <= 0.025:
+            score += 10
+            reasons.append(f"谱平坦度偏低 {mean_flatness:.3f}")
+        if mean_high_ratio >= 0.08:
+            score += 5
+            reasons.append(f"夹杂高频能量 {mean_high_ratio:.2f}")
+        results.append(
+            {
+                "start": round(max(0.0, float(segment_frames[0]["start"]) - 0.05), 2),
+                "end": round(min(duration, float(segment_frames[-1]["end"]) + 0.08), 2),
+                "duration": round(segment_duration, 2),
+                "type": "mid_gap_tts_artifact",
+                "confidence": round(min(0.99, max(0.3, score / 100)), 2),
+                "score": int(min(100, score)),
+                "status": "abnormal",
+                "features": {
+                    "mean_rms_db": round(mean_rms, 1),
+                    "mean_zcr": round(mean_zcr, 1),
+                    "mean_flatness": round(mean_flatness, 4),
+                    "mean_centroid_hz": round(mean_centroid, 1),
+                    "mean_high_ratio": round(mean_high_ratio, 3),
+                    "mean_crest_db": round(mean_crest, 1),
+                    "low_crest_ratio": round(low_crest_ratio, 2),
+                    "low_flat_ratio": round(low_flat_ratio, 2),
+                },
+                "reasons": reasons,
+            }
+        )
+    return results
+
+
+def _find_short_trailing_noise_segments(duration: float, frames: list[dict]) -> list[dict]:
+    if duration <= 0 or duration > 8.0 or len(frames) < 20:
+        return []
+    search_limit = min(len(frames), max(1, int(len(frames) * 0.7)))
+    speech_end_index: int | None = None
+    for index, frame in enumerate(frames[:search_limit]):
+        is_speech_like = float(frame["rmsDb"]) >= -27.0 and float(frame.get("peakDb", -120.0)) >= -16.5
+        if is_speech_like:
+            speech_end_index = index
+    if speech_end_index is None or speech_end_index + 8 >= len(frames):
+        return []
+
+    trailing_frames = frames[speech_end_index + 1 :]
+    trailing_start = float(trailing_frames[0]["start"])
+    trailing_duration = duration - trailing_start
+    if trailing_duration < 1.2 or trailing_start > duration * 0.68:
+        return []
+    mean_rms = _mean_rms_db(trailing_frames)
+    mean_zcr = _mean_frame_value(trailing_frames, "zcr")
+    mean_flatness = _mean_frame_value(trailing_frames, "flatness")
+    mean_centroid = _mean_frame_value(trailing_frames, "centroid")
+    mean_high_ratio = _mean_frame_value(trailing_frames, "highRatio")
+    mean_crest = _mean_frame_value(trailing_frames, "crestDb")
+    loud_tail_frames = [item for item in trailing_frames if float(item["rmsDb"]) >= -34.0]
+    high_tail_frames = [
+        item
+        for item in trailing_frames
+        if float(item.get("zcr", 0.0)) >= 6000.0 and float(item.get("highRatio", 0.0)) >= 0.25
+    ]
+    low_noise_frames = [
+        item
+        for item in trailing_frames
+        if -65.0 <= float(item["rmsDb"]) <= -38.0 and float(item.get("flatness", 0.0)) >= 0.03
+    ]
+    high_tail_duration = sum(float(item["end"]) - float(item["start"]) for item in high_tail_frames)
+    low_noise_duration = sum(float(item["end"]) - float(item["start"]) for item in low_noise_frames)
+    if high_tail_duration < 0.5:
+        return []
+    if low_noise_duration < 0.7:
+        return []
+    if mean_rms > -40.0:
+        return []
+
+    score = 70
+    reasons = [f"短台词人声后检测到 {trailing_duration:.1f} 秒尾部噪声"]
+    if high_tail_duration >= 0.5:
+        score += 10
+        reasons.append(f"末端高频噪声持续 {high_tail_duration:.1f} 秒")
+    if low_noise_duration >= 0.8:
+        score += 10
+        reasons.append(f"低电平拖尾持续 {low_noise_duration:.1f} 秒")
+    if max(float(item.get("highRatio", 0.0)) for item in trailing_frames) >= 0.6:
+        score += 10
+        reasons.append("末端高频能量占比明显偏高")
+    return [
+        {
+            "start": round(max(0.0, trailing_start - 0.03), 2),
+            "end": round(duration, 2),
+            "duration": round(trailing_duration, 2),
+            "type": "short_trailing_noise",
+            "confidence": round(min(0.99, max(0.3, score / 100)), 2),
+            "score": int(min(100, score)),
+            "status": "abnormal",
+            "features": {
+                "mean_rms_db": round(mean_rms, 1),
+                "mean_zcr": round(mean_zcr, 1),
+                "mean_flatness": round(mean_flatness, 4),
+                "mean_centroid_hz": round(mean_centroid, 1),
+                "mean_high_ratio": round(mean_high_ratio, 3),
+                "mean_crest_db": round(mean_crest, 1),
+                "high_tail_duration": round(high_tail_duration, 2),
+                "low_noise_duration": round(low_noise_duration, 2),
+            },
+            "reasons": reasons,
+        }
+    ]
+
+
+def _find_post_speech_tail_noise_segments(duration: float, frames: list[dict]) -> list[dict]:
+    if duration <= 0 or len(frames) < 14:
+        return []
+    groups = _active_audio_groups(frames, threshold=-45.0)
+    if len(groups) < 2:
+        return []
+    tail = groups[-1]
+    previous = groups[-2]
+    tail_start = float(tail.get("start", 0.0) or 0.0)
+    tail_end = float(tail.get("end", tail_start) or tail_start)
+    tail_duration = max(0.0, tail_end - tail_start)
+    gap = tail_start - float(previous.get("end", 0.0) or 0.0)
+    if duration - tail_end > 0.2:
+        return []
+    if tail_duration < 0.35 or tail_duration > 2.2:
+        return []
+    if gap < 0.22:
+        return []
+    # A short pause followed by a long active tail is often low-energy speech
+    # that Silero missed, not post-speech noise.
+    if tail_duration > 1.2 and gap < 0.45:
+        return []
+    if float(previous.get("duration", 0.0) or 0.0) < 0.45:
+        return []
+
+    tail_frames = _segment_frames(frames, {"start": tail_start, "end": min(duration, tail_end + 0.12)})
+    if not tail_frames:
+        return []
+    mean_rms = _mean_rms_db(tail_frames)
+    mean_zcr = _mean_frame_value(tail_frames, "zcr")
+    mean_flatness = _mean_frame_value(tail_frames, "flatness")
+    mean_centroid = _mean_frame_value(tail_frames, "centroid")
+    mean_high_ratio = _mean_frame_value(tail_frames, "highRatio")
+    mean_crest = _mean_frame_value(tail_frames, "crestDb")
+    high_frequency_tail = mean_zcr >= 3600.0 and mean_flatness >= 0.055 and mean_high_ratio >= 0.12
+    broadband_tail = mean_zcr >= 2600.0 and mean_flatness >= 0.09 and mean_centroid >= 1800.0
+    clearly_broadband_tail = mean_flatness >= 0.16 and mean_centroid >= 2600.0 and mean_high_ratio >= 0.22
+    if gap < 0.85 and tail_duration > 0.7 and not clearly_broadband_tail:
+        return []
+    if tail_duration > 0.7 and mean_rms >= -34.0 and mean_crest >= 12.0:
+        return []
+    if tail_duration > 1.2 and not clearly_broadband_tail:
+        return []
+    if not high_frequency_tail and not broadband_tail:
+        return []
+
+    score = 70
+    reasons = [f"人声结束并静默 {gap:.1f} 秒后，尾部出现 {tail_duration:.1f} 秒非人声噪声"]
+    if mean_rms >= -32.0:
+        score += 10
+        reasons.append(f"尾部噪声音量较高 {mean_rms:.1f}dBFS")
+    if mean_high_ratio >= 0.2:
+        score += 10
+        reasons.append(f"尾部高频能量占比 {mean_high_ratio:.2f}")
+    if mean_flatness >= 0.12:
+        score += 10
+        reasons.append(f"尾部宽带噪声特征明显 {mean_flatness:.3f}")
+    return [
+        {
+            "start": round(max(0.0, tail_start - 0.03), 2),
+            "end": round(duration, 2),
+            "duration": round(max(0.0, duration - tail_start), 2),
+            "type": "post_speech_tail_noise",
+            "confidence": round(min(0.99, max(0.3, score / 100)), 2),
+            "score": int(min(100, score)),
+            "status": "abnormal",
+            "features": {
+                "gap_seconds": round(gap, 2),
+                "tail_duration_seconds": round(tail_duration, 2),
+                "mean_rms_db": round(mean_rms, 1),
+                "mean_zcr": round(mean_zcr, 1),
+                "mean_flatness": round(mean_flatness, 4),
+                "mean_centroid_hz": round(mean_centroid, 1),
+                "mean_high_ratio": round(mean_high_ratio, 3),
+                "mean_crest_db": round(mean_crest, 1),
+            },
+            "reasons": reasons,
+        }
+    ]
+
+
+def _find_sustained_tts_artifact_segments(duration: float, frames: list[dict]) -> list[dict]:
+    if duration <= 0 or len(frames) < 90:
+        return []
+    results: list[dict] = []
+    window_size = 80
+    index = 0
+    while index <= len(frames) - window_size:
+        window = frames[index : index + window_size]
+        mean_rms = _mean_rms_db(window)
+        mean_flatness = _mean_frame_value(window, "flatness")
+        mean_crest = _mean_frame_value(window, "crestDb")
+        mean_zcr = _mean_frame_value(window, "zcr")
+        if not (mean_rms >= -32.0 and mean_flatness <= 0.008 and mean_crest <= 9.8 and mean_zcr >= 900.0):
+            index += 1
+            continue
+
+        start_index = index
+        end_index = index + window_size - 1
+        while start_index > 0:
+            prev = frames[start_index - 1]
+            if float(prev["rmsDb"]) < -50.0 or float(prev.get("flatness", 0.0)) > 0.03:
+                break
+            start_index -= 1
+        while end_index + 1 < len(frames):
+            nxt = frames[end_index + 1]
+            if float(nxt["rmsDb"]) < -50.0 and float(nxt.get("flatness", 0.0)) > 0.002:
+                break
+            if float(nxt.get("flatness", 0.0)) > 0.04 and float(nxt.get("crestDb", 0.0)) > 11.5:
+                break
+            end_index += 1
+
+        segment_frames = frames[start_index : end_index + 1]
+        segment_duration = float(segment_frames[-1]["end"]) - float(segment_frames[0]["start"])
+        if segment_duration < 10.0:
+            index += 1
+            continue
+        mean_rms = _mean_rms_db(segment_frames)
+        mean_flatness = _mean_frame_value(segment_frames, "flatness")
+        mean_crest = _mean_frame_value(segment_frames, "crestDb")
+        mean_centroid = _mean_frame_value(segment_frames, "centroid")
+        mean_high_ratio = _mean_frame_value(segment_frames, "highRatio")
+        if mean_flatness > 0.015 or mean_crest > 10.5:
+            index = end_index + 1
+            continue
+
+        score = 75
+        reasons = [f"检测到 {segment_duration:.1f} 秒持续合成伪影"]
+        if mean_flatness <= 0.006:
+            score += 10
+            reasons.append(f"谱平坦度异常低 {mean_flatness:.3f}")
+        if mean_crest <= 9.0:
+            score += 10
+            reasons.append(f"峰均比较低 {mean_crest:.1f}dB")
+        if segment_duration >= 15.0:
+            score += 10
+            reasons.append(f"异常段持续 {segment_duration:.1f} 秒")
+        segment = {
+            "start": round(max(0.0, float(segment_frames[0]["start"]) - 0.08), 2),
+            "end": round(min(duration, float(segment_frames[-1]["end"]) + 0.12), 2),
+            "duration": round(segment_duration, 2),
+            "type": "sustained_tts_artifact",
+            "confidence": round(min(0.99, max(0.3, score / 100)), 2),
+            "score": int(min(100, score)),
+            "status": "abnormal",
+            "features": {
+                "mean_rms_db": round(mean_rms, 1),
+                "mean_flatness": round(mean_flatness, 4),
+                "mean_crest_db": round(mean_crest, 1),
+                "mean_centroid_hz": round(mean_centroid, 1),
+                "mean_high_ratio": round(mean_high_ratio, 3),
+            },
+            "reasons": reasons,
+        }
+        if not any(_segments_overlap(segment, item) for item in results):
+            results.append(segment)
+        index = end_index + 1
+    return results
+
+
+def _find_short_tts_artifact_segments(duration: float, frames: list[dict]) -> list[dict]:
+    if duration <= 0 or len(frames) < 35:
+        return []
+    results: list[dict] = []
+    window_size = 24
+    index = 0
+    while index <= len(frames) - window_size:
+        window = frames[index : index + window_size]
+        mean_rms = _mean_rms_db(window)
+        mean_crest = _mean_frame_value(window, "crestDb")
+        mean_flatness = _mean_frame_value(window, "flatness")
+        mean_high_ratio = _mean_frame_value(window, "highRatio")
+        if not (mean_rms >= -20.0 and mean_crest <= 9.8 and mean_flatness <= 0.05 and mean_high_ratio <= 0.06):
+            index += 1
+            continue
+
+        start_index = index
+        end_index = index + window_size - 1
+        while start_index > 0 and index - start_index < 18:
+            prev = frames[start_index - 1]
+            if float(prev["rmsDb"]) < -58.0 or float(prev.get("flatness", 0.0)) > 0.09:
+                break
+            start_index -= 1
+        while end_index + 1 < len(frames) and end_index - index < 34:
+            nxt = frames[end_index + 1]
+            if float(nxt["rmsDb"]) < -45.0 or float(nxt.get("flatness", 0.0)) > 0.09:
+                break
+            end_index += 1
+
+        segment_frames = frames[start_index : end_index + 1]
+        segment_duration = float(segment_frames[-1]["end"]) - float(segment_frames[0]["start"])
+        if segment_duration < 2.2 or segment_duration > 7.0:
+            index += 1
+            continue
+        mean_rms = _mean_rms_db(segment_frames)
+        mean_crest = _mean_frame_value(segment_frames, "crestDb")
+        mean_flatness = _mean_frame_value(segment_frames, "flatness")
+        mean_centroid = _mean_frame_value(segment_frames, "centroid")
+        mean_high_ratio = _mean_frame_value(segment_frames, "highRatio")
+        previous_frames = frames[max(0, start_index - 8) : start_index]
+        next_frames = frames[end_index + 1 : min(len(frames), end_index + 9)]
+        previous_speech_like = any(float(item["rmsDb"]) >= -28.0 and float(item.get("crestDb", 0.0)) >= 10.0 for item in previous_frames)
+        next_speech_like = any(float(item["rmsDb"]) >= -28.0 and float(item.get("crestDb", 0.0)) >= 10.0 for item in next_frames)
+        if not previous_speech_like or not next_speech_like:
+            index += 1
+            continue
+        score = 70
+        reasons = [f"检测到 {segment_duration:.1f} 秒短持续合成伪影"]
+        if mean_crest <= 9.2:
+            score += 10
+            reasons.append(f"峰均比较低 {mean_crest:.1f}dB")
+        if mean_high_ratio <= 0.04:
+            score += 10
+            reasons.append(f"高频能量占比较低 {mean_high_ratio:.2f}")
+        if mean_flatness <= 0.035:
+            score += 10
+            reasons.append(f"谱平坦度偏低 {mean_flatness:.3f}")
+        segment = {
+            "start": round(max(0.0, float(segment_frames[0]["start"]) - 0.08), 2),
+            "end": round(min(duration, float(segment_frames[-1]["end"]) + 0.12), 2),
+            "duration": round(segment_duration, 2),
+            "type": "short_tts_artifact",
+            "confidence": round(min(0.99, max(0.3, score / 100)), 2),
+            "score": int(min(100, score)),
+            "status": "abnormal",
+            "features": {
+                "mean_rms_db": round(mean_rms, 1),
+                "mean_flatness": round(mean_flatness, 4),
+                "mean_crest_db": round(mean_crest, 1),
+                "mean_centroid_hz": round(mean_centroid, 1),
+                "mean_high_ratio": round(mean_high_ratio, 3),
+            },
+            "reasons": reasons,
+        }
+        if not any(_segments_overlap(segment, item) for item in results):
+            results.append(segment)
+        index = end_index + 1
+    return results
+
+
+def detect_line_audio_task_noise(task_id: int, *, sensitivity: str = "balanced") -> tuple[bool, str, dict]:
+    """检测台词音频中较确定的尾部噪声和持续非语音伪影。"""
+    ok, msg, audio_path = _get_completed_line_audio_path(task_id)
+    if not ok or audio_path is None:
+        return False, msg, {}
+    requested_mode = str(sensitivity or "balanced")
+    detection_mode = requested_mode if requested_mode in {"strict", "aggressive"} else "balanced"
+    line_text = _get_line_audio_task_text(task_id)
+
+    tmp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_file:
+            tmp_path = Path(tmp_file.name)
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-i",
+                str(audio_path),
+                "-ac",
+                "1",
+                "-ar",
+                "16000",
+                "-sample_fmt",
+                "s16",
+                str(tmp_path),
+            ],
+            check=True,
+            capture_output=True,
+        )
+        duration, frames = _read_wav_rms_frames(tmp_path)
+        vad_provider, speech_segments, vad_message = _detect_silero_onnx_speech_segments(tmp_path)
+        segments: list[dict] = []
+        if detection_mode in {"strict", "aggressive"}:
+            segments.extend(_find_line_audio_quality_issue_segments(line_text, duration))
+        for artifact_segment in _find_low_zcr_artifact_segments(duration, frames):
+            if not any(_segments_overlap(artifact_segment, item) for item in segments):
+                segments.append(artifact_segment)
+        for spectral_segment in _find_high_frequency_noise_segments(duration, frames):
+            if not any(_segments_overlap(spectral_segment, item) for item in segments):
+                segments.append(spectral_segment)
+        for bed_segment in _find_low_level_noise_bed_segments(duration, frames):
+            if not any(_segments_overlap(bed_segment, item) for item in segments):
+                segments.append(bed_segment)
+        if detection_mode in {"strict", "aggressive"} and vad_provider == "silero_onnx":
+            for vad_segment in _find_vad_non_speech_noise_segments(duration, frames, speech_segments):
+                if not any(_segments_overlap(vad_segment, item) for item in segments):
+                    segments.append(vad_segment)
+        if detection_mode in {"strict", "aggressive"}:
+            for sensitive_segment in _find_sensitive_low_level_noise_segments(duration, frames):
+                if not any(_segments_overlap(sensitive_segment, item) for item in segments):
+                    segments.append(sensitive_segment)
+            for rising_segment in _find_mid_gap_rising_noise_segments(duration, frames):
+                if not any(_segments_overlap(rising_segment, item) for item in segments):
+                    segments.append(rising_segment)
+        if detection_mode == "aggressive":
+            for aggressive_segment in _find_aggressive_quality_segments(duration, frames):
+                if not any(_segments_overlap(aggressive_segment, item) for item in segments):
+                    segments.append(aggressive_segment)
+        for hum_segment in _find_low_frequency_hum_gap_segments(duration, frames):
+            if not any(_segments_overlap(hum_segment, item) for item in segments):
+                segments.append(hum_segment)
+        for residual_segment in _find_low_level_residual_gap_segments(duration, frames):
+            if not any(_segments_overlap(residual_segment, item) for item in segments):
+                segments.append(residual_segment)
+        for tonal_segment in _find_rising_tonal_artifact_segments(duration, frames):
+            if not any(_segments_overlap(tonal_segment, item) for item in segments):
+                segments.append(tonal_segment)
+        for tonal_segment in _find_sustained_tonal_noise_segments(duration, frames):
+            if not any(_segments_overlap(tonal_segment, item) for item in segments):
+                segments.append(tonal_segment)
+        if detection_mode in {"strict", "aggressive"} and vad_provider == "silero_onnx":
+            for activity_segment in _find_sustained_non_speech_activity_segments(line_text, duration, frames, speech_segments):
+                if not any(_segments_overlap(activity_segment, item) for item in segments):
+                    segments.append(activity_segment)
+        for artifact_segment in _find_mid_gap_tts_artifact_segments(duration, frames):
+            if not any(_segments_overlap(artifact_segment, item) for item in segments):
+                segments.append(artifact_segment)
+        for tail_noise_segment in _find_short_trailing_noise_segments(duration, frames):
+            if not any(_segments_overlap(tail_noise_segment, item) for item in segments):
+                segments.append(tail_noise_segment)
+        for tail_noise_segment in _find_post_speech_tail_noise_segments(duration, frames):
+            if not any(_segments_overlap(tail_noise_segment, item) for item in segments):
+                segments.append(tail_noise_segment)
+        for artifact_segment in _find_sustained_tts_artifact_segments(duration, frames):
+            if not any(_segments_overlap(artifact_segment, item) for item in segments):
+                segments.append(artifact_segment)
+        for artifact_segment in _find_short_tts_artifact_segments(duration, frames):
+            if not any(_segments_overlap(artifact_segment, item) for item in segments):
+                segments.append(artifact_segment)
+        tail_segment = _find_tail_noise_segment(duration, frames)
+        if tail_segment and not any(_segments_overlap(tail_segment, item) for item in segments):
+            segments.append(tail_segment)
+        segments = _filter_segments_with_voice_activity(
+            segments,
+            frames,
+            sensitivity=detection_mode,
+            speech_segments=speech_segments if vad_provider == "silero_onnx" else None,
+        )
+        _apply_line_audio_noise_classifier(segments, frames)
+        segments.sort(key=lambda item: (float(item.get("start", 0.0)), float(item.get("end", 0.0))))
+        score = max((int(item.get("score", 0)) for item in segments), default=0)
+        status = "normal"
+        if any(str(item.get("status") or "") == "abnormal" for item in segments):
+            status = "abnormal"
+        elif segments:
+            status = "suspicious"
+        return True, "ok", {
+            "durationSeconds": round(duration, 1),
+            "status": status,
+            "score": score,
+            "detectionMode": detection_mode,
+            "vadProvider": vad_provider,
+            "vadMessage": vad_message,
+            "segments": segments,
+        }
+    except subprocess.CalledProcessError as exc:
+        error_text = (exc.stderr or b"").decode("utf-8", errors="ignore").strip()
+        return False, error_text or "ffmpeg 噪音检测失败", {}
+    except Exception as exc:
+        return False, f"噪音检测失败: {exc}", {}
+    finally:
+        if tmp_path and tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
 
 
 def analyze_line_audio_task_loudness(

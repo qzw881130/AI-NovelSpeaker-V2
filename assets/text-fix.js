@@ -60,12 +60,21 @@ function renderResults() {
         <article class="asset-card text-fix-result-card">
           <div class="queue-head">
             <h3>${String(item.chapterNum).padStart(3, "0")} · ${escapeHtml(item.title || "-")}</h3>
+            <button class="ghost-btn btn-sm text-fix-open-chapter-btn" type="button" data-chapter-num="${Number(item.chapterNum || 0)}">打开章回</button>
           </div>
           <p class="meta">txt 命中 ${item.txtCount || 0} 次 · json 命中 ${item.jsonCount || 0} 次</p>
         </article>
       `
     )
     .join("");
+  wrap.querySelectorAll(".text-fix-open-chapter-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (!activeNovel) return;
+      const chapterNum = Number(btn.dataset.chapterNum || 0);
+      if (!chapterNum) return;
+      window.open(`./chapters.html?novelId=${Number(activeNovel.id)}&chapterNum=${chapterNum}`, "_blank");
+    });
+  });
 }
 
 async function runSearch() {

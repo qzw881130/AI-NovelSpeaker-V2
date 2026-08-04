@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>手动异常样本 - AI NovelSpeaker V2</title>
+    <link rel="stylesheet" href="./assets/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="main-nav" id="mainNav"></aside>
+      <main class="page">
+        <header class="page-header">
+          <div>
+            <h1>异常训练样本</h1>
+            <p class="page-subtitle">预览并清理 <code>manual_abnormal</code> 与 <code>abnormal</code> 中的音频。</p>
+          </div>
+          <div class="header-actions">
+            <button id="refreshSamplesBtn" class="ghost-btn" type="button">刷新</button>
+          </div>
+        </header>
+
+        <section class="panel manual-samples-overview">
+          <div class="manual-samples-metric">
+            <span class="meta">样本数</span>
+            <strong id="sampleCount">-</strong>
+          </div>
+          <div class="manual-samples-metric">
+            <span class="meta">总大小</span>
+            <strong id="sampleTotalSize">-</strong>
+          </div>
+          <div class="manual-samples-metric">
+            <span class="meta">目录</span>
+            <strong>manual_abnormal / abnormal</strong>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>样本列表</h2>
+            <div class="toolbar">
+              <input id="sampleKeyword" type="search" placeholder="搜索文件名" />
+            </div>
+          </div>
+          <div id="sampleList" class="manual-sample-list"></div>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="sampleEditorDialog" class="modal manual-sample-editor-dialog">
+      <form method="dialog" class="manual-sample-editor-form">
+        <button class="dialog-close-btn" type="submit" value="cancel" aria-label="关闭">×</button>
+        <h3 id="sampleEditorTitle">编辑样本</h3>
+        <p class="caption">拖动波形选择片段。可保留真正异常声音，也可标记并删除人声片段。</p>
+        <div id="sampleEditorWaveform" class="manual-sample-editor-waveform"></div>
+        <div class="manual-sample-editor-time-row">
+          <span id="sampleEditorDuration" class="meta">时长：-</span>
+          <label>开始
+            <input id="sampleEditorStart" type="number" min="0" step="0.1" value="0" />
+          </label>
+          <label>结束
+            <input id="sampleEditorEnd" type="number" min="0" step="0.1" value="0" />
+          </label>
+        </div>
+        <p id="sampleEditorDeleteSummary" class="caption">还没有标记删除片段。</p>
+        <menu class="manual-sample-editor-actions">
+          <button id="sampleEditorPlayBtn" class="ghost-btn" type="button">播放选中</button>
+          <button id="sampleEditorMarkDeleteBtn" class="ghost-btn" type="button">标记删除片段</button>
+          <button id="sampleEditorClearDeleteBtn" class="ghost-btn" type="button">清空删除片段</button>
+          <span class="line-audio-editor-action-break" aria-hidden="true"></span>
+          <button id="sampleEditorKeepSaveBtn" class="primary-btn" type="button">保留选中并保存</button>
+          <button id="sampleEditorRemoveSaveBtn" class="primary-btn" type="button">删除标记片段并保存</button>
+          <button class="ghost-btn" type="submit">取消</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <div id="toast" class="toast"></div>
+    <script type="module" src="./assets/manual-abnormal-samples.js"></script>
+  </body>
+</html>

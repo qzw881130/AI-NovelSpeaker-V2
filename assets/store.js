@@ -912,6 +912,7 @@ async function editLineAudioTaskAudio(taskId, options = {}) {
       volumeFactor: Number(options.volumeFactor || 1),
       speedFactor: Number(options.speedFactor || 1),
       segments: Array.isArray(options.segments) ? options.segments : [],
+      collectTrainingSamples: options.collectTrainingSamples !== false,
     }),
   });
 }
@@ -927,6 +928,53 @@ async function analyzeLineAudioTaskLoudness(taskId, options = {}) {
   const targetLufs = Number(options.targetLufs || -20);
   const query = new URLSearchParams({ targetLufs: String(targetLufs) });
   return await api(`/api/line-audio-tasks/${Number(taskId)}/loudness?${query.toString()}`);
+}
+
+async function detectLineAudioTaskNoise(taskId, options = {}) {
+  const sensitivity = String(options.sensitivity || "balanced");
+  const query = new URLSearchParams({ sensitivity });
+  return await api(`/api/line-audio-tasks/${Number(taskId)}/noise?${query.toString()}`);
+}
+
+async function recordLineAudioNoiseFalsePositive(taskId, segments = []) {
+  return await api(`/api/line-audio-tasks/${Number(taskId)}/noise/false-positive`, {
+    method: "POST",
+    body: JSON.stringify({ segments: Array.isArray(segments) ? segments : [] }),
+  });
+}
+
+async function fetchLineAudioNoiseSamples(label = "manual-abnormal") {
+  return await api(`/api/line-audio-noise-samples/${encodeURIComponent(String(label || "manual-abnormal"))}`);
+}
+
+async function deleteLineAudioNoiseSample(label, name) {
+  await api(`/api/line-audio-noise-samples/${encodeURIComponent(String(label || "manual-abnormal"))}/files/${encodeURIComponent(String(name || ""))}`, {
+    method: "DELETE",
+  });
+}
+
+async function editLineAudioNoiseSample(label, name, options = {}) {
+  return await api(`/api/line-audio-noise-samples/${encodeURIComponent(String(label || "manual-abnormal"))}/files/${encodeURIComponent(String(name || ""))}/edit`, {
+    method: "POST",
+    body: JSON.stringify({
+      mode: String(options.mode || "keep"),
+      startSeconds: Number(options.startSeconds || 0),
+      endSeconds: Number(options.endSeconds || 0),
+      segments: Array.isArray(options.segments) ? options.segments : [],
+    }),
+  });
+}
+
+async function fetchManualAbnormalSamples() {
+  return await fetchLineAudioNoiseSamples("manual-abnormal");
+}
+
+async function deleteManualAbnormalSample(name) {
+  return await deleteLineAudioNoiseSample("manual-abnormal", name);
+}
+
+async function editManualAbnormalSample(name, options = {}) {
+  return await editLineAudioNoiseSample("manual-abnormal", name, options);
 }
 
 async function previewLineAudioReplacementTargets(taskId) {
@@ -1098,6 +1146,14 @@ export {
   prioritizeLineAudioTask,
   editLineAudioTaskAudio,
   detectLineAudioTaskSilences,
+  detectLineAudioTaskNoise,
+  recordLineAudioNoiseFalsePositive,
+  fetchManualAbnormalSamples,
+  deleteManualAbnormalSample,
+  editManualAbnormalSample,
+  fetchLineAudioNoiseSamples,
+  deleteLineAudioNoiseSample,
+  editLineAudioNoiseSample,
   analyzeLineAudioTaskLoudness,
   previewLineAudioReplacementTargets,
   replaceMatchingLineAudios,
