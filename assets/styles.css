@@ -2492,6 +2492,108 @@ menu {
   width: 1000px;
 }
 
+.modal-wide {
+  max-width: 96vw;
+  width: 1500px;
+}
+
+.subtitle-diff-header {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  border: 1px solid var(--line);
+  border-bottom: 0;
+  border-radius: 10px 10px 0 0;
+  overflow: hidden;
+  background: var(--bg-secondary);
+  font-weight: 700;
+}
+
+.subtitle-diff-summary {
+  margin: 8px 0 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(237, 226, 207, 0.35);
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.subtitle-diff-header > div {
+  padding: 10px 12px;
+}
+
+.subtitle-diff-header > div + div {
+  border-left: 1px solid var(--line);
+}
+
+.subtitle-diff-body {
+  max-height: 72vh;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 0 0 10px 10px;
+  background: #fff;
+}
+
+.subtitle-diff-row {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) 56px minmax(0, 1fr);
+  border-bottom: 1px solid rgba(214, 198, 172, 0.45);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.subtitle-diff-line-no {
+  padding: 4px 8px;
+  color: var(--muted);
+  background: rgba(237, 226, 207, 0.45);
+  text-align: right;
+  user-select: none;
+}
+
+.subtitle-diff-cell {
+  margin: 0;
+  padding: 4px 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border-left: 1px solid rgba(214, 198, 172, 0.45);
+}
+
+.subtitle-diff-delete .subtitle-diff-line-no:nth-child(1),
+.subtitle-diff-delete .subtitle-diff-cell:nth-child(2) {
+  background: #ffecec;
+}
+
+.subtitle-diff-insert .subtitle-diff-line-no:nth-child(3),
+.subtitle-diff-insert .subtitle-diff-cell:nth-child(4) {
+  background: #eaffef;
+}
+
+.subtitle-diff-change .subtitle-diff-line-no:nth-child(1),
+.subtitle-diff-change .subtitle-diff-cell:nth-child(2) {
+  background: #fff2d8;
+}
+
+.subtitle-diff-change .subtitle-diff-line-no:nth-child(3),
+.subtitle-diff-change .subtitle-diff-cell:nth-child(4) {
+  background: #eaffef;
+}
+
+.subtitle-diff-char-delete {
+  background: #ffb8b8;
+  color: #8a1f11;
+  border-radius: 3px;
+  padding: 0 1px;
+}
+
+.subtitle-diff-char-insert {
+  background: #9ee8b2;
+  color: #115b25;
+  border-radius: 3px;
+  padding: 0 1px;
+}
+
 #lineAudioDialog {
   max-width: 96vw;
   width: min(1320px, 96vw);

@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
+import threading
 import time
 from copy import deepcopy
 from pathlib import Path
@@ -12,14 +14,19 @@ from typing import Any
 
 from .app_context import NOVEL_DIR, ROOT_DIR, db_conn
 from .services import (
+    apply_prompt_llm_settings,
+    call_llm_prompt_json,
+    chapter_content,
     comfy_interrupt_execution,
     comfy_request_json,
     comfy_upload_input_file,
     create_workflow_log,
     file_md5_hex,
     fetch_settings,
+    load_prompt_llm_settings,
     probe_audio_duration_seconds,
     safe_chapter_file_name,
+    sync_system_prompt_from_file,
     touch_task_worker_heartbeat,
     update_workflow_log_error,
     update_workflow_log_json,
@@ -31,6 +38,14 @@ class AudioAsrTaskCancelledError(RuntimeError):
     pass
 
 
+class SubtitleFixTaskCancelledError(RuntimeError):
+    pass
+
+
+SUBTITLE_FIX_WORKER_LOCK = threading.Lock()
+SUBTITLE_FIX_WORKER_THREAD: threading.Thread | None = None
+
+
 def _novel_asr_output_dir(english_dir: str) -> Path:
     return NOVEL_DIR / english_dir / "asr"
 
@@ -39,6 +54,12 @@ def _chapter_asr_output_path(english_dir: str, chapter_num: int, title: str) -> 
     name = safe_chapter_file_name(chapter_num, title)
     stem = name[:-4] if name.endswith(".txt") else name
     return _novel_asr_output_dir(english_dir) / f"{stem}.asr"
+
+
+def _chapter_corrected_srt_output_path(english_dir: str, chapter_num: int, title: str) -> Path:
+    name = safe_chapter_file_name(chapter_num, title)
+    stem = name[:-4] if name.endswith(".txt") else name
+    return _novel_asr_output_dir(english_dir) / f"{stem}.srt"
 
 
 def _asr_output_exists(rel_path: str) -> bool:
@@ -273,6 +294,92 @@ def _build_asr_content(
     return "\n\n".join(chunks).strip()
 
 
+def _strip_llm_srt_fences(text: str) -> str:
+    value = str(text or "").strip()
+    if value.startswith("```"):
+        value = re.sub(r"^```[A-Za-z0-9_-]*\s*", "", value)
+        value = re.sub(r"\s*```$", "", value).strip()
+    return value.replace("\r\n", "\n").replace("\r", "\n").strip()
+
+
+def _parse_srt_blocks(text: str) -> list[dict]:
+    blocks: list[dict] = []
+    normalized = str(text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not normalized:
+        return blocks
+    for raw_block in re.split(r"\n\s*\n+", normalized):
+        lines = [line.rstrip() for line in raw_block.split("\n") if line.strip()]
+        if len(lines) < 3:
+            continue
+        index = lines[0].strip()
+        time_line = lines[1].strip()
+        if "-->" not in time_line:
+            continue
+        start, end = [part.strip() for part in time_line.split("-->", 1)]
+        blocks.append({"index": index, "start": start, "end": end, "text": "\n".join(lines[2:]).strip()})
+    return blocks
+
+
+def _normalize_srt_from_blocks(blocks: list[dict]) -> str:
+    parts = []
+    for block in blocks:
+        parts.append(
+            f"{block['index']}\n{block['start']} --> {block['end']}\n{str(block.get('text') or '').strip()}"
+        )
+    return "\n\n".join(parts).strip() + "\n"
+
+
+def _srt_text_from_blocks(blocks: list[dict]) -> str:
+    return _normalize_srt_from_blocks(blocks).strip()
+
+
+def _chunk_srt_blocks(blocks: list[dict], batch_size: int = 80) -> list[list[dict]]:
+    return [blocks[index : index + batch_size] for index in range(0, len(blocks), batch_size)]
+
+
+def _validate_corrected_srt(original_text: str, corrected_text: str) -> str:
+    original_blocks = _parse_srt_blocks(original_text)
+    corrected_blocks = _parse_srt_blocks(corrected_text)
+    if not original_blocks:
+        raise RuntimeError("ASR字幕内容不是有效SRT格式")
+    if len(original_blocks) != len(corrected_blocks):
+        raise RuntimeError(
+            f"修复后字幕段数不一致：原始 {len(original_blocks)}，修复后 {len(corrected_blocks)}"
+        )
+    normalized_blocks = []
+    for idx, (original, corrected) in enumerate(zip(original_blocks, corrected_blocks), start=1):
+        if str(original["index"]) != str(corrected["index"]):
+            raise RuntimeError(f"第 {idx} 段序号被修改")
+        if str(original["start"]) != str(corrected["start"]) or str(original["end"]) != str(corrected["end"]):
+            raise RuntimeError(f"第 {idx} 段时间轴被修改")
+        text = str(corrected.get("text") or "").strip()
+        if not text:
+            raise RuntimeError(f"第 {idx} 段字幕为空")
+        normalized_blocks.append({**original, "text": text})
+    return _normalize_srt_from_blocks(normalized_blocks)
+
+
+def _normalize_llm_srt_output(text: str) -> str:
+    value = _strip_llm_srt_fences(text)
+    if not value.strip():
+        raise RuntimeError("LLM response content is empty")
+    blocks = _parse_srt_blocks(value)
+    if blocks:
+        return _normalize_srt_from_blocks(blocks)
+    return value.strip() + "\n"
+
+
+def _build_subtitle_fix_prompt(prompt_template: str, *, novel_text: str, asr_text: str, batch_note: str = "") -> str:
+    text = prompt_template.replace("{novel_text}", novel_text).replace("{asr_subtitle}", asr_text)
+    if batch_note:
+        text += (
+            "\n\n补充要求：\n"
+            f"{batch_note}\n"
+            "你仍然只能输出本批次修正后的 SRT 内容，不要输出任何说明。"
+        )
+    return text
+
+
 def _clamp_segments_to_duration(
     segments: list[tuple[str, float, float]], max_duration_seconds: float
 ) -> list[tuple[str, float, float]]:
@@ -387,11 +494,40 @@ def _run_asr_workflow_on_audio(
 
 def list_audio_asr_chapters(novel_id: int) -> list[dict]:
     conn = db_conn()
+    if not (SUBTITLE_FIX_WORKER_THREAD and SUBTITLE_FIX_WORKER_THREAD.is_alive()):
+        conn.execute(
+            """
+            UPDATE chapter_asr_tasks
+            SET subtitle_fix_status='failed', subtitle_fix_error='字幕修复已中断，请重试',
+                subtitle_fix_current_batch_index=0, subtitle_fix_total_batch_count=0,
+                updated_at=CURRENT_TIMESTAMP
+            WHERE novel_id=?
+              AND subtitle_fix_status='processing'
+              AND corrected_srt_file_path=''
+            """,
+            (novel_id,),
+        )
+    conn.execute(
+        """
+        UPDATE chapter_asr_tasks
+        SET subtitle_fix_status='failed', subtitle_fix_error='字幕修复已中断，请重试',
+            subtitle_fix_current_batch_index=0, subtitle_fix_total_batch_count=0,
+            updated_at=CURRENT_TIMESTAMP
+        WHERE novel_id=?
+          AND subtitle_fix_status='processing'
+          AND corrected_srt_file_path=''
+          AND updated_at < datetime('now', '-60 minutes')
+        """,
+        (novel_id,),
+    )
+    conn.commit()
     rows = conn.execute(
         """
         SELECT c.id, c.chapter_num, c.title, c.word_count, c.has_audio, c.audio_duration_seconds,
                t.status, t.asr_file_path, t.error_message, t.updated_at,
-               t.current_chunk_index, t.total_chunk_count
+               t.current_chunk_index, t.total_chunk_count,
+               t.subtitle_fix_status, t.subtitle_fix_error, t.corrected_srt_file_path, t.subtitle_fixed_at,
+               t.subtitle_fix_current_batch_index, t.subtitle_fix_total_batch_count
         FROM chapters c
         LEFT JOIN chapter_asr_tasks t ON t.chapter_id = c.id AND t.novel_id = c.novel_id
         WHERE c.novel_id=?
@@ -400,11 +536,15 @@ def list_audio_asr_chapters(novel_id: int) -> list[dict]:
         (novel_id,),
     ).fetchall()
     conn.close()
+    should_start_subtitle_worker = any(str(row["subtitle_fix_status"] or "").strip() == "pending" for row in rows)
     items = []
     for row in rows:
         rel = str(row["asr_file_path"] or "").strip()
         file_path = (ROOT_DIR / rel).resolve() if rel else None
         has_asr = bool(file_path and file_path.exists() and file_path.is_file())
+        srt_rel = str(row["corrected_srt_file_path"] or "").strip()
+        srt_path = (ROOT_DIR / srt_rel).resolve() if srt_rel else None
+        has_corrected_srt = bool(srt_path and srt_path.exists() and srt_path.is_file())
         status = str(row["status"] or "").strip()
         if not status:
             status = "completed" if has_asr else "idle"
@@ -424,9 +564,295 @@ def list_audio_asr_chapters(novel_id: int) -> list[dict]:
                 "totalChunkCount": int(row["total_chunk_count"] or 0),
                 "updatedAt": str(row["updated_at"] or ""),
                 "downloadUrl": f"/api/novels/{novel_id}/chapters/{int(row['chapter_num'] or 0)}/asr-file" if has_asr else "",
+                "subtitleFixStatus": str(row["subtitle_fix_status"] or ""),
+                "subtitleFixError": str(row["subtitle_fix_error"] or ""),
+                "subtitleFixCurrentBatchIndex": int(row["subtitle_fix_current_batch_index"] or 0),
+                "subtitleFixTotalBatchCount": int(row["subtitle_fix_total_batch_count"] or 0),
+                "hasCorrectedSrt": has_corrected_srt,
+                "correctedSrtFilePath": srt_rel,
+                "correctedSrtUpdatedAt": str(row["subtitle_fixed_at"] or ""),
+                "correctedSrtDownloadUrl": f"/api/novels/{novel_id}/chapters/{int(row['chapter_num'] or 0)}/corrected-srt-file" if has_corrected_srt else "",
             }
         )
+    if should_start_subtitle_worker:
+        ensure_subtitle_fix_worker()
     return items
+
+
+def _get_subtitle_fix_prompt(conn) -> tuple[int, str]:
+    row = conn.execute(
+        """
+        SELECT id, content
+        FROM json_prompts
+        WHERE prompt_category='subtitle_fix'
+        ORDER BY CASE WHEN prompt_type='user' THEN 0 ELSE 1 END, id DESC
+        LIMIT 1
+        """
+    ).fetchone()
+    if not row:
+        raise RuntimeError("修复字幕提示词未配置")
+    content = str(row["content"] or "").strip()
+    if not content:
+        raise RuntimeError("修复字幕提示词内容为空")
+    return int(row["id"]), content
+
+
+def ensure_subtitle_fix_task_not_cancelled(task_id: int) -> None:
+    conn = db_conn()
+    row = conn.execute(
+        "SELECT subtitle_fix_status FROM chapter_asr_tasks WHERE id=?",
+        (task_id,),
+    ).fetchone()
+    conn.close()
+    if row and str(row["subtitle_fix_status"] or "").strip() == "cancelled":
+        raise SubtitleFixTaskCancelledError("字幕修复已终止")
+
+
+def repair_chapter_audio_asr_subtitle(novel_id: int, chapter_id: int) -> dict:
+    conn = db_conn()
+    row = conn.execute(
+        """
+        SELECT t.id AS task_id, t.asr_file_path, c.chapter_num, c.title, c.text_file_path, n.english_dir
+        FROM chapters c
+        JOIN novels n ON n.id=c.novel_id
+        LEFT JOIN chapter_asr_tasks t ON t.chapter_id=c.id AND t.novel_id=c.novel_id
+        WHERE c.novel_id=? AND c.id=?
+        """,
+        (novel_id, chapter_id),
+    ).fetchone()
+    if not row:
+        conn.close()
+        raise RuntimeError("chapter not found")
+    task_id = int(row["task_id"] or 0)
+    if not task_id:
+        conn.close()
+        raise RuntimeError("ASR任务不存在，请先提取ASR")
+    asr_rel = str(row["asr_file_path"] or "").strip()
+    asr_path = (ROOT_DIR / asr_rel).resolve() if asr_rel else None
+    if not asr_path or not asr_path.exists() or not asr_path.is_file():
+        conn.close()
+        raise RuntimeError("ASR文件不存在，请先提取ASR")
+    sync_system_prompt_from_file(conn)
+    conn.commit()
+    prompt_id, prompt_template = _get_subtitle_fix_prompt(conn)
+    settings = fetch_settings(conn)
+    llm = apply_prompt_llm_settings(settings.get("llm") or {}, load_prompt_llm_settings(conn, prompt_id))
+    proxy_url = str(settings.get("proxyUrl") or "").strip()
+    conn.execute(
+        "UPDATE chapter_asr_tasks SET subtitle_fix_status='processing', subtitle_fix_error='', subtitle_fix_current_batch_index=0, subtitle_fix_total_batch_count=0, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+        (task_id,),
+    )
+    conn.commit()
+    conn.close()
+
+    try:
+        ensure_subtitle_fix_task_not_cancelled(task_id)
+        novel_text = chapter_content(
+            str(row["english_dir"] or ""),
+            int(row["chapter_num"] or 0),
+            str(row["title"] or ""),
+            str(row["text_file_path"] or ""),
+        ).strip()
+        asr_text = asr_path.read_text(encoding="utf-8", errors="ignore").strip()
+        if not novel_text:
+            raise RuntimeError("小说正文为空")
+        if not asr_text:
+            raise RuntimeError("ASR字幕为空")
+        original_blocks = _parse_srt_blocks(asr_text)
+        if not original_blocks:
+            raise RuntimeError("ASR字幕内容不是有效SRT格式")
+        corrected_parts: list[str] = []
+        batches = _chunk_srt_blocks(original_blocks)
+        conn = db_conn()
+        conn.execute(
+            "UPDATE chapter_asr_tasks SET subtitle_fix_current_batch_index=0, subtitle_fix_total_batch_count=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            (len(batches), task_id),
+        )
+        conn.commit()
+        conn.close()
+        for batch_index, batch_blocks in enumerate(batches, start=1):
+            ensure_subtitle_fix_task_not_cancelled(task_id)
+            batch_asr_text = _srt_text_from_blocks(batch_blocks)
+            first_index = str(batch_blocks[0].get("index") or "")
+            last_index = str(batch_blocks[-1].get("index") or "")
+            batch_note = ""
+            if len(batches) > 1:
+                batch_note = (
+                    f"当前是字幕分批校正 {batch_index}/{len(batches)}，"
+                    f"只处理序号 {first_index} 到 {last_index} 的字幕。"
+                    "不得输出其他批次字幕。"
+                )
+            raw_output = call_llm_prompt_json(
+                llm=llm,
+                proxy_url=proxy_url,
+                system_prompt="你只输出SRT字幕内容，不输出解释、Markdown或分析过程。",
+                user_prompt=_build_subtitle_fix_prompt(
+                    prompt_template,
+                    novel_text=novel_text,
+                    asr_text=batch_asr_text,
+                    batch_note=batch_note,
+                ),
+            )
+            ensure_subtitle_fix_task_not_cancelled(task_id)
+            corrected_parts.append(_normalize_llm_srt_output(raw_output).strip())
+            conn = db_conn()
+            conn.execute(
+                "UPDATE chapter_asr_tasks SET subtitle_fix_current_batch_index=?, subtitle_fix_total_batch_count=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                (batch_index, len(batches), task_id),
+            )
+            conn.commit()
+            conn.close()
+        ensure_subtitle_fix_task_not_cancelled(task_id)
+        corrected_srt = _normalize_llm_srt_output("\n\n".join(corrected_parts))
+        output_dir = _novel_asr_output_dir(str(row["english_dir"] or ""))
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = _chapter_corrected_srt_output_path(
+            str(row["english_dir"] or ""),
+            int(row["chapter_num"] or 0),
+            str(row["title"] or ""),
+        )
+        output_path.write_text(corrected_srt, encoding="utf-8")
+        rel_path = str(output_path.relative_to(ROOT_DIR))
+        conn = db_conn()
+        conn.execute(
+            """
+            UPDATE chapter_asr_tasks
+            SET subtitle_fix_status='completed', subtitle_fix_error='', corrected_srt_file_path=?,
+                subtitle_fix_current_batch_index=subtitle_fix_total_batch_count,
+                subtitle_fixed_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP
+            WHERE id=?
+            """,
+            (rel_path, task_id),
+        )
+        conn.commit()
+        conn.close()
+        return {"status": "completed", "correctedSrtFilePath": rel_path}
+    except SubtitleFixTaskCancelledError:
+        conn = db_conn()
+        conn.execute(
+            "UPDATE chapter_asr_tasks SET subtitle_fix_status='cancelled', subtitle_fix_error='字幕修复已终止', subtitle_fix_current_batch_index=0, subtitle_fix_total_batch_count=0, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            (task_id,),
+        )
+        conn.commit()
+        conn.close()
+        return {"status": "cancelled"}
+    except Exception as exc:
+        conn = db_conn()
+        conn.execute(
+            "UPDATE chapter_asr_tasks SET subtitle_fix_status='failed', subtitle_fix_error=?, subtitle_fix_current_batch_index=0, subtitle_fix_total_batch_count=0, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            (str(exc), task_id),
+        )
+        conn.commit()
+        conn.close()
+        raise
+
+
+def cancel_chapter_audio_asr_subtitle_repair(novel_id: int, chapter_id: int) -> tuple[bool, str]:
+    conn = db_conn()
+    row = conn.execute(
+        "SELECT id, subtitle_fix_status FROM chapter_asr_tasks WHERE novel_id=? AND chapter_id=?",
+        (novel_id, chapter_id),
+    ).fetchone()
+    if not row:
+        conn.close()
+        return False, "ASR任务不存在"
+    status = str(row["subtitle_fix_status"] or "").strip()
+    if status not in {"pending", "processing"}:
+        conn.close()
+        return False, "只有待修复或修复中的字幕任务可以终止"
+    conn.execute(
+        """
+        UPDATE chapter_asr_tasks
+        SET subtitle_fix_status='cancelled', subtitle_fix_error='字幕修复已终止',
+            subtitle_fix_current_batch_index=0, subtitle_fix_total_batch_count=0,
+            updated_at=CURRENT_TIMESTAMP
+        WHERE id=?
+        """,
+        (int(row["id"]),),
+    )
+    conn.commit()
+    conn.close()
+    return True, "cancelled"
+
+
+def enqueue_chapter_audio_asr_subtitle_repair(novel_id: int, chapter_id: int) -> tuple[bool, str, dict]:
+    conn = db_conn()
+    row = conn.execute(
+        """
+        SELECT t.id AS task_id, t.asr_file_path, t.subtitle_fix_status
+        FROM chapters c
+        LEFT JOIN chapter_asr_tasks t ON t.chapter_id=c.id AND t.novel_id=c.novel_id
+        WHERE c.novel_id=? AND c.id=?
+        """,
+        (novel_id, chapter_id),
+    ).fetchone()
+    if not row:
+        conn.close()
+        return False, "chapter not found", {}
+    task_id = int(row["task_id"] or 0)
+    if not task_id:
+        conn.close()
+        return False, "ASR任务不存在，请先提取ASR", {}
+    current_status = str(row["subtitle_fix_status"] or "").strip()
+    if current_status in {"pending", "processing"}:
+        conn.close()
+        ensure_subtitle_fix_worker()
+        return True, "subtitle repair already queued", {"action": "skipped", "reason": "already_queued"}
+    asr_rel = str(row["asr_file_path"] or "").strip()
+    asr_path = (ROOT_DIR / asr_rel).resolve() if asr_rel else None
+    if not asr_path or not asr_path.exists() or not asr_path.is_file():
+        conn.close()
+        return False, "ASR文件不存在，请先提取ASR", {}
+    conn.execute(
+        """
+        UPDATE chapter_asr_tasks
+        SET subtitle_fix_status='pending', subtitle_fix_error='', corrected_srt_file_path='',
+            subtitle_fix_current_batch_index=0, subtitle_fix_total_batch_count=0,
+            subtitle_fixed_at=NULL, updated_at=CURRENT_TIMESTAMP
+        WHERE id=?
+        """,
+        (task_id,),
+    )
+    conn.commit()
+    conn.close()
+    ensure_subtitle_fix_worker()
+    return True, "queued", {"action": "queued"}
+
+
+def run_subtitle_fix_queue_once() -> bool:
+    conn = db_conn()
+    running = conn.execute(
+        "SELECT id FROM chapter_asr_tasks WHERE subtitle_fix_status='processing' ORDER BY id ASC LIMIT 1"
+    ).fetchone()
+    if running:
+        conn.close()
+        return False
+    row = conn.execute(
+        "SELECT novel_id, chapter_id FROM chapter_asr_tasks WHERE subtitle_fix_status='pending' ORDER BY updated_at ASC, id ASC LIMIT 1"
+    ).fetchone()
+    conn.close()
+    if not row:
+        return False
+    try:
+        repair_chapter_audio_asr_subtitle(int(row["novel_id"]), int(row["chapter_id"]))
+    except Exception:
+        pass
+    return True
+
+
+def subtitle_fix_worker_loop() -> None:
+    while True:
+        if not run_subtitle_fix_queue_once():
+            return
+
+
+def ensure_subtitle_fix_worker() -> None:
+    global SUBTITLE_FIX_WORKER_THREAD
+    with SUBTITLE_FIX_WORKER_LOCK:
+        if SUBTITLE_FIX_WORKER_THREAD and SUBTITLE_FIX_WORKER_THREAD.is_alive():
+            return
+        SUBTITLE_FIX_WORKER_THREAD = threading.Thread(target=subtitle_fix_worker_loop, daemon=True)
+        SUBTITLE_FIX_WORKER_THREAD.start()
 
 
 def enqueue_chapter_audio_asr_task(

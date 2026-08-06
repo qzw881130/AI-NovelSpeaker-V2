@@ -632,6 +632,20 @@ async function enqueueBatchAudioAsr(novelId, chapterNums = [], options = {}) {
   });
 }
 
+async function repairChapterAudioAsrSubtitle(novelId, chapterNum) {
+  return api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/audio-asr/repair-subtitle`, {
+    method: "POST",
+    body: "{}",
+  });
+}
+
+async function cancelChapterAudioAsrSubtitleRepair(novelId, chapterNum) {
+  return api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/audio-asr/repair-subtitle/cancel`, {
+    method: "POST",
+    body: "{}",
+  });
+}
+
 async function enqueueChapterNsfwReview(novelId, chapterNum) {
   return api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/nsfw-review/enqueue`, {
     method: "POST",
@@ -719,6 +733,10 @@ async function enqueueAllIllustrationImages(novelId, chapterNum) {
 
 async function fetchChapterAsrFile(novelId, chapterNum) {
   return api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/asr-file`);
+}
+
+async function fetchChapterCorrectedSrtFile(novelId, chapterNum) {
+  return api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/corrected-srt-file`);
 }
 
 // 角色库API
@@ -1017,6 +1035,7 @@ async function enqueueChapterVideoExport(novelId, chapterNum, options = {}) {
       width: Number(options.width || 1080),
       height: Number(options.height || 1920),
       fps: Number(options.fps || 30),
+      subtitleMode: String(options.subtitleMode || "srt"),
     }),
   });
 }
@@ -1081,6 +1100,8 @@ export {
   cancelPendingIllustrationImages,
   cancelPendingIllustrationTasks,
   enqueueBatchAudioAsr,
+  repairChapterAudioAsrSubtitle,
+  cancelChapterAudioAsrSubtitleRepair,
   enqueueChapterNsfwReview,
   enqueueBatchNsfwReview,
   enqueueChapterIllustration,
@@ -1094,6 +1115,7 @@ export {
   enqueueAllIllustrationImages,
   retryChapterIllustrationPromptBatch,
   fetchChapterAsrFile,
+  fetchChapterCorrectedSrtFile,
   createChapter,
   updateChapter,
   deleteChapter,

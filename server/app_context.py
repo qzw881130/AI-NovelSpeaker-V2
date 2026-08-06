@@ -61,6 +61,21 @@ ILLUSTRATION_PROMPT_LLM_DEFAULTS = {
     },
 }
 
+SUBTITLE_FIX_PROMPT_LLM_DEFAULTS = {
+    "enabled": True,
+    "llm": {
+        "temperature": 0.1,
+        "topP": 0.85,
+        "maxTokens": 84000,
+        "numCtx": 84000,
+        "keepAlive": "30m",
+        "unloadAfterCall": False,
+        "batchTimeoutMinutes": 10,
+        "think": False,
+        "batchMaxChars": 0,
+    },
+}
+
 SYSTEM_PROMPTS = [
     {
         "file": SYSTEM_PROMPT_FILE,
@@ -111,6 +126,15 @@ SYSTEM_PROMPTS = [
         "category": "illustration_prompt",
         "default_content": "请根据scene.json与shot.json输出AI绘画prompt.json。",
         "default_llm_settings": ILLUSTRATION_PROMPT_LLM_DEFAULTS["illustration_prompt"],
+        "legacy_names": [],
+    },
+    {
+        "file": PROMPTS_DIR / "subtitle_fix_system_prompt.txt",
+        "name": "修复字幕提示词",
+        "description": "系统内置，适用于根据小说正文修复ASR字幕错误",
+        "category": "subtitle_fix",
+        "default_content": "请根据小说正文校正ASR字幕，并只输出修正后的SRT内容。",
+        "default_llm_settings": SUBTITLE_FIX_PROMPT_LLM_DEFAULTS,
         "legacy_names": [],
     },
 ]
@@ -462,6 +486,30 @@ def migrate_chapter_asr_tasks_table(conn: sqlite3.Connection) -> None:
         conn.execute(
             "ALTER TABLE chapter_asr_tasks ADD COLUMN force_extract INTEGER NOT NULL DEFAULT 0"
         )
+    if "subtitle_fix_status" not in column_names:
+        conn.execute(
+            "ALTER TABLE chapter_asr_tasks ADD COLUMN subtitle_fix_status TEXT NOT NULL DEFAULT ''"
+        )
+    if "subtitle_fix_error" not in column_names:
+        conn.execute(
+            "ALTER TABLE chapter_asr_tasks ADD COLUMN subtitle_fix_error TEXT NOT NULL DEFAULT ''"
+        )
+    if "corrected_srt_file_path" not in column_names:
+        conn.execute(
+            "ALTER TABLE chapter_asr_tasks ADD COLUMN corrected_srt_file_path TEXT NOT NULL DEFAULT ''"
+        )
+    if "subtitle_fixed_at" not in column_names:
+        conn.execute(
+            "ALTER TABLE chapter_asr_tasks ADD COLUMN subtitle_fixed_at DATETIME"
+        )
+    if "subtitle_fix_current_batch_index" not in column_names:
+        conn.execute(
+            "ALTER TABLE chapter_asr_tasks ADD COLUMN subtitle_fix_current_batch_index INTEGER NOT NULL DEFAULT 0"
+        )
+    if "subtitle_fix_total_batch_count" not in column_names:
+        conn.execute(
+            "ALTER TABLE chapter_asr_tasks ADD COLUMN subtitle_fix_total_batch_count INTEGER NOT NULL DEFAULT 0"
+        )
 
 
 def migrate_chapter_nsfw_tasks_table(conn: sqlite3.Connection) -> None:
@@ -601,6 +649,7 @@ def migrate_chapter_video_export_tasks_table(conn: sqlite3.Connection) -> None:
             width INTEGER NOT NULL DEFAULT 1080,
             height INTEGER NOT NULL DEFAULT 1920,
             fps INTEGER NOT NULL DEFAULT 30,
+            subtitle_mode TEXT NOT NULL DEFAULT 'srt',
             duration_seconds REAL NOT NULL DEFAULT 0,
             current_frame INTEGER NOT NULL DEFAULT 0,
             total_frames INTEGER NOT NULL DEFAULT 0,
@@ -610,19 +659,24 @@ def migrate_chapter_video_export_tasks_table(conn: sqlite3.Connection) -> None:
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             started_at DATETIME,
             updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(novel_id, chapter_id, width, height, fps),
+            UNIQUE(novel_id, chapter_id, width, height, fps, subtitle_mode),
             FOREIGN KEY(novel_id) REFERENCES novels(id) ON DELETE CASCADE,
             FOREIGN KEY(chapter_id) REFERENCES chapters(id) ON DELETE CASCADE
         )
         """
     )
+    columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(chapter_video_export_tasks)").fetchall()}
+    if "process_id" not in columns:
+        conn.execute("ALTER TABLE chapter_video_export_tasks ADD COLUMN process_id INTEGER NOT NULL DEFAULT 0")
+    if "subtitle_mode" not in columns:
+        conn.execute("ALTER TABLE chapter_video_export_tasks ADD COLUMN subtitle_mode TEXT NOT NULL DEFAULT 'srt'")
     unique_columns = []
     for idx in conn.execute("PRAGMA index_list(chapter_video_export_tasks)").fetchall():
         if int(idx[2] or 0) != 1:
             continue
         cols = [str(col[2]) for col in conn.execute(f"PRAGMA index_info({idx[1]})").fetchall()]
         unique_columns.append(cols)
-    if ["novel_id", "chapter_id"] in unique_columns and ["novel_id", "chapter_id", "width", "height", "fps"] not in unique_columns:
+    if ["novel_id", "chapter_id", "width", "height", "fps", "subtitle_mode"] not in unique_columns:
         conn.execute("ALTER TABLE chapter_video_export_tasks RENAME TO chapter_video_export_tasks_old")
         conn.execute(
             """
@@ -637,6 +691,7 @@ def migrate_chapter_video_export_tasks_table(conn: sqlite3.Connection) -> None:
                 width INTEGER NOT NULL DEFAULT 1080,
                 height INTEGER NOT NULL DEFAULT 1920,
                 fps INTEGER NOT NULL DEFAULT 30,
+                subtitle_mode TEXT NOT NULL DEFAULT 'srt',
                 duration_seconds REAL NOT NULL DEFAULT 0,
                 current_frame INTEGER NOT NULL DEFAULT 0,
                 total_frames INTEGER NOT NULL DEFAULT 0,
@@ -646,7 +701,7 @@ def migrate_chapter_video_export_tasks_table(conn: sqlite3.Connection) -> None:
                 created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 started_at DATETIME,
                 updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(novel_id, chapter_id, width, height, fps),
+                UNIQUE(novel_id, chapter_id, width, height, fps, subtitle_mode),
                 FOREIGN KEY(novel_id) REFERENCES novels(id) ON DELETE CASCADE,
                 FOREIGN KEY(chapter_id) REFERENCES chapters(id) ON DELETE CASCADE
             )
@@ -656,17 +711,14 @@ def migrate_chapter_video_export_tasks_table(conn: sqlite3.Connection) -> None:
             """
             INSERT OR IGNORE INTO chapter_video_export_tasks(
                 id,novel_id,chapter_id,chapter_num,chapter_title,status,progress,width,height,fps,
-                duration_seconds,current_frame,total_frames,process_id,output_file_path,error_message,created_at,started_at,updated_at
+                subtitle_mode,duration_seconds,current_frame,total_frames,process_id,output_file_path,error_message,created_at,started_at,updated_at
             )
             SELECT id,novel_id,chapter_id,chapter_num,chapter_title,status,progress,width,height,fps,
-                   duration_seconds,current_frame,total_frames,0,output_file_path,error_message,created_at,started_at,updated_at
+                   COALESCE(NULLIF(subtitle_mode,''),'srt'),duration_seconds,current_frame,total_frames,process_id,output_file_path,error_message,created_at,started_at,updated_at
             FROM chapter_video_export_tasks_old
             """
         )
         conn.execute("DROP TABLE chapter_video_export_tasks_old")
-    columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(chapter_video_export_tasks)").fetchall()}
-    if "process_id" not in columns:
-        conn.execute("ALTER TABLE chapter_video_export_tasks ADD COLUMN process_id INTEGER NOT NULL DEFAULT 0")
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_chapter_video_export_tasks_status_id ON chapter_video_export_tasks(status, id)"
     )

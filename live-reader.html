@@ -23,10 +23,7 @@
               <select id="liveReaderNovelSelect"></select>
             </label>
             <a class="ghost-btn" href="./chapters.html">返回章节管理</a>
-            <div class="button-group" aria-label="导出MP4">
-              <button class="ghost-btn" data-video-export-size="1080x1920" type="button">导出9:16 MP4</button>
-              <button class="ghost-btn" data-video-export-size="1920x1080" type="button">导出16:9 MP4</button>
-            </div>
+            <button id="openVideoExportDialogBtn" class="ghost-btn" type="button">导出视频</button>
             <button id="refreshLiveReaderBtn" class="primary-btn" type="button">刷新</button>
           </div>
         </header>
@@ -207,6 +204,34 @@
         </section>
       </main>
     </div>
+
+    <dialog id="videoExportDialog" class="modal">
+      <form id="videoExportForm" method="dialog">
+        <div class="dialog-header">
+          <h3>导出视频</h3>
+          <button class="dialog-close-btn" id="videoExportCloseBtn" type="button" aria-label="关闭">×</button>
+        </div>
+        <div class="form-grid">
+          <label>比例
+            <select id="videoExportAspectSelect">
+              <option value="16:9" selected>16:9</option>
+              <option value="9:16">9:16</option>
+            </select>
+          </label>
+          <label>字幕
+            <select id="videoExportSubtitleSelect">
+              <option value="srt" selected>srt</option>
+              <option value="none">无</option>
+            </select>
+          </label>
+        </div>
+        <p id="videoExportSubtitleHint" class="error-text"></p>
+        <menu>
+          <button class="ghost-btn" id="videoExportCancelBtn" type="button">取消</button>
+          <button class="primary-btn" id="videoExportSubmitBtn" type="submit">导出</button>
+        </menu>
+      </form>
+    </dialog>
 
     <div id="toast" class="toast"></div>
     <script type="module" src="./assets/live-reader.js"></script>

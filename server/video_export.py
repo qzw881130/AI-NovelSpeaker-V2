@@ -147,7 +147,7 @@ def parse_asr_segments(raw_text: str) -> list[SubtitleSegment]:
             continue
         segments.append(SubtitleSegment(start=start, end=end, text=body))
     if segments:
-        return _merge_subtitle_segments(segments)
+        return segments
 
     for line in text.split("\n"):
         parts = [part.strip() for part in line.split("\t")]
@@ -292,7 +292,7 @@ def _load_video_context(task_id: int) -> dict:
         raise RuntimeError("video export task not found")
     asr_row = conn.execute(
         """
-        SELECT asr_file_path,timestamps_text,extracted_text
+        SELECT asr_file_path,timestamps_text,extracted_text,corrected_srt_file_path
         FROM chapter_asr_tasks
         WHERE novel_id=? AND chapter_id=? AND status='completed'
         ORDER BY id DESC LIMIT 1
@@ -314,13 +314,14 @@ def _load_video_context(task_id: int) -> dict:
     audio_path = _resolve_path(str(task["audio_file_path"] or ""))
     if not audio_path or not audio_path.exists():
         raise RuntimeError("缺少章回音频")
+    subtitle_mode = str(task["subtitle_mode"] or "srt").strip() or "srt"
     asr_text = ""
-    if asr_row:
-        asr_file = _resolve_path(str(asr_row["asr_file_path"] or ""))
-        asr_text = _read_text_file(asr_file) or str(asr_row["timestamps_text"] or "") or str(asr_row["extracted_text"] or "")
+    if subtitle_mode != "none" and asr_row:
+        corrected_srt_file = _resolve_path(str(asr_row["corrected_srt_file_path"] or ""))
+        asr_text = _read_text_file(corrected_srt_file)
     subtitles = parse_asr_segments(asr_text)
-    if not subtitles:
-        raise RuntimeError("缺少ASR时间轴")
+    if subtitle_mode != "none" and not subtitles:
+        raise RuntimeError("缺少SRT字幕文件")
     duration = float(task["duration_seconds"] or task["audio_duration_seconds"] or 0)
     if duration <= 0:
         duration = max((segment.end for segment in subtitles), default=0)
@@ -517,7 +518,8 @@ def process_video_export_task(task_id: int, progress_callback=None) -> None:
         total_frames = max(1, int(math.ceil(duration * fps)))
         output_dir = Path(ctx["output_dir"])
         output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir / f"chapter-{int(task['chapter_num']):03d}-{width}x{height}.mp4"
+        subtitle_suffix = "nosub" if str(task["subtitle_mode"] or "srt") == "none" else "srt"
+        output_path = output_dir / f"chapter-{int(task['chapter_num']):03d}-{width}x{height}-{subtitle_suffix}.mp4"
         try:
             import PIL  # noqa: F401
         except ImportError as exc:
@@ -610,7 +612,7 @@ def process_video_export_task(task_id: int, progress_callback=None) -> None:
         conn.close()
 
 
-def enqueue_video_export_task(novel_id: int, chapter_num: int, width: int = DEFAULT_VIDEO_WIDTH, height: int = DEFAULT_VIDEO_HEIGHT, fps: int = DEFAULT_VIDEO_FPS) -> tuple[bool, str, int | None]:
+def enqueue_video_export_task(novel_id: int, chapter_num: int, width: int = DEFAULT_VIDEO_WIDTH, height: int = DEFAULT_VIDEO_HEIGHT, fps: int = DEFAULT_VIDEO_FPS, subtitle_mode: str = "srt") -> tuple[bool, str, int | None]:
     try:
         width = int(width or DEFAULT_VIDEO_WIDTH)
         height = int(height or DEFAULT_VIDEO_HEIGHT)
@@ -619,6 +621,9 @@ def enqueue_video_export_task(novel_id: int, chapter_num: int, width: int = DEFA
         return False, "invalid video size", None
     if (width, height) not in {(1080, 1920), (1920, 1080)}:
         return False, "unsupported video size", None
+    subtitle_mode = str(subtitle_mode or "srt").strip().lower()
+    if subtitle_mode not in {"srt", "none"}:
+        return False, "unsupported subtitle mode", None
     conn = db_conn()
     row = conn.execute(
         "SELECT c.id,c.title,c.audio_duration_seconds FROM chapters c WHERE c.novel_id=? AND c.chapter_num=?",
@@ -628,8 +633,8 @@ def enqueue_video_export_task(novel_id: int, chapter_num: int, width: int = DEFA
         conn.close()
         return False, "chapter not found", None
     existing = conn.execute(
-        "SELECT id,status FROM chapter_video_export_tasks WHERE novel_id=? AND chapter_id=? AND width=? AND height=? AND fps=?",
-        (novel_id, int(row["id"]), width, height, fps),
+        "SELECT id,status FROM chapter_video_export_tasks WHERE novel_id=? AND chapter_id=? AND width=? AND height=? AND fps=? AND subtitle_mode=?",
+        (novel_id, int(row["id"]), width, height, fps, subtitle_mode),
     ).fetchone()
     if existing and str(existing["status"] or "") in {"pending", "running"}:
         task_id = int(existing["id"])
@@ -640,26 +645,26 @@ def enqueue_video_export_task(novel_id: int, chapter_num: int, width: int = DEFA
         conn.execute(
             """
             UPDATE chapter_video_export_tasks
-            SET status='pending',progress=0,width=?,height=?,fps=?,duration_seconds=?,current_frame=0,total_frames=0,
+            SET status='pending',progress=0,width=?,height=?,fps=?,subtitle_mode=?,duration_seconds=?,current_frame=0,total_frames=0,
                 process_id=0,output_file_path='',error_message='',started_at=NULL,updated_at=CURRENT_TIMESTAMP
             WHERE id=?
             """,
-            (width, height, fps, float(row["audio_duration_seconds"] or 0), task_id),
+            (width, height, fps, subtitle_mode, float(row["audio_duration_seconds"] or 0), task_id),
         )
     else:
         try:
             cursor = conn.execute(
                 """
-                INSERT INTO chapter_video_export_tasks(novel_id,chapter_id,chapter_num,chapter_title,status,progress,width,height,fps,duration_seconds)
-                VALUES(?,?,?,?,?,?,?,?,?,?)
+                INSERT INTO chapter_video_export_tasks(novel_id,chapter_id,chapter_num,chapter_title,status,progress,width,height,fps,subtitle_mode,duration_seconds)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?)
                 """,
-                (novel_id, int(row["id"]), chapter_num, str(row["title"] or ""), "pending", 0, width, height, fps, float(row["audio_duration_seconds"] or 0)),
+                (novel_id, int(row["id"]), chapter_num, str(row["title"] or ""), "pending", 0, width, height, fps, subtitle_mode, float(row["audio_duration_seconds"] or 0)),
             )
             task_id = int(cursor.lastrowid)
         except sqlite3.IntegrityError:
             existing = conn.execute(
-                "SELECT id FROM chapter_video_export_tasks WHERE novel_id=? AND chapter_id=? AND width=? AND height=? AND fps=?",
-                (novel_id, int(row["id"]), width, height, fps),
+                "SELECT id FROM chapter_video_export_tasks WHERE novel_id=? AND chapter_id=? AND width=? AND height=? AND fps=? AND subtitle_mode=?",
+                (novel_id, int(row["id"]), width, height, fps, subtitle_mode),
             ).fetchone()
             if not existing:
                 conn.close()
@@ -755,7 +760,7 @@ def cancel_video_export_task(task_id: int) -> tuple[bool, str]:
 def get_video_export_file_path(task_id: int) -> tuple[Path | None, str]:
     conn = db_conn()
     row = conn.execute(
-        "SELECT output_file_path,chapter_num,chapter_title,width,height FROM chapter_video_export_tasks WHERE id=? AND status='completed'",
+        "SELECT output_file_path,chapter_num,chapter_title,width,height,subtitle_mode FROM chapter_video_export_tasks WHERE id=? AND status='completed'",
         (task_id,),
     ).fetchone()
     conn.close()
@@ -764,7 +769,8 @@ def get_video_export_file_path(task_id: int) -> tuple[Path | None, str]:
     path = _resolve_path(str(row["output_file_path"] or ""))
     if not path or not path.exists():
         return None, ""
-    name = f"第{int(row['chapter_num']):03d}回-{_safe_filename(str(row['chapter_title'] or '视频'))}-{int(row['width'] or DEFAULT_VIDEO_WIDTH)}x{int(row['height'] or DEFAULT_VIDEO_HEIGHT)}.mp4"
+    subtitle_suffix = "nosub" if str(row["subtitle_mode"] or "srt") == "none" else "srt"
+    name = f"第{int(row['chapter_num']):03d}回-{_safe_filename(str(row['chapter_title'] or '视频'))}-{int(row['width'] or DEFAULT_VIDEO_WIDTH)}x{int(row['height'] or DEFAULT_VIDEO_HEIGHT)}-{subtitle_suffix}.mp4"
     return path, name
 
 
@@ -835,6 +841,23 @@ def run_video_export_queue_once(progress_callback=None) -> bool:
 def _task_to_dict(row) -> dict:
     output_path = _resolve_path(str(row["output_file_path"] or "")) if row["output_file_path"] else None
     size_bytes = output_path.stat().st_size if output_path and output_path.exists() else 0
+    subtitle_mode = str(row["subtitle_mode"] or "srt") if "subtitle_mode" in row.keys() else "srt"
+    srt_download_url = ""
+    if subtitle_mode == "srt":
+        conn = db_conn()
+        asr_row = conn.execute(
+            """
+            SELECT corrected_srt_file_path
+            FROM chapter_asr_tasks
+            WHERE novel_id=? AND chapter_id=? AND COALESCE(corrected_srt_file_path,'')<>''
+            ORDER BY id DESC LIMIT 1
+            """,
+            (int(row["novel_id"]), int(row["chapter_id"])),
+        ).fetchone()
+        conn.close()
+        srt_path = _resolve_path(str(asr_row["corrected_srt_file_path"] or "")) if asr_row else None
+        if srt_path and srt_path.exists() and srt_path.is_file():
+            srt_download_url = f"/api/novels/{int(row['novel_id'])}/chapters/{int(row['chapter_num'])}/corrected-srt-file"
     return {
         "id": int(row["id"]),
         "novelId": int(row["novel_id"]),
@@ -847,6 +870,7 @@ def _task_to_dict(row) -> dict:
         "width": int(row["width"] or DEFAULT_VIDEO_WIDTH),
         "height": int(row["height"] or DEFAULT_VIDEO_HEIGHT),
         "fps": int(row["fps"] or DEFAULT_VIDEO_FPS),
+        "subtitleMode": subtitle_mode,
         "durationSeconds": float(row["duration_seconds"] or 0),
         "currentFrame": int(row["current_frame"] or 0),
         "totalFrames": int(row["total_frames"] or 0),
@@ -857,4 +881,5 @@ def _task_to_dict(row) -> dict:
         "startedAt": str(row["started_at"] or ""),
         "updatedAt": str(row["updated_at"] or ""),
         "downloadUrl": f"/api/video-export-tasks/{int(row['id'])}/file" if size_bytes else "",
+        "srtDownloadUrl": srt_download_url,
     }

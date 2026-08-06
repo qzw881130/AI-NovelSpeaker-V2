@@ -75,7 +75,8 @@ function estimateRemainingText(task) {
 
 function videoMetaText(task) {
   const sizeText = task.sizeBytes ? bytesToText(task.sizeBytes) : "-";
-  return `${task.width}x${task.height} · ${task.fps}fps · 时长 ${formatDuration(task.durationSeconds)} · 存储 ${sizeText}`;
+  const subtitleText = String(task.subtitleMode || "srt") === "none" ? "无字幕" : "有字幕";
+  return `${task.width}x${task.height} · ${task.fps}fps · ${subtitleText} · 时长 ${formatDuration(task.durationSeconds)} · 存储 ${sizeText}`;
 }
 
 function renderNovelSelect() {
@@ -95,9 +96,11 @@ function renderWorkerStatus(status) {
 function filteredTasks() {
   const status = document.getElementById("videoExportStatusFilter")?.value || "";
   const size = document.getElementById("videoExportSizeFilter")?.value || "";
+  const subtitle = document.getElementById("videoExportSubtitleFilter")?.value || "";
   return tasks.filter((task) => {
     if (status && task.status !== status) return false;
     if (size && `${task.width}x${task.height}` !== size) return false;
+    if (subtitle && String(task.subtitleMode || "srt") !== subtitle) return false;
     return true;
   });
 }
@@ -121,6 +124,9 @@ function renderTasks() {
         : "";
       const download = task.status === "completed" && task.downloadUrl
         ? `<a class="primary-btn btn-sm" href="${getVideoExportFileUrl(task.id)}">下载MP4</a>`
+        : "";
+      const downloadSrt = task.status === "completed" && task.srtDownloadUrl
+        ? `<a class="ghost-btn btn-sm" href="${task.srtDownloadUrl}">下载SRT字幕</a>`
         : "";
       const retry = task.status === "failed" || task.status === "cancelled"
         ? `<button class="ghost-btn btn-sm" data-action="retry" data-id="${task.id}" type="button">重试</button>`
@@ -146,7 +152,7 @@ function renderTasks() {
             <span>更新 ${escapeHtml(fmtDateTime(task.updatedAt))}</span>
           </div>
           ${task.errorMessage ? `<p class="error-text">${escapeHtml(task.errorMessage)}</p>` : ""}
-          <div class="actions-row">${play}${download}${retry}${cancel}</div>
+          <div class="actions-row">${play}${download}${downloadSrt}${retry}${cancel}</div>
         </article>`;
     })
     .join("");
@@ -225,6 +231,7 @@ function bindEvents() {
   });
   document.getElementById("videoExportStatusFilter")?.addEventListener("change", renderTasks);
   document.getElementById("videoExportSizeFilter")?.addEventListener("change", renderTasks);
+  document.getElementById("videoExportSubtitleFilter")?.addEventListener("change", renderTasks);
   document.getElementById("videoExportRefreshIntervalSelect")?.addEventListener("change", (event) => {
     localStorage.setItem(VIDEO_EXPORT_REFRESH_INTERVAL_KEY, String(event.target.value || 0));
     applyRefreshInterval();

@@ -40,6 +40,7 @@
                 <span>强制提取</span>
               </label>
               <button id="audioAsrBatchBtn" class="ghost-btn" type="button">批量提取</button>
+              <button id="audioAsrBatchRepairSubtitleBtn" class="ghost-btn" type="button">批量修复字幕</button>
               <button id="audioAsrBatchAllBtn" class="ghost-btn" type="button">提取全部</button>
               <span id="audioAsrSummary" class="meta">-</span>
             </div>
@@ -59,12 +60,13 @@
                   <th>音频时长</th>
                   <th>ASR状态</th>
                   <th>ASR文件</th>
+                  <th>修复字幕</th>
                   <th>操作</th>
                 </tr>
               </thead>
               <tbody id="audioAsrTableBody">
                 <tr>
-                  <td colspan="7" class="empty-text">正在加载...</td>
+                  <td colspan="8" class="empty-text">正在加载...</td>
                 </tr>
               </tbody>
             </table>
@@ -85,6 +87,21 @@
           <button class="dialog-close-btn" type="submit" aria-label="关闭">×</button>
         </div>
         <pre id="audioAsrViewContent" class="dialog-code-block">加载中...</pre>
+      </form>
+    </dialog>
+
+    <dialog id="audioAsrCompareDialog" class="modal modal-wide">
+      <form method="dialog">
+        <div class="dialog-header">
+          <h3 id="audioAsrCompareTitle">字幕对比</h3>
+          <button class="dialog-close-btn" type="submit" aria-label="关闭">×</button>
+        </div>
+        <div id="audioAsrCompareSummary" class="subtitle-diff-summary">-</div>
+        <div class="subtitle-diff-header">
+          <div>ASR文件</div>
+          <div>修复字幕</div>
+        </div>
+        <div id="audioAsrCompareBody" class="subtitle-diff-body"></div>
       </form>
     </dialog>
 

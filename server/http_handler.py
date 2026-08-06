@@ -47,8 +47,10 @@ from .line_audio import (
 )
 from .audio_asr import (
     cancel_chapter_audio_asr_task,
+    cancel_chapter_audio_asr_subtitle_repair,
     enqueue_batch_audio_asr_tasks,
     enqueue_chapter_audio_asr_task,
+    enqueue_chapter_audio_asr_subtitle_repair,
     list_audio_asr_chapters,
 )
 from .nsfw_review import (
@@ -1234,6 +1236,35 @@ class Handler(BaseHTTPRequestHandler):
             self.send_file_response(
                 file_path,
                 "text/plain; charset=utf-8",
+                cache_control="no-store",
+                download_name=download_name,
+            )
+            return
+
+        m_corrected_srt_file = re.match(r"^/api/novels/(\d+)/chapters/(\d+)/corrected-srt-file$", route)
+        if m_corrected_srt_file:
+            novel_id = int(m_corrected_srt_file.group(1))
+            chapter_num = int(m_corrected_srt_file.group(2))
+            conn = db_conn()
+            row = conn.execute(
+                "SELECT title FROM chapters WHERE novel_id=? AND chapter_num=?",
+                (novel_id, chapter_num),
+            ).fetchone()
+            task = conn.execute(
+                "SELECT corrected_srt_file_path FROM chapter_asr_tasks WHERE novel_id=? AND chapter_num=?",
+                (novel_id, chapter_num),
+            ).fetchone()
+            conn.close()
+            rel = str(task["corrected_srt_file_path"] or "").strip() if task else ""
+            file_path = (ROOT_DIR / rel).resolve() if rel else None
+            if not file_path or not file_path.exists() or not file_path.is_file():
+                self.send_json({"error": "corrected srt file not found"}, 404)
+                return
+            title = str(row["title"] or f"chapter_{chapter_num}") if row else f"chapter_{chapter_num}"
+            download_name = safe_chapter_file_name(chapter_num, title).replace(".txt", ".srt")
+            self.send_file_response(
+                file_path,
+                "application/x-subrip; charset=utf-8",
                 cache_control="no-store",
                 download_name=download_name,
             )
@@ -2525,7 +2556,8 @@ class Handler(BaseHTTPRequestHandler):
             except (TypeError, ValueError):
                 self.send_json({"error": "invalid video size"}, 400)
                 return
-            ok, msg, task_id = enqueue_video_export_task(novel_id, chapter_num, width=width, height=height, fps=fps)
+            subtitle_mode = str(body.get("subtitleMode") or "srt").strip().lower()
+            ok, msg, task_id = enqueue_video_export_task(novel_id, chapter_num, width=width, height=height, fps=fps, subtitle_mode=subtitle_mode)
             if not ok:
                 self.send_json({"error": msg}, 400)
                 return
@@ -2955,6 +2987,50 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": msg}, 409)
                 return
             self.send_json({"status": str((data or {}).get("action") or "queued"), "message": msg, **(data or {})})
+            return
+
+        m_audio_asr_repair_subtitle = re.match(
+            r"^/api/novels/(\d+)/chapters/(\d+)/audio-asr/repair-subtitle$", route
+        )
+        if m_audio_asr_repair_subtitle:
+            novel_id = int(m_audio_asr_repair_subtitle.group(1))
+            chapter_num = int(m_audio_asr_repair_subtitle.group(2))
+            conn = db_conn()
+            chapter_row = conn.execute(
+                "SELECT id FROM chapters WHERE novel_id=? AND chapter_num=?",
+                (novel_id, chapter_num),
+            ).fetchone()
+            conn.close()
+            if not chapter_row:
+                self.send_json({"error": "chapter not found"}, 404)
+                return
+            ok, msg, data = enqueue_chapter_audio_asr_subtitle_repair(novel_id, int(chapter_row["id"]))
+            if not ok:
+                self.send_json({"error": msg}, 409)
+                return
+            self.send_json({"status": str((data or {}).get("action") or "queued"), "message": msg, **(data or {})})
+            return
+
+        m_audio_asr_repair_subtitle_cancel = re.match(
+            r"^/api/novels/(\d+)/chapters/(\d+)/audio-asr/repair-subtitle/cancel$", route
+        )
+        if m_audio_asr_repair_subtitle_cancel:
+            novel_id = int(m_audio_asr_repair_subtitle_cancel.group(1))
+            chapter_num = int(m_audio_asr_repair_subtitle_cancel.group(2))
+            conn = db_conn()
+            chapter_row = conn.execute(
+                "SELECT id FROM chapters WHERE novel_id=? AND chapter_num=?",
+                (novel_id, chapter_num),
+            ).fetchone()
+            conn.close()
+            if not chapter_row:
+                self.send_json({"error": "chapter not found"}, 404)
+                return
+            ok, msg = cancel_chapter_audio_asr_subtitle_repair(novel_id, int(chapter_row["id"]))
+            if not ok:
+                self.send_json({"error": msg}, 409)
+                return
+            self.send_json({"status": "cancelled"})
             return
 
         m_illustration_enqueue = re.match(

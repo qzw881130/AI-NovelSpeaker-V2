@@ -9,7 +9,7 @@ let activePromptCategory = "json_parse";
 let promptSaving = false;
 let settingsPromptCategory = "json_parse";
 
-const ILLUSTRATION_PROMPT_CATEGORIES = new Set(["illustration_scene", "illustration_shot", "illustration_prompt"]);
+const NO_BATCH_PROMPT_CATEGORIES = new Set(["illustration_scene", "illustration_shot", "illustration_prompt", "subtitle_fix"]);
 const BATCH_CHAR_OPTIONS = [
   { value: "0", label: "不拆分" },
   { value: "3500", label: "3500" },
@@ -29,6 +29,7 @@ function promptCategoryLabel(category) {
     illustration_scene: "插画-scene提示词",
     illustration_shot: "插画-shot提示词",
     illustration_prompt: "插画-prompt提示词",
+    subtitle_fix: "修复字幕提示词",
   };
   return labels[String(category || "json_parse")] || "JSON 解析提示词";
 }
@@ -112,7 +113,7 @@ function syncPromptSettingsState() {
 function syncBatchCharsOptions(category) {
   const select = document.getElementById("promptLlmBatchChars");
   if (!select) return;
-  const options = ILLUSTRATION_PROMPT_CATEGORIES.has(String(category || ""))
+  const options = NO_BATCH_PROMPT_CATEGORIES.has(String(category || ""))
     ? BATCH_CHAR_OPTIONS.slice(0, 1)
     : BATCH_CHAR_OPTIONS;
   select.innerHTML = options.map((item) => `<option value="${item.value}">${item.label}</option>`).join("");
@@ -134,7 +135,7 @@ function openSettingsModal(promptItem) {
   document.getElementById("promptLlmUnloadAfterCall").checked = Boolean(settings.llm.unloadAfterCall);
   document.getElementById("promptLlmThink").checked = settings.llm.think !== false;
   document.getElementById("promptLlmBatchTimeout").value = settings.llm.batchTimeoutMinutes ?? 15;
-  document.getElementById("promptLlmBatchChars").value = ILLUSTRATION_PROMPT_CATEGORIES.has(String(settingsPromptCategory)) ? "0" : String(settings.llm.batchMaxChars ?? 3500);
+  document.getElementById("promptLlmBatchChars").value = NO_BATCH_PROMPT_CATEGORIES.has(String(settingsPromptCategory)) ? "0" : String(settings.llm.batchMaxChars ?? 3500);
   syncPromptSettingsState();
   document.getElementById("promptSettingsModal").showModal();
 }
@@ -152,7 +153,7 @@ function collectPromptLlmSettings() {
       unloadAfterCall: document.getElementById("promptLlmUnloadAfterCall").checked,
       think: document.getElementById("promptLlmThink").checked,
       batchTimeoutMinutes: Number(document.getElementById("promptLlmBatchTimeout").value || 15),
-      batchMaxChars: ILLUSTRATION_PROMPT_CATEGORIES.has(String(settingsPromptCategory)) ? 0 : Number(document.getElementById("promptLlmBatchChars").value || 3500),
+      batchMaxChars: NO_BATCH_PROMPT_CATEGORIES.has(String(settingsPromptCategory)) ? 0 : Number(document.getElementById("promptLlmBatchChars").value || 3500),
     },
   };
 }
