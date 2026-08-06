@@ -51,6 +51,7 @@ from .audio_asr import (
     enqueue_batch_audio_asr_tasks,
     enqueue_chapter_audio_asr_task,
     enqueue_chapter_audio_asr_subtitle_repair,
+    inspect_srt_timing_errors,
     list_audio_asr_chapters,
 )
 from .nsfw_review import (
@@ -3577,6 +3578,56 @@ class Handler(BaseHTTPRequestHandler):
                 novel_id, int(chapter["id"]), merged
             )
             self.send_json({"status": "ok"})
+            return
+
+        m_save_corrected_srt = re.match(r"^/api/novels/(\d+)/chapters/(\d+)/corrected-srt-file$", route)
+        if m_save_corrected_srt:
+            novel_id = int(m_save_corrected_srt.group(1))
+            chapter_num = int(m_save_corrected_srt.group(2))
+            srt_text = str(body.get("srtText") or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+            if not srt_text:
+                self.send_json({"error": "srtText is required"}, 400)
+                return
+            conn = db_conn()
+            chapter = conn.execute(
+                "SELECT id FROM chapters WHERE novel_id=? AND chapter_num=?",
+                (novel_id, chapter_num),
+            ).fetchone()
+            if not chapter:
+                conn.close()
+                self.send_json({"error": "chapter not found"}, 404)
+                return
+            task = conn.execute(
+                "SELECT id,corrected_srt_file_path FROM chapter_asr_tasks WHERE novel_id=? AND chapter_id=? ORDER BY id DESC LIMIT 1",
+                (novel_id, int(chapter["id"])),
+            ).fetchone()
+            rel = str(task["corrected_srt_file_path"] or "").strip() if task else ""
+            file_path = (ROOT_DIR / rel).resolve() if rel else None
+            root_dir = ROOT_DIR.resolve()
+            if not task or not file_path or not file_path.exists() or not file_path.is_file():
+                conn.close()
+                self.send_json({"error": "corrected srt file not found"}, 404)
+                return
+            try:
+                file_path.relative_to(root_dir)
+            except ValueError:
+                conn.close()
+                self.send_json({"error": "invalid srt file path"}, 400)
+                return
+            file_path.write_text(srt_text + "\n", encoding="utf-8")
+            conn.execute(
+                "UPDATE chapter_asr_tasks SET subtitle_fixed_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                (int(task["id"]),),
+            )
+            conn.commit()
+            conn.close()
+            errors = inspect_srt_timing_errors(srt_text)
+            self.send_json({
+                "status": "saved",
+                "errorCount": len(errors),
+                "errorLines": [int(error["line"] or 0) for error in errors],
+                "errors": errors,
+            })
             return
 
         m_update_role = re.match(r"^/api/novels/(\d+)/roles/(\d+)$", route)

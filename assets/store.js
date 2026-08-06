@@ -739,6 +739,13 @@ async function fetchChapterCorrectedSrtFile(novelId, chapterNum) {
   return api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/corrected-srt-file`);
 }
 
+async function saveChapterCorrectedSrtFile(novelId, chapterNum, srtText) {
+  return api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/corrected-srt-file`, {
+    method: "PUT",
+    body: JSON.stringify({ srtText: String(srtText || "") }),
+  });
+}
+
 // 角色库API
 async function fetchRoles(novelId) {
   const data = await api(`/api/novels/${Number(novelId)}/roles`);
@@ -1116,6 +1123,7 @@ export {
   retryChapterIllustrationPromptBatch,
   fetchChapterAsrFile,
   fetchChapterCorrectedSrtFile,
+  saveChapterCorrectedSrtFile,
   createChapter,
   updateChapter,
   deleteChapter,

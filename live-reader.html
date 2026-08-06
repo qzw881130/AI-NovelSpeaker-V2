@@ -58,12 +58,12 @@
             </div>
             <label class="live-reader-slider-control">
               正文宽度
-              <input id="liveReaderWidthRange" type="range" min="140" max="900" step="10" value="520" />
+              <input id="liveReaderWidthRange" type="range" min="140" max="900" step="2" value="520" />
               <span id="liveReaderWidthValue" class="reader-status">520px</span>
             </label>
             <label class="live-reader-slider-control">
               正文高度
-              <input id="liveReaderHeightRange" type="range" min="320" max="1200" step="10" value="820" />
+              <input id="liveReaderHeightRange" type="range" min="320" max="1200" step="2" value="820" />
               <span id="liveReaderHeightValue" class="reader-status">820px</span>
             </label>
             <label class="live-reader-slider-control">
@@ -71,17 +71,6 @@
               <input id="liveReaderIllustrationWidthRange" type="range" min="240" max="1000" step="10" value="620" />
               <span id="liveReaderIllustrationWidthValue" class="reader-status">620px</span>
             </label>
-            <div class="live-reader-theme-control">
-              <span>Ken Burns运动控制</span>
-              <div class="live-reader-theme-row">
-                <select id="liveReaderKenBurnsMotionSelect">
-                  <option value="simple">简单动效</option>
-                  <option value="medium">中等动效</option>
-                  <option value="large">大幅度动效</option>
-                </select>
-              </div>
-              <span id="liveReaderKenBurnsMotionValue" class="reader-status">简单动效</span>
-            </div>
             <label class="live-reader-slider-control">
               字号
               <input id="liveReaderFontSizeRange" type="range" min="12" max="42" step="1" value="28" />
@@ -130,6 +119,17 @@
               <span>水印文字</span>
               <input id="liveReaderWatermarkText" type="text" value="旺仔有声小说 · 自制演播" placeholder="留空关闭水印" />
             </label>
+            <div class="live-reader-theme-control live-reader-ken-burns-control">
+              <span>Ken Burns运动控制</span>
+              <div class="live-reader-theme-row">
+                <select id="liveReaderKenBurnsMotionSelect">
+                  <option value="simple">简单动效</option>
+                  <option value="medium">中等动效</option>
+                  <option value="large">大幅度动效</option>
+                </select>
+              </div>
+              <span id="liveReaderKenBurnsMotionValue" class="reader-status">简单动效</span>
+            </div>
             <button id="liveReaderInstallBtn" class="ghost-btn hidden" type="button">安装独立阅读器</button>
           </div>
         </section>

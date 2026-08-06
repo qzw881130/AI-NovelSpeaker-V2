@@ -320,6 +320,29 @@ def _parse_srt_blocks(text: str) -> list[dict]:
     return blocks
 
 
+def _parse_srt_timestamp_seconds(value: str) -> float | None:
+    match = re.match(r"^\s*(\d{1,2}):(\d{2}):(\d{2}),(\d{1,3})\s*$", str(value or ""))
+    if not match:
+        return None
+    hours, minutes, seconds, millis = match.groups()
+    return int(hours) * 3600 + int(minutes) * 60 + int(seconds) + int(millis.ljust(3, "0")[:3]) / 1000
+
+
+def inspect_srt_timing_errors(text: str) -> list[dict[str, int | str]]:
+    errors: list[dict[str, int | str]] = []
+    for block_index, block in enumerate(_parse_srt_blocks(text), start=1):
+        start = _parse_srt_timestamp_seconds(str(block.get("start") or ""))
+        end = _parse_srt_timestamp_seconds(str(block.get("end") or ""))
+        if start is None or end is None or start < end:
+            continue
+        try:
+            line_no = int(str(block.get("index") or block_index).strip())
+        except (TypeError, ValueError):
+            line_no = block_index
+        errors.append({"line": line_no, "block": block_index, "time": f"{block.get('start')} --> {block.get('end')}"})
+    return errors
+
+
 def _normalize_srt_from_blocks(blocks: list[dict]) -> str:
     parts = []
     for block in blocks:
@@ -545,6 +568,12 @@ def list_audio_asr_chapters(novel_id: int) -> list[dict]:
         srt_rel = str(row["corrected_srt_file_path"] or "").strip()
         srt_path = (ROOT_DIR / srt_rel).resolve() if srt_rel else None
         has_corrected_srt = bool(srt_path and srt_path.exists() and srt_path.is_file())
+        srt_errors = []
+        if has_corrected_srt:
+            try:
+                srt_errors = inspect_srt_timing_errors(srt_path.read_text(encoding="utf-8"))
+            except Exception:
+                srt_errors = []
         status = str(row["status"] or "").strip()
         if not status:
             status = "completed" if has_asr else "idle"
@@ -572,6 +601,8 @@ def list_audio_asr_chapters(novel_id: int) -> list[dict]:
                 "correctedSrtFilePath": srt_rel,
                 "correctedSrtUpdatedAt": str(row["subtitle_fixed_at"] or ""),
                 "correctedSrtDownloadUrl": f"/api/novels/{novel_id}/chapters/{int(row['chapter_num'] or 0)}/corrected-srt-file" if has_corrected_srt else "",
+                "correctedSrtErrorCount": len(srt_errors),
+                "correctedSrtErrorLines": [int(error["line"] or 0) for error in srt_errors],
             }
         )
     if should_start_subtitle_worker:

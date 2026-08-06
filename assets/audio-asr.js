@@ -10,6 +10,7 @@ import {
   getActiveNovelId,
   repairChapterAudioAsrSubtitle,
   restartAudioAsrWorker,
+  saveChapterCorrectedSrtFile,
   setActiveNovelId,
 } from "./store.js";
 import { renderNav, toast } from "./ui.js";
@@ -20,6 +21,55 @@ let chapterItems = [];
 const selectedChapterNums = new Set();
 let autoRefreshTimer = 0;
 let isDragSelecting = false;
+let currentSrtViewItem = null;
+
+function parseSrtTimestampSeconds(value) {
+  const match = String(value || "").trim().match(/^(\d{1,2}):(\d{2}):(\d{2}),(\d{1,3})$/);
+  if (!match) return null;
+  const [, hours, minutes, seconds, millis] = match;
+  return Number(hours) * 3600 + Number(minutes) * 60 + Number(seconds) + Number(millis.padEnd(3, "0").slice(0, 3)) / 1000;
+}
+
+function inspectSrtTimingErrors(text) {
+  const blocks = String(text || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim().split(/\n\s*\n+/).filter((block) => block.trim());
+  const errors = [];
+  blocks.forEach((block, blockIndex) => {
+    const lines = block.split("\n").map((line) => line.trim()).filter(Boolean);
+    const timeLine = lines.find((line) => line.includes("-->")) || "";
+    const match = timeLine.match(/^(.*?)\s*-->\s*(.*?)$/);
+    if (!match) return;
+    const start = parseSrtTimestampSeconds(match[1]);
+    const end = parseSrtTimestampSeconds(match[2]);
+    if (start == null || end == null || start < end) return;
+    const parsedLine = Number(lines[0] || blockIndex + 1);
+    errors.push({ line: Number.isFinite(parsedLine) ? parsedLine : blockIndex + 1, block: blockIndex + 1, time: timeLine });
+  });
+  return errors;
+}
+
+function findSrtBlockOffset(text, lineNo) {
+  const normalized = String(text || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const blocks = normalized.split(/\n\s*\n+/);
+  let offset = 0;
+  for (const block of blocks) {
+    const firstLine = (block.split("\n").find((line) => line.trim()) || "").trim();
+    if (Number(firstLine) === Number(lineNo)) return offset;
+    offset += block.length + 2;
+  }
+  return 0;
+}
+
+function renderSrtErrorNav(text) {
+  const nav = document.getElementById("audioAsrSrtErrorNav");
+  if (!nav) return [];
+  const errors = inspectSrtTimingErrors(text);
+  if (!errors.length) {
+    nav.innerHTML = '<span class="status-badge status-completed">时间轴正常</span>';
+    return errors;
+  }
+  nav.innerHTML = `<span class="error-text">时间错误 ${errors.length} 处：</span>${errors.map((error) => `<button class="ghost-btn btn-sm audio-asr-srt-error-jump" type="button" data-line="${Number(error.line)}">${Number(error.line)}</button>`).join("")}`;
+  return errors;
+}
 
 function copyText(text) {
   const value = String(text || "");
@@ -42,6 +92,11 @@ function copyText(text) {
   document.body.removeChild(textarea);
   toast("ASR内容已复制");
   return Promise.resolve();
+}
+
+function getViewContentText() {
+  const el = document.getElementById("audioAsrViewContent");
+  return "value" in el ? el.value : el.textContent;
 }
 
 function isForceExtractEnabled() {
@@ -330,9 +385,19 @@ async function openTextFileView(item, kind = "asr") {
   const titleEl = document.getElementById("audioAsrViewTitle");
   const contentEl = document.getElementById("audioAsrViewContent");
   const copyBtn = document.getElementById("audioAsrCopyBtn");
+  const saveBtn = document.getElementById("audioAsrSaveSrtBtn");
+  const errorNav = document.getElementById("audioAsrSrtErrorNav");
   if (!dialog || !titleEl || !contentEl) return;
+  currentSrtViewItem = isSrt ? item : null;
   titleEl.textContent = `${isSrt ? "查看修复字幕" : "查看ASR"} · 第${String(item.chapterNum).padStart(3, "0")}回 ${item.title || ""}`;
-  contentEl.textContent = "加载中...";
+  contentEl.value = "加载中...";
+  contentEl.readOnly = !isSrt;
+  contentEl.classList.toggle("is-editable", isSrt);
+  if (saveBtn) saveBtn.classList.toggle("hidden", !isSrt);
+  if (errorNav) {
+    errorNav.classList.toggle("hidden", !isSrt);
+    errorNav.innerHTML = "";
+  }
   if (copyBtn) copyBtn.disabled = true;
   dialog.showModal();
   try {
@@ -340,12 +405,53 @@ async function openTextFileView(item, kind = "asr") {
     if (!res.ok) {
       throw new Error(`HTTP ${res.status}`);
     }
-    contentEl.textContent = await res.text();
+    contentEl.value = await res.text();
+    if (isSrt) renderSrtErrorNav(contentEl.value);
     if (copyBtn) copyBtn.disabled = false;
   } catch (err) {
-    contentEl.textContent = `加载失败：${err.message}`;
+    contentEl.value = `加载失败：${err.message}`;
     if (copyBtn) copyBtn.disabled = true;
   }
+}
+
+async function saveCurrentCorrectedSrt() {
+  if (!activeNovel || !currentSrtViewItem) return;
+  const contentEl = document.getElementById("audioAsrViewContent");
+  const saveBtn = document.getElementById("audioAsrSaveSrtBtn");
+  const srtText = String(contentEl?.value || "");
+  if (!srtText.trim()) {
+    toast("SRT内容为空");
+    return;
+  }
+  if (saveBtn) {
+    saveBtn.disabled = true;
+    saveBtn.textContent = "保存中...";
+  }
+  try {
+    const result = await saveChapterCorrectedSrtFile(activeNovel.id, currentSrtViewItem.chapterNum, srtText);
+    renderSrtErrorNav(srtText);
+    toast(`修复字幕已保存${Number(result.errorCount || 0) ? `，仍有 ${Number(result.errorCount || 0)} 处时间错误` : ""}`);
+    await refreshPage();
+  } catch (err) {
+    toast(`保存失败：${err.message}`);
+  } finally {
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.textContent = "保存";
+    }
+  }
+}
+
+function jumpToSrtErrorLine(lineNo) {
+  const contentEl = document.getElementById("audioAsrViewContent");
+  if (!contentEl) return;
+  const offset = findSrtBlockOffset(contentEl.value || "", lineNo);
+  contentEl.focus();
+  contentEl.setSelectionRange(offset, offset);
+  const before = String(contentEl.value || "").slice(0, offset);
+  const lineIndex = before.split("\n").length - 1;
+  const lineHeight = 24;
+  contentEl.scrollTop = Math.max(0, lineIndex * lineHeight - 80);
 }
 
 async function openAsrView(item) {
@@ -400,7 +506,9 @@ function renderSubtitleFixCell(item) {
   const status = String(item.subtitleFixStatus || "");
   const error = String(item.subtitleFixError || "");
   if (item.hasCorrectedSrt) {
-    return `<div class="table-actions-inline"><a class="ghost-btn btn-sm" href="${item.correctedSrtDownloadUrl}">下载SRT</a><button class="ghost-btn btn-sm audio-asr-srt-view-btn" type="button" data-chapter-num="${Number(item.chapterNum || 0)}">查看</button><button class="ghost-btn btn-sm audio-asr-compare-btn" type="button" data-chapter-num="${Number(item.chapterNum || 0)}">对比</button><button class="ghost-btn btn-sm audio-asr-repair-subtitle-btn" type="button" data-chapter-num="${Number(item.chapterNum || 0)}">重新修复</button></div>${error ? `<div class="meta">${escapeHtml(error)}</div>` : ""}`;
+    const errorCount = Number(item.correctedSrtErrorCount || 0);
+    const badge = errorCount > 0 ? `<span class="srt-error-badge">${errorCount}</span>` : "";
+    return `<div class="table-actions-inline"><a class="ghost-btn btn-sm" href="${item.correctedSrtDownloadUrl}">下载SRT</a><button class="ghost-btn btn-sm audio-asr-srt-view-btn btn-badge-wrap" type="button" data-chapter-num="${Number(item.chapterNum || 0)}">查看${badge}</button><button class="ghost-btn btn-sm audio-asr-compare-btn" type="button" data-chapter-num="${Number(item.chapterNum || 0)}">对比</button><button class="ghost-btn btn-sm audio-asr-repair-subtitle-btn" type="button" data-chapter-num="${Number(item.chapterNum || 0)}">重新修复</button></div>${error ? `<div class="meta">${escapeHtml(error)}</div>` : ""}`;
   }
   if (status === "pending") {
     const progress = item.subtitleFixTotalBatchCount ? ` ${Number(item.subtitleFixCurrentBatchIndex || 0)}/${Number(item.subtitleFixTotalBatchCount || 0)}` : "";
@@ -702,9 +810,21 @@ function bindEvents() {
     await enqueueBatch(all);
   });
   document.getElementById("audioAsrCopyBtn")?.addEventListener("click", () => {
-    copyText(document.getElementById("audioAsrViewContent")?.textContent || "").catch((err) => {
+    copyText(getViewContentText()).catch((err) => {
       toast(`复制失败：${err.message}`);
     });
+  });
+  document.getElementById("audioAsrSaveSrtBtn")?.addEventListener("click", saveCurrentCorrectedSrt);
+  document.getElementById("audioAsrViewContent")?.addEventListener("input", (event) => {
+    if (currentSrtViewItem) renderSrtErrorNav(event.target.value || "");
+  });
+  document.getElementById("audioAsrSrtErrorNav")?.addEventListener("click", (event) => {
+    const btn = event.target.closest(".audio-asr-srt-error-jump");
+    if (!btn) return;
+    jumpToSrtErrorLine(Number(btn.dataset.line || 0));
+  });
+  document.getElementById("audioAsrViewDialog")?.addEventListener("close", () => {
+    currentSrtViewItem = null;
   });
   document.addEventListener("pointerup", () => {
     isDragSelecting = false;

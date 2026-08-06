@@ -3546,8 +3546,17 @@ menu {
   grid-column: span 2;
 }
 
+.live-reader-theme-control:has(#liveReaderKenBurnsMotionSelect) {
+  grid-column: 7 / span 3;
+}
+
 .live-reader-theme-control:has(#liveReaderThemeSelect) {
   grid-column: span 4;
+}
+
+.live-reader-slider-control:has(#liveReaderWidthRange),
+.live-reader-slider-control:has(#liveReaderHeightRange) {
+  grid-column: span 2;
 }
 
 .live-reader-watermark-control {
@@ -5244,6 +5253,46 @@ body.is-illustration-drag-selecting {
   word-break: break-word;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   line-height: 1.6;
+}
+
+.audio-asr-edit-textarea {
+  width: 100%;
+  min-height: 70vh;
+  resize: vertical;
+  outline: none;
+}
+
+.audio-asr-edit-textarea.is-editable:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(174, 84, 35, 0.12);
+}
+
+.srt-error-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.btn-badge-wrap {
+  position: relative;
+}
+
+.srt-error-badge {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #d73a31;
+  color: #fff;
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+  font-weight: 700;
 }
 
 .prompt-output-actions {
