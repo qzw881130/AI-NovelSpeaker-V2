@@ -556,10 +556,101 @@ function parseSceneTimecode(value) {
     return Number.isFinite(seconds) ? seconds : null;
   }
   const parts = text.split(":");
-  if (parts.length !== 3 || parts.some((part) => !/^\d+$/.test(part))) return null;
-  const [hours, minutes, seconds] = parts.map(Number);
+  if (parts.length !== 3 || !/^\d+$/.test(parts[0]) || !/^\d+$/.test(parts[1]) || !/^\d+(?:[,.]\d+)?$/.test(parts[2])) return null;
+  const hours = Number(parts[0]);
+  const minutes = Number(parts[1]);
+  const seconds = Number(parts[2].replace(",", "."));
   if (hours < 0 || minutes < 0 || minutes >= 60 || seconds < 0 || seconds >= 60) return null;
   return hours * 3600 + minutes * 60 + seconds;
+}
+
+function getSceneListFromParsed(parsed) {
+  if (Array.isArray(parsed)) return parsed;
+  if (!parsed || typeof parsed !== "object") return [];
+  if (Array.isArray(parsed.grid)) return parsed.grid;
+  if (Array.isArray(parsed.scenes)) return parsed.scenes;
+  if (Array.isArray(parsed.scene)) return parsed.scene;
+  return [];
+}
+
+function sceneField(item, keys) {
+  if (!item || typeof item !== "object") return "";
+  for (const key of keys) {
+    const value = item[key];
+    if (value !== undefined && value !== null && String(value).trim() !== "") return value;
+  }
+  return "";
+}
+
+function formatSceneStatTime(value) {
+  const seconds = parseSceneTimecode(value);
+  if (seconds == null) return String(value ?? "").trim() || "-";
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const wholeSeconds = Math.floor(seconds % 60);
+  const milliseconds = Math.round((seconds - Math.floor(seconds)) * 1000);
+  const base = `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(wholeSeconds).padStart(2, "0")}`;
+  return milliseconds > 0 ? `${base}.${String(milliseconds).padStart(3, "0")}` : base;
+}
+
+function formatSceneDuration(value) {
+  if (value == null || !Number.isFinite(value)) return "-";
+  const rounded = Math.max(0, Math.round(Number(value) * 1000) / 1000);
+  const whole = Math.floor(rounded);
+  const minutes = Math.floor(whole / 60);
+  const seconds = whole % 60;
+  const milliseconds = Math.round((rounded - whole) * 1000);
+  const suffix = milliseconds > 0 ? `.${String(milliseconds).padStart(3, "0").replace(/0+$/, "")}` : "";
+  return `${minutes}分 ${seconds}${suffix}秒`;
+}
+
+function sceneStatsFromText(text) {
+  const parsed = JSON.parse(String(text || ""));
+  return getSceneListFromParsed(parsed).map((item, i) => {
+    const index = sceneField(item, ["index", "scene_index", "sceneIndex", "id", "order"]) || i + 1;
+    const title = sceneField(item, ["title", "name", "scene_title", "sceneTitle", "summary"]);
+    const start = sceneField(item, ["start", "start_time", "startTime", "begin"]);
+    const end = sceneField(item, ["end", "end_time", "endTime", "finish"]);
+    const startSeconds = parseSceneTimecode(start);
+    const endSeconds = parseSceneTimecode(end);
+    return {
+      index,
+      title,
+      start,
+      end,
+      duration: startSeconds == null || endSeconds == null ? null : endSeconds - startSeconds,
+    };
+  });
+}
+
+function openSceneStatsModal() {
+  if (activePayloadStage !== "scene" || activePayloadKind !== "output") return;
+  const editor = document.getElementById("illustrationPayloadContent");
+  const dialog = document.getElementById("sceneStatsDialog");
+  const title = document.getElementById("sceneStatsTitle");
+  const summary = document.getElementById("sceneStatsSummary");
+  const tbody = document.getElementById("sceneStatsTableBody");
+  const text = String(editor?.value || "").trim();
+  let stats = [];
+  try {
+    stats = sceneStatsFromText(text);
+  } catch (err) {
+    toast(`JSON 格式错误：${err.message}`);
+    return;
+  }
+  const totalDuration = stats.reduce((sum, item) => sum + Math.max(0, Number(item.duration || 0)), 0);
+  title.textContent = `统计Scene · 第${String(activePayloadChapterNum || 0).padStart(3, "0")}回`;
+  summary.textContent = `Scene ${stats.length} 项 · 合计时长 ${formatSceneDuration(totalDuration)}`;
+  tbody.innerHTML = stats.length ? stats.map((item) => `
+    <tr>
+      <td>${escapeHtml(item.index)}</td>
+      <td>${escapeHtml(item.title || "-")}</td>
+      <td>${escapeHtml(formatSceneStatTime(item.start))}</td>
+      <td>${escapeHtml(formatSceneStatTime(item.end))}</td>
+      <td>${escapeHtml(formatSceneDuration(item.duration))}</td>
+    </tr>
+  `).join("") : '<tr><td colspan="5" class="empty-text">未找到 Scene 列表</td></tr>';
+  dialog.showModal();
 }
 
 function hidePayloadTimeTooltip() {
@@ -647,10 +738,12 @@ async function openPayload(chapterNum, stage, kind) {
   const content = document.getElementById("illustrationPayloadContent");
   const downloadBtn = document.getElementById("downloadIllustrationPayloadBtn");
   const saveBtn = document.getElementById("saveIllustrationPayloadBtn");
+  const sceneStatsBtn = document.getElementById("sceneStatsBtn");
   const shortcutHint = document.getElementById("illustrationPayloadShortcutHint");
   const isEditableSceneOutput = stage === "scene" && kind === "output";
   if (downloadBtn) downloadBtn.hidden = kind !== "output";
   if (saveBtn) saveBtn.hidden = !isEditableSceneOutput;
+  if (sceneStatsBtn) sceneStatsBtn.hidden = !isEditableSceneOutput;
   if (shortcutHint) shortcutHint.hidden = !isEditableSceneOutput;
   if (content) content.readOnly = !isEditableSceneOutput;
   const chapter = chapterItems.find((item) => Number(item.chapterNum || 0) === Number(chapterNum || 0));
@@ -1284,6 +1377,7 @@ function bindEvents() {
       toast(`保存失败：${err.message}`);
     }
   });
+  document.getElementById("sceneStatsBtn").addEventListener("click", openSceneStatsModal);
   document.getElementById("illustrationPayloadDialog").addEventListener("keydown", async (event) => {
     if ((event.ctrlKey || event.metaKey) && String(event.key || "").toLowerCase() === "s") {
       event.preventDefault();

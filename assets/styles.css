@@ -4920,6 +4920,33 @@ body.is-illustration-drag-selecting {
   margin: 0;
 }
 
+.scene-stats-summary {
+  margin: 0 0 12px;
+}
+
+.scene-stats-table-wrap {
+  max-height: min(70vh, 720px);
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(255, 248, 239, 0.55);
+}
+
+.scene-stats-table {
+  min-width: 720px;
+}
+
+.scene-stats-table th,
+.scene-stats-table td {
+  white-space: nowrap;
+}
+
+.scene-stats-table th:nth-child(2),
+.scene-stats-table td:nth-child(2) {
+  min-width: 260px;
+  white-space: normal;
+}
+
 .illustration-llm-params-content {
   max-height: min(72vh, 780px);
   overflow: auto;

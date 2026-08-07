@@ -63,19 +63,25 @@ def _lookup_novel_stage_prompt(conn, novel_id: int, stage: str) -> int | None:
     return _lookup_stage_prompt(conn, stage)
 
 
-def _read_asr_text(conn, novel_id: int, chapter_num: int) -> str:
+def _read_subtitle_timeline_text(conn, novel_id: int, chapter_num: int) -> tuple[str, str]:
     row = conn.execute(
-        "SELECT asr_file_path,timestamps_text,extracted_text FROM chapter_asr_tasks WHERE novel_id=? AND chapter_num=? ORDER BY id DESC LIMIT 1",
+        "SELECT asr_file_path,timestamps_text,extracted_text,corrected_srt_file_path FROM chapter_asr_tasks WHERE novel_id=? AND chapter_num=? ORDER BY id DESC LIMIT 1",
         (novel_id, chapter_num),
     ).fetchone()
     if not row:
-        return ""
+        return "", ""
+    srt_rel = str(row["corrected_srt_file_path"] or "").strip()
+    if srt_rel:
+        srt_path = (ROOT_DIR / srt_rel).resolve()
+        if srt_path.exists() and srt_path.is_file():
+            return srt_path.read_text(encoding="utf-8", errors="ignore").strip(), "SRT"
     rel = str(row["asr_file_path"] or "").strip()
     if rel:
         path = (ROOT_DIR / rel).resolve()
         if path.exists() and path.is_file():
-            return path.read_text(encoding="utf-8", errors="ignore").strip()
-    return str(row["timestamps_text"] or row["extracted_text"] or "").strip()
+            return path.read_text(encoding="utf-8", errors="ignore").strip(), "ASR"
+    fallback = str(row["timestamps_text"] or row["extracted_text"] or "").strip()
+    return fallback, "ASR" if fallback else ""
 
 
 def _format_asr_time(value: str) -> str:
@@ -144,16 +150,17 @@ def _preprocess_asr_timeline(raw: str) -> str:
 def _build_user_input(conn, stage: str, row) -> str:
     if stage == "scene":
         chapter_text = read_chapter_text(str(row["text_file_path"] or ""))
-        asr_text = _preprocess_asr_timeline(_read_asr_text(conn, int(row["novel_id"]), int(row["chapter_num"])))
+        timeline_raw, timeline_source = _read_subtitle_timeline_text(conn, int(row["novel_id"]), int(row["chapter_num"]))
+        asr_text = _preprocess_asr_timeline(timeline_raw)
         if not asr_text.strip():
-            raise RuntimeError("缺少ASR时间轴，请先完成音频ASR")
+            raise RuntimeError("缺少SRT/ASR时间轴，请先完成音频ASR或修复字幕")
         novel = conn.execute("SELECT visual_style FROM novels WHERE id=?", (int(row["novel_id"]),)).fetchone()
         visual_style = str(novel["visual_style"] if novel else "" or DEFAULT_VISUAL_STYLE).strip() or DEFAULT_VISUAL_STYLE
         return (
             f"插图风格（visual_style）：\n{visual_style}\n\n"
             f"章节名称：\n{str(row['chapter_title'] or '')}\n\n"
             f"小说章节内容：\n{chapter_text}\n\n"
-            f"ASR时间轴：\n{asr_text}\n"
+            f"{timeline_source or 'ASR'}时间轴：\n{asr_text}\n"
         )
     scene_json = _get_completed_result(conn, int(row["novel_id"]), int(row["chapter_id"]), "scene")
     if stage == "shot":
@@ -234,8 +241,8 @@ def build_image_prompt(item: dict) -> str:
         str(item.get("positive_style") or "").strip(),
         str(item.get("positive_core") or "").strip(),
         str(item.get("positive_character") or "").strip(),
-        str(item.get("positive_scene") or "").strip(),
         str(item.get("positive_camera") or "").strip(),
+        str(item.get("positive_scene") or "").strip(),
     ]
     prompt = "，".join(part for part in parts if part)
     try:
@@ -1211,7 +1218,7 @@ def enqueue_all_illustration_images(novel_id: int, chapter_id: int) -> dict:
 def cancel_pending_illustration_tasks(novel_id: int) -> dict:
     conn = db_conn()
     rows = conn.execute(
-        "SELECT id FROM chapter_illustration_tasks WHERE novel_id=? AND stage IN ('scene','shot','prompt') AND status='pending'",
+        "SELECT id FROM chapter_illustration_tasks WHERE novel_id=? AND stage IN ('scene','shot','prompt') AND status IN ('pending','running','processing')",
         (novel_id,),
     ).fetchall()
     ids = [int(row["id"]) for row in rows]
@@ -1222,12 +1229,29 @@ def cancel_pending_illustration_tasks(novel_id: int) -> dict:
             ids,
         )
         conn.execute(
-            f"UPDATE chapter_illustration_prompt_batches SET status='cancelled',progress=0,error_message='已取消',updated_at=CURRENT_TIMESTAMP WHERE task_id IN ({placeholders}) AND status='pending'",
+            f"UPDATE chapter_illustration_prompt_batches SET status='cancelled',progress=0,error_message='已取消',updated_at=CURRENT_TIMESTAMP WHERE task_id IN ({placeholders}) AND status IN ('pending','processing')",
             ids,
         )
     conn.commit()
     conn.close()
     return {"cancelled": len(ids)}
+
+
+def _illustration_task_cancelled(task_id: int) -> bool:
+    conn = db_conn()
+    row = conn.execute("SELECT status FROM chapter_illustration_tasks WHERE id=?", (task_id,)).fetchone()
+    conn.close()
+    return bool(row and str(row["status"] or "") == "cancelled")
+
+
+def _illustration_prompt_batch_cancelled(task_id: int, batch_id: int) -> bool:
+    conn = db_conn()
+    row = conn.execute(
+        "SELECT t.status AS task_status, b.status AS batch_status FROM chapter_illustration_tasks t JOIN chapter_illustration_prompt_batches b ON b.task_id=t.id WHERE t.id=? AND b.id=?",
+        (task_id, batch_id),
+    ).fetchone()
+    conn.close()
+    return bool(row and (str(row["task_status"] or "") == "cancelled" or str(row["batch_status"] or "") == "cancelled"))
 
 
 def cancel_pending_illustration_images(novel_id: int) -> dict:
@@ -1287,6 +1311,8 @@ def process_illustration_task(task_id: int) -> None:
         conn.close()
         conn_closed = True
         raw = call_llm_prompt_json(llm=llm, proxy_url=proxy_url, system_prompt=system_prompt, user_prompt=user_input)
+        if _illustration_task_cancelled(task_id):
+            return
         parsed = _parse_json_any(raw)
         result_json = json.dumps(parsed, ensure_ascii=False, indent=2)
         conn = db_conn()
@@ -1341,6 +1367,8 @@ def _process_prompt_task_batches(conn, row, prompt_id: int, system_prompt: str, 
         conn.close()
         try:
             raw = call_llm_prompt_json(llm=llm, proxy_url=proxy_url, system_prompt=system_prompt, user_prompt=user_input)
+            if _illustration_prompt_batch_cancelled(task_id, batch_id):
+                return
             parsed = _parse_json_any(raw)
             prompts = _prompt_items(parsed)
             if not prompts:
@@ -1371,6 +1399,8 @@ def _process_prompt_task_batches(conn, row, prompt_id: int, system_prompt: str, 
             conn.commit()
             conn.close()
             return
+    if _illustration_task_cancelled(task_id):
+        return
     conn = db_conn()
     merged = _merge_prompt_batches(conn, task_id, str(row["chapter_title"] or ""))
     conn.execute(

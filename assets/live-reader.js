@@ -2238,7 +2238,7 @@ async function loadChapter(chapterNum, options = {}) {
     resetReaderScroll();
   }
   updateSegmentHighlight(true);
-  const timelineLabel = timelineSource === "srt" ? "已加载修复字幕时间轴" : "已加载ASR时间轴";
+  const timelineLabel = timelineSource === "srt" ? "已加载修复字幕时间轴" : "未找到修复SRT，已加载ASR时间轴";
   setStatus(renderPayload.currentAsrMode ? timelineLabel : "就绪");
   setMatchStatus(renderPayload.currentAsrMode ? "匹配: 初始化中" : "匹配: 估算同步");
 }

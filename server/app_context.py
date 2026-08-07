@@ -61,6 +61,36 @@ ILLUSTRATION_PROMPT_LLM_DEFAULTS = {
     },
 }
 
+ILLUSTRATION_MULTI_SCENE_PROMPT_LLM_DEFAULTS = {
+    "enabled": True,
+    "llm": {
+        "temperature": 0.2,
+        "topP": 0.85,
+        "maxTokens": 84000,
+        "numCtx": 98304,
+        "keepAlive": "30m",
+        "unloadAfterCall": True,
+        "batchTimeoutMinutes": 10,
+        "think": True,
+        "batchMaxChars": 0,
+    },
+}
+
+ILLUSTRATION_MULTI_PROMPT_LLM_DEFAULTS = {
+    "enabled": True,
+    "llm": {
+        "temperature": 0.25,
+        "topP": 0.85,
+        "maxTokens": 76384,
+        "numCtx": 98304,
+        "keepAlive": "30m",
+        "unloadAfterCall": True,
+        "batchTimeoutMinutes": 20,
+        "think": False,
+        "batchMaxChars": 0,
+    },
+}
+
 SUBTITLE_FIX_PROMPT_LLM_DEFAULTS = {
     "enabled": True,
     "llm": {
@@ -111,6 +141,15 @@ SYSTEM_PROMPTS = [
         "legacy_names": [],
     },
     {
+        "file": PROMPTS_DIR / "illustration_scene_multi_system_prompt.txt",
+        "name": "插画-scene提示词-多图",
+        "description": "系统内置，适用于插画时间线scene.json生成，平均40秒一图",
+        "category": "illustration_scene",
+        "default_content": "请根据小说章节内容与ASR时间轴输出平均40秒一图的插画时间线scene.json。",
+        "default_llm_settings": ILLUSTRATION_MULTI_SCENE_PROMPT_LLM_DEFAULTS,
+        "legacy_names": [],
+    },
+    {
         "file": PROMPTS_DIR / "illustration_shot_system_prompt.txt",
         "name": "插画-shot提示词",
         "description": "系统内置，适用于插画镜头方案shot.json生成",
@@ -126,6 +165,15 @@ SYSTEM_PROMPTS = [
         "category": "illustration_prompt",
         "default_content": "请根据scene.json与shot.json输出AI绘画prompt.json。",
         "default_llm_settings": ILLUSTRATION_PROMPT_LLM_DEFAULTS["illustration_prompt"],
+        "legacy_names": [],
+    },
+    {
+        "file": PROMPTS_DIR / "illustration_prompt_multi_system_prompt.txt",
+        "name": "插画-prompt提示词-多图",
+        "description": "系统内置，适用于AI绘画prompt.json生成，配合多图",
+        "category": "illustration_prompt",
+        "default_content": "请根据scene.json与shot.json输出配合多图的AI绘画prompt.json。",
+        "default_llm_settings": ILLUSTRATION_MULTI_PROMPT_LLM_DEFAULTS,
         "legacy_names": [],
     },
     {
