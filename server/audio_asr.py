@@ -325,21 +325,45 @@ def _parse_srt_timestamp_seconds(value: str) -> float | None:
     if not match:
         return None
     hours, minutes, seconds, millis = match.groups()
+    if int(minutes) >= 60 or int(seconds) >= 60:
+        return None
     return int(hours) * 3600 + int(minutes) * 60 + int(seconds) + int(millis.ljust(3, "0")[:3]) / 1000
+
+
+def _srt_error_line(lines: list[str], block_index: int) -> int:
+    try:
+        return int(str(lines[0] if lines else block_index).strip())
+    except (TypeError, ValueError):
+        return block_index
 
 
 def inspect_srt_timing_errors(text: str) -> list[dict[str, int | str]]:
     errors: list[dict[str, int | str]] = []
-    for block_index, block in enumerate(_parse_srt_blocks(text), start=1):
-        start = _parse_srt_timestamp_seconds(str(block.get("start") or ""))
-        end = _parse_srt_timestamp_seconds(str(block.get("end") or ""))
-        if start is None or end is None or start < end:
+    normalized = str(text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not normalized:
+        return errors
+    for block_index, raw_block in enumerate(re.split(r"\n\s*\n+", normalized), start=1):
+        lines = [line.strip() for line in raw_block.split("\n") if line.strip()]
+        time_line = lines[1] if len(lines) > 1 else ""
+        if "-->" not in time_line:
+            for line in lines:
+                if "-->" in line:
+                    time_line = line
+                    break
+        match = re.match(r"^(.*?)\s*-->\s*(.*?)$", time_line)
+        line_no = _srt_error_line(lines, block_index)
+        if not match:
+            errors.append({"line": line_no, "block": block_index, "time": time_line or "-", "type": "format", "message": "非法时间格式"})
             continue
-        try:
-            line_no = int(str(block.get("index") or block_index).strip())
-        except (TypeError, ValueError):
-            line_no = block_index
-        errors.append({"line": line_no, "block": block_index, "time": f"{block.get('start')} --> {block.get('end')}"})
+        start_text, end_text = match.groups()
+        start = _parse_srt_timestamp_seconds(start_text)
+        end = _parse_srt_timestamp_seconds(end_text)
+        if start is None or end is None:
+            errors.append({"line": line_no, "block": block_index, "time": time_line, "type": "format", "message": "非法时间格式"})
+            continue
+        if start < end:
+            continue
+        errors.append({"line": line_no, "block": block_index, "time": time_line, "type": "order", "message": "开始时间必须小于结束时间"})
     return errors
 
 

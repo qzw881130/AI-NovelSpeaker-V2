@@ -681,15 +681,15 @@ async function fetchChapterIllustrationLlmParams(novelId, chapterNum, stage) {
   });
 }
 
-async function fetchChapterIllustrationPromptBatches(novelId, chapterNum) {
-  return api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/illustration/prompt/batches`, {
+async function fetchChapterIllustrationPromptBatches(novelId, chapterNum, stage = "prompt") {
+  return api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/illustration/${String(stage || "prompt")}/batches`, {
     method: "POST",
     body: "{}",
   });
 }
 
-async function retryChapterIllustrationPromptBatch(novelId, chapterNum, batchIndex) {
-  return api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/illustration/prompt/batches/${Number(batchIndex)}/retry`, {
+async function retryChapterIllustrationPromptBatch(novelId, chapterNum, batchIndex, stage = "prompt") {
+  return api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/illustration/${String(stage || "prompt")}/batches/${Number(batchIndex)}/retry`, {
     method: "POST",
     body: "{}",
   });
@@ -697,6 +697,13 @@ async function retryChapterIllustrationPromptBatch(novelId, chapterNum, batchInd
 
 async function saveChapterIllustrationPromptOutput(novelId, chapterNum, jsonText) {
   return api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/illustration/prompt/output/save`, {
+    method: "POST",
+    body: JSON.stringify({ jsonText }),
+  });
+}
+
+async function saveChapterIllustrationPromptItem(novelId, chapterNum, itemIndex, jsonText) {
+  return api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/illustration/prompt/items/${Number(itemIndex)}/save`, {
     method: "POST",
     body: JSON.stringify({ jsonText }),
   });
@@ -1116,6 +1123,7 @@ export {
   fetchChapterIllustrationLlmParams,
   fetchChapterIllustrationPromptBatches,
   saveChapterIllustrationSceneOutput,
+  saveChapterIllustrationPromptItem,
   saveChapterIllustrationPromptOutput,
   fetchChapterIllustrationImages,
   enqueueIllustrationImage,

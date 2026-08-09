@@ -72,6 +72,7 @@ from .illustration import (
     list_prompt_batches,
     retry_prompt_batch,
     save_illustration_scene_output,
+    save_illustration_prompt_item,
     save_illustration_prompt_output,
     sync_prompt_images,
 )
@@ -3124,11 +3125,12 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         m_prompt_batches = re.match(
-            r"^/api/novels/(\d+)/chapters/(\d+)/illustration/prompt/batches$", route
+            r"^/api/novels/(\d+)/chapters/(\d+)/illustration/(shot|prompt)/batches$", route
         )
         if m_prompt_batches:
             novel_id = int(m_prompt_batches.group(1))
             chapter_num = int(m_prompt_batches.group(2))
+            stage = str(m_prompt_batches.group(3))
             conn = db_conn()
             chapter_row = conn.execute(
                 "SELECT id FROM chapters WHERE novel_id=? AND chapter_num=?",
@@ -3138,17 +3140,18 @@ class Handler(BaseHTTPRequestHandler):
             if not chapter_row:
                 self.send_json({"error": "chapter not found"}, 404)
                 return
-            self.send_json(list_prompt_batches(novel_id, int(chapter_row["id"])))
+            self.send_json(list_prompt_batches(novel_id, int(chapter_row["id"]), stage))
             return
 
         m_prompt_batch_retry = re.match(
-            r"^/api/novels/(\d+)/chapters/(\d+)/illustration/prompt/batches/(\d+)/retry$", route
+            r"^/api/novels/(\d+)/chapters/(\d+)/illustration/(shot|prompt)/batches/(\d+)/retry$", route
         )
         if m_prompt_batch_retry:
             ensure_illustration_worker()
             novel_id = int(m_prompt_batch_retry.group(1))
             chapter_num = int(m_prompt_batch_retry.group(2))
-            batch_index = int(m_prompt_batch_retry.group(3))
+            stage = str(m_prompt_batch_retry.group(3))
+            batch_index = int(m_prompt_batch_retry.group(4))
             conn = db_conn()
             chapter_row = conn.execute(
                 "SELECT id FROM chapters WHERE novel_id=? AND chapter_num=?",
@@ -3158,7 +3161,7 @@ class Handler(BaseHTTPRequestHandler):
             if not chapter_row:
                 self.send_json({"error": "chapter not found"}, 404)
                 return
-            ok, msg = retry_prompt_batch(novel_id, int(chapter_row["id"]), batch_index)
+            ok, msg = retry_prompt_batch(novel_id, int(chapter_row["id"]), batch_index, stage)
             if not ok:
                 self.send_json({"error": msg}, 409)
                 return
@@ -3183,6 +3186,31 @@ class Handler(BaseHTTPRequestHandler):
             payload = self.read_json()
             try:
                 data = save_illustration_prompt_output(novel_id, int(chapter_row["id"]), str(payload.get("jsonText") or ""))
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, 400)
+                return
+            self.send_json({"status": "saved", **data})
+            return
+
+        m_prompt_item_save = re.match(
+            r"^/api/novels/(\d+)/chapters/(\d+)/illustration/prompt/items/(\d+)/save$", route
+        )
+        if m_prompt_item_save:
+            novel_id = int(m_prompt_item_save.group(1))
+            chapter_num = int(m_prompt_item_save.group(2))
+            item_index = int(m_prompt_item_save.group(3))
+            conn = db_conn()
+            chapter_row = conn.execute(
+                "SELECT id FROM chapters WHERE novel_id=? AND chapter_num=?",
+                (novel_id, chapter_num),
+            ).fetchone()
+            conn.close()
+            if not chapter_row:
+                self.send_json({"error": "chapter not found"}, 404)
+                return
+            payload = self.read_json()
+            try:
+                data = save_illustration_prompt_item(novel_id, int(chapter_row["id"]), item_index, str(payload.get("jsonText") or ""))
             except Exception as exc:
                 self.send_json({"error": str(exc)}, 400)
                 return

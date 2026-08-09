@@ -25,6 +25,7 @@ from .services import (
 
 ILLUSTRATION_STAGES = {"scene", "shot", "prompt"}
 PROMPT_BATCH_SIZE = 10
+SHOT_BATCH_SIZE = 15
 SCENE_AUDIO_DIFF_WARNING_SECONDS = 8
 STAGE_PROMPT_CATEGORY = {
     "scene": "illustration_scene",
@@ -180,11 +181,13 @@ def _get_completed_result(conn, novel_id: int, chapter_id: int, stage: str) -> s
 def _parse_json_any(raw: str):
     text = str(raw or "").strip()
     candidates = [text]
+    spans = []
     for opener, closer in (("{", "}"), ("[", "]")):
         start = text.find(opener)
         end = text.rfind(closer)
         if start >= 0 and end > start:
-            candidates.append(text[start : end + 1])
+            spans.append((start, -(end - start), text[start : end + 1]))
+    candidates.extend(candidate for _, _, candidate in sorted(spans))
     for candidate in candidates:
         try:
             return json.loads(candidate)
@@ -236,13 +239,32 @@ def _build_prompt_batch_input(scene_parsed: dict, shot_parsed, scene_grid: list,
     return f"scene.json：\n{_json_dumps(batch_scene)}\n\nshot.json：\n{_json_dumps(batch_shot)}\n"
 
 
+def _renumber_items(items: list, start: int = 1) -> list:
+    result = []
+    for pos, item in enumerate(items, start=start):
+        if isinstance(item, dict):
+            copied = dict(item)
+            copied["index"] = pos
+            result.append(copied)
+        else:
+            result.append(item)
+    return result
+
+
+def _build_shot_batch_input(scene_parsed: dict, scene_grid: list) -> str:
+    batch_scene = dict(scene_parsed)
+    batch_scene["grid_count"] = len(scene_grid)
+    batch_scene["grid"] = _renumber_items(scene_grid, 1)
+    return _json_dumps(batch_scene)
+
+
 def build_image_prompt(item: dict) -> str:
     parts = [
         str(item.get("positive_style") or "").strip(),
+        str(item.get("positive_scene") or "").strip(),
+        str(item.get("positive_camera") or "").strip(),
         str(item.get("positive_core") or "").strip(),
         str(item.get("positive_character") or "").strip(),
-        str(item.get("positive_camera") or "").strip(),
-        str(item.get("positive_scene") or "").strip(),
     ]
     prompt = "，".join(part for part in parts if part)
     try:
@@ -741,7 +763,10 @@ def enqueue_illustration_task(novel_id: int, chapter_id: int, stage: str, allow_
             "UPDATE chapter_illustration_tasks SET status='idle',progress=0,input_text='',output_text='',result_json_text='',error_message='',started_at=NULL,updated_at=CURRENT_TIMESTAMP WHERE novel_id=? AND chapter_id=? AND stage IN ('shot','prompt')",
             (novel_id, chapter_id),
         )
-        conn.execute("DELETE FROM chapter_illustration_prompt_batches WHERE novel_id=? AND chapter_id=?", (novel_id, chapter_id))
+        conn.execute(
+            "DELETE FROM chapter_illustration_prompt_batches WHERE task_id IN (SELECT id FROM chapter_illustration_tasks WHERE novel_id=? AND chapter_id=? AND stage IN ('shot','prompt'))",
+            (novel_id, chapter_id),
+        )
         _delete_illustration_image_files(conn, novel_id, chapter_id)
         conn.execute("DELETE FROM chapter_illustration_images WHERE novel_id=? AND chapter_id=?", (novel_id, chapter_id))
     elif stage == "shot":
@@ -749,11 +774,17 @@ def enqueue_illustration_task(novel_id: int, chapter_id: int, stage: str, allow_
             "UPDATE chapter_illustration_tasks SET status='idle',progress=0,input_text='',output_text='',result_json_text='',error_message='',started_at=NULL,updated_at=CURRENT_TIMESTAMP WHERE novel_id=? AND chapter_id=? AND stage='prompt'",
             (novel_id, chapter_id),
         )
-        conn.execute("DELETE FROM chapter_illustration_prompt_batches WHERE novel_id=? AND chapter_id=?", (novel_id, chapter_id))
+        conn.execute(
+            "DELETE FROM chapter_illustration_prompt_batches WHERE task_id IN (SELECT id FROM chapter_illustration_tasks WHERE novel_id=? AND chapter_id=? AND stage IN ('shot','prompt'))",
+            (novel_id, chapter_id),
+        )
         _delete_illustration_image_files(conn, novel_id, chapter_id)
         conn.execute("DELETE FROM chapter_illustration_images WHERE novel_id=? AND chapter_id=?", (novel_id, chapter_id))
     elif stage == "prompt":
-        conn.execute("DELETE FROM chapter_illustration_prompt_batches WHERE novel_id=? AND chapter_id=?", (novel_id, chapter_id))
+        conn.execute(
+            "DELETE FROM chapter_illustration_prompt_batches WHERE task_id IN (SELECT id FROM chapter_illustration_tasks WHERE novel_id=? AND chapter_id=? AND stage='prompt')",
+            (novel_id, chapter_id),
+        )
         _delete_illustration_image_files(conn, novel_id, chapter_id)
         conn.execute("DELETE FROM chapter_illustration_images WHERE novel_id=? AND chapter_id=?", (novel_id, chapter_id))
     conn.execute(
@@ -811,6 +842,62 @@ def save_illustration_prompt_output(novel_id: int, chapter_id: int, json_text: s
     conn.close()
     items = sync_prompt_images(novel_id, chapter_id)
     return {"promptCount": len(prompts), "imageCount": len(items)}
+
+
+def save_illustration_prompt_item(novel_id: int, chapter_id: int, item_index: int, json_text: str) -> dict:
+    item_index = int(item_index or 0)
+    if item_index <= 0:
+        raise RuntimeError("invalid item index")
+    parsed_item = _parse_json_any(json_text)
+    if not isinstance(parsed_item, dict):
+        raise RuntimeError("prompt item must be a JSON object")
+    parsed_item = dict(parsed_item)
+    parsed_item["index"] = item_index
+    conn = db_conn()
+    row = conn.execute(
+        "SELECT id,result_json_text FROM chapter_illustration_tasks WHERE novel_id=? AND chapter_id=? AND stage='prompt'",
+        (novel_id, chapter_id),
+    ).fetchone()
+    if not row:
+        conn.close()
+        raise RuntimeError("prompt task not found")
+    parsed = _parse_json_any(str(row["result_json_text"] or ""))
+    prompts = _prompt_items(parsed)
+    if not prompts:
+        conn.close()
+        raise RuntimeError("prompt output has no prompts")
+    replaced = False
+    for pos, item in enumerate(prompts, start=1):
+        if not isinstance(item, dict):
+            continue
+        try:
+            idx = int(item.get("index") or pos)
+        except (TypeError, ValueError):
+            idx = pos
+        if idx == item_index:
+            prompts[pos - 1] = parsed_item
+            replaced = True
+            break
+    if not replaced:
+        conn.close()
+        raise RuntimeError(f"prompt item #{item_index} not found")
+    if isinstance(parsed, dict):
+        if isinstance(parsed.get("prompts"), list):
+            parsed["prompts"] = prompts
+        else:
+            parsed["prompts"] = prompts
+    else:
+        parsed = prompts
+    normalized = _json_dumps(parsed)
+    conn.execute(
+        "UPDATE chapter_illustration_tasks SET status='completed',progress=100,output_text=?,result_json_text=?,error_message='',updated_at=CURRENT_TIMESTAMP WHERE id=?",
+        (normalized, normalized, int(row["id"])),
+    )
+    conn.commit()
+    conn.close()
+    items = sync_prompt_images(novel_id, chapter_id)
+    updated = next((item for item in items if int(item.get("index") or 0) == item_index), None)
+    return {"promptCount": len(prompts), "imageCount": len(items), "item": updated or {}}
 
 
 def save_illustration_scene_output(novel_id: int, chapter_id: int, json_text: str) -> dict:
@@ -938,6 +1025,72 @@ def _prepare_prompt_batches(conn, row, prompt_id: int, reset: bool = False) -> l
     ).fetchall()
 
 
+def _prepare_shot_batches(conn, row, prompt_id: int, reset: bool = False) -> list:
+    task_id = int(row["id"])
+    if reset:
+        conn.execute("DELETE FROM chapter_illustration_prompt_batches WHERE task_id=?", (task_id,))
+    scene_raw = _get_completed_result(conn, int(row["novel_id"]), int(row["chapter_id"]), "scene")
+    scene_parsed = _parse_json_any(scene_raw)
+    if not isinstance(scene_parsed, dict):
+        raise RuntimeError("scene output must be a JSON object")
+    scene_grid = scene_parsed.get("grid")
+    if not isinstance(scene_grid, list) or not scene_grid:
+        raise RuntimeError("scene grid is empty")
+    existing = conn.execute(
+        "SELECT * FROM chapter_illustration_prompt_batches WHERE task_id=? ORDER BY batch_index ASC",
+        (task_id,),
+    ).fetchall()
+    if existing:
+        return existing
+    scene_chunks = _chunked(scene_grid, SHOT_BATCH_SIZE)
+    for pos, grid_chunk in enumerate(scene_chunks, start=1):
+        original_indices = []
+        for fallback, item in enumerate(grid_chunk, start=(pos - 1) * SHOT_BATCH_SIZE + 1):
+            if not isinstance(item, dict):
+                original_indices.append(fallback)
+                continue
+            try:
+                original_indices.append(int(item.get("index") or fallback))
+            except (TypeError, ValueError):
+                original_indices.append(fallback)
+        start_index = min(original_indices) if original_indices else ((pos - 1) * SHOT_BATCH_SIZE + 1)
+        end_index = max(original_indices) if original_indices else (start_index + len(grid_chunk) - 1)
+        batch_input = _build_shot_batch_input(scene_parsed, grid_chunk)
+        conn.execute(
+            """
+            INSERT INTO chapter_illustration_prompt_batches(
+                novel_id,chapter_id,task_id,batch_index,start_index,end_index,status,progress,input_text,error_message,updated_at
+            ) VALUES(?,?,?,?,?,?,'pending',0,?,'',CURRENT_TIMESTAMP)
+            """,
+            (int(row["novel_id"]), int(row["chapter_id"]), task_id, pos, start_index, end_index, batch_input),
+        )
+    return conn.execute(
+        "SELECT * FROM chapter_illustration_prompt_batches WHERE task_id=? ORDER BY batch_index ASC",
+        (task_id,),
+    ).fetchall()
+
+
+def _merge_shot_batches(conn, task_id: int) -> str:
+    rows = conn.execute(
+        "SELECT start_index,end_index,result_json_text FROM chapter_illustration_prompt_batches WHERE task_id=? ORDER BY batch_index ASC",
+        (task_id,),
+    ).fetchall()
+    shots = []
+    for row in rows:
+        parsed = _parse_json_any(str(row["result_json_text"] or ""))
+        batch_shots = _shot_items(parsed)
+        expected_count = max(0, int(row["end_index"] or 0) - int(row["start_index"] or 0) + 1)
+        if expected_count and len(batch_shots) != expected_count:
+            raise RuntimeError(f"Shot第{len(shots) + 1}项附近批次数量 {len(batch_shots)} 与 Scene 批次数量 {expected_count} 不一致")
+        for item in batch_shots:
+            if not isinstance(item, dict):
+                continue
+            normalized = dict(item)
+            normalized["index"] = len(shots) + 1
+            shots.append(normalized)
+    return _json_dumps(shots)
+
+
 def _merge_prompt_batches(conn, task_id: int, chapter_title: str = "") -> str:
     rows = conn.execute(
         "SELECT input_text,result_json_text FROM chapter_illustration_prompt_batches WHERE task_id=? ORDER BY batch_index ASC",
@@ -992,11 +1145,12 @@ def _safe_llm_request_preview(llm: dict, proxy_url: str, system_prompt: str, use
     return request
 
 
-def list_prompt_batches(novel_id: int, chapter_id: int) -> dict:
+def list_prompt_batches(novel_id: int, chapter_id: int, stage: str = "prompt") -> dict:
+    stage = "shot" if str(stage or "") == "shot" else "prompt"
     conn = db_conn()
     task = conn.execute(
-        "SELECT * FROM chapter_illustration_tasks WHERE novel_id=? AND chapter_id=? AND stage='prompt'",
-        (novel_id, chapter_id),
+        "SELECT * FROM chapter_illustration_tasks WHERE novel_id=? AND chapter_id=? AND stage=?",
+        (novel_id, chapter_id, stage),
     ).fetchone()
     if not task:
         conn.close()
@@ -1063,18 +1217,19 @@ def list_prompt_batches(novel_id: int, chapter_id: int) -> dict:
     }
 
 
-def retry_prompt_batch(novel_id: int, chapter_id: int, batch_index: int) -> tuple[bool, str]:
+def retry_prompt_batch(novel_id: int, chapter_id: int, batch_index: int, stage: str = "prompt") -> tuple[bool, str]:
+    stage = "shot" if str(stage or "") == "shot" else "prompt"
     conn = db_conn()
     task = conn.execute(
-        "SELECT id,status FROM chapter_illustration_tasks WHERE novel_id=? AND chapter_id=? AND stage='prompt'",
-        (novel_id, chapter_id),
+        "SELECT id,status FROM chapter_illustration_tasks WHERE novel_id=? AND chapter_id=? AND stage=?",
+        (novel_id, chapter_id, stage),
     ).fetchone()
     if not task:
         conn.close()
-        return False, "prompt task not found"
+        return False, f"{stage} task not found"
     if str(task["status"] or "") in {"running", "processing"}:
         conn.close()
-        return False, "prompt task is running"
+        return False, f"{stage} task is running"
     batch = conn.execute(
         "SELECT id FROM chapter_illustration_prompt_batches WHERE task_id=? AND batch_index=?",
         (int(task["id"]), int(batch_index)),
@@ -1087,7 +1242,7 @@ def retry_prompt_batch(novel_id: int, chapter_id: int, batch_index: int) -> tupl
         (int(batch["id"]),),
     )
     conn.execute(
-        "UPDATE chapter_illustration_tasks SET status='pending',progress=5,error_message='',updated_at=CURRENT_TIMESTAMP WHERE id=?",
+        "UPDATE chapter_illustration_tasks SET status='pending',progress=5,error_message='',started_at=NULL,updated_at=CURRENT_TIMESTAMP WHERE id=?",
         (int(task["id"]),),
     )
     conn.commit()
@@ -1154,6 +1309,24 @@ def list_illustration_images(novel_id: int, chapter_id: int, conn=None) -> list[
     own_conn = conn is None
     conn = conn or db_conn()
     grid_meta = _scene_grid_meta(conn, novel_id, chapter_id)
+    prompt_items_by_index: dict[int, dict] = {}
+    prompt_row = conn.execute(
+        "SELECT result_json_text FROM chapter_illustration_tasks WHERE novel_id=? AND chapter_id=? AND stage='prompt' AND status='completed'",
+        (novel_id, chapter_id),
+    ).fetchone()
+    if prompt_row:
+        try:
+            parsed_prompt = _parse_json_any(str(prompt_row["result_json_text"] or ""))
+            for pos, item in enumerate(_prompt_items(parsed_prompt), start=1):
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    idx = int(item.get("index") or pos)
+                except (TypeError, ValueError):
+                    idx = pos
+                prompt_items_by_index[idx] = item
+        except Exception:
+            prompt_items_by_index = {}
     rows = conn.execute(
         "SELECT * FROM chapter_illustration_images WHERE novel_id=? AND chapter_id=? ORDER BY item_index ASC",
         (novel_id, chapter_id),
@@ -1172,6 +1345,7 @@ def list_illustration_images(novel_id: int, chapter_id: int, conn=None) -> list[
             "characterNames": str(r["character_names"] or ""),
             "suggestedSize": str(r["suggested_size"] or ""),
             "promptText": str(r["prompt_text"] or ""),
+            "promptJson": prompt_items_by_index.get(idx) or {},
             "start": meta.get("start"),
             "end": meta.get("end"),
             "duration": meta.get("duration"),
@@ -1299,6 +1473,9 @@ def process_illustration_task(task_id: int) -> None:
         settings = fetch_settings(conn)
         llm = apply_prompt_llm_settings(settings.get("llm") or {}, load_prompt_llm_settings(conn, prompt_id))
         proxy_url = str(settings.get("proxyUrl") or "")
+        if stage == "shot":
+            _process_shot_task_batches(conn, row, prompt_id, system_prompt, llm, proxy_url)
+            return
         if stage == "prompt":
             _process_prompt_task_batches(conn, row, prompt_id, system_prompt, llm, proxy_url)
             return
@@ -1335,6 +1512,84 @@ def process_illustration_task(task_id: int) -> None:
         )
         conn.commit()
         conn.close()
+
+
+def _process_shot_task_batches(conn, row, prompt_id: int, system_prompt: str, llm: dict, proxy_url: str) -> None:
+    task_id = int(row["id"])
+    batches = _prepare_shot_batches(conn, row, prompt_id)
+    total = max(1, len(batches))
+    first_input = str(batches[0]["input_text"] or "") if batches else ""
+    conn.execute(
+        "UPDATE chapter_illustration_tasks SET status='processing',progress=10,model_name=?,think_enabled=?,input_text=?,output_text='',result_json_text='',error_message='',started_at=COALESCE(started_at,CURRENT_TIMESTAMP),updated_at=CURRENT_TIMESTAMP WHERE id=?",
+        (str(llm.get("model") or ""), 1 if bool(llm.get("think", True)) else 0, first_input, task_id),
+    )
+    conn.commit()
+    conn.close()
+    for pos, batch in enumerate(batches, start=1):
+        if str(batch["status"] or "") == "completed":
+            continue
+        batch_id = int(batch["id"])
+        user_input = str(batch["input_text"] or "")
+        request_preview = _safe_llm_request_preview(llm, proxy_url, system_prompt, user_input)
+        conn = db_conn()
+        conn.execute(
+            "UPDATE chapter_illustration_prompt_batches SET status='processing',progress=20,llm_request_json=?,output_text='',result_json_text='',error_message='',started_at=COALESCE(started_at,CURRENT_TIMESTAMP),updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            (_json_dumps(request_preview), batch_id),
+        )
+        conn.execute(
+            "UPDATE chapter_illustration_tasks SET progress=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            (max(10, min(95, int(((pos - 1) / total) * 90) + 10)), task_id),
+        )
+        conn.commit()
+        conn.close()
+        try:
+            raw = ""
+            raw = call_llm_prompt_json(llm=llm, proxy_url=proxy_url, system_prompt=system_prompt, user_prompt=user_input)
+            if _illustration_prompt_batch_cancelled(task_id, batch_id):
+                return
+            parsed = _parse_json_any(raw)
+            shots = _shot_items(parsed)
+            expected_count = max(0, int(batch["end_index"] or 0) - int(batch["start_index"] or 0) + 1)
+            if not shots:
+                raise RuntimeError("shot batch output has no shots")
+            if expected_count and len(shots) != expected_count:
+                raise RuntimeError(f"shot batch output count {len(shots)} != scene batch count {expected_count}")
+            result_json = _json_dumps(parsed)
+            conn = db_conn()
+            conn.execute(
+                "UPDATE chapter_illustration_prompt_batches SET status='completed',progress=100,output_text=?,result_json_text=?,error_message='',updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                (raw, result_json, batch_id),
+            )
+            conn.execute(
+                "UPDATE chapter_illustration_tasks SET progress=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                (max(10, min(99, int((pos / total) * 90) + 10)), task_id),
+            )
+            conn.commit()
+            conn.close()
+        except Exception as exc:
+            conn = db_conn()
+            message = str(exc)
+            conn.execute(
+                "UPDATE chapter_illustration_prompt_batches SET status='failed',progress=0,output_text=?,error_message=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                (raw, message, batch_id),
+            )
+            conn.execute(
+                "UPDATE chapter_illustration_tasks SET status='failed',progress=0,error_message=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                (f"第{int(batch['batch_index'] or pos)}批失败：{message}", task_id),
+            )
+            conn.commit()
+            conn.close()
+            return
+    if _illustration_task_cancelled(task_id):
+        return
+    conn = db_conn()
+    merged = _merge_shot_batches(conn, task_id)
+    conn.execute(
+        "UPDATE chapter_illustration_tasks SET status='completed',progress=100,output_text=?,result_json_text=?,error_message='',updated_at=CURRENT_TIMESTAMP WHERE id=?",
+        (merged, merged, task_id),
+    )
+    conn.commit()
+    conn.close()
 
 
 def _process_prompt_task_batches(conn, row, prompt_id: int, system_prompt: str, llm: dict, proxy_url: str) -> None:

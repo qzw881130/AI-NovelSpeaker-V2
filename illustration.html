@@ -192,11 +192,15 @@
           </button>
           <button class="dialog-close-btn" type="submit" aria-label="关闭">×</button>
         </div>
-        <textarea id="promptOutputEditor" class="dialog-code-block prompt-output-editor" spellcheck="false">加载中...</textarea>
+        <div class="prompt-output-editor-wrap">
+          <textarea id="promptOutputEditor" class="dialog-code-block prompt-output-editor" spellcheck="false">加载中...</textarea>
+          <span id="promptOutputCharCount" class="prompt-output-char-count">0</span>
+        </div>
         <div class="dialog-actions prompt-output-actions">
           <div class="prompt-output-action-buttons">
             <button id="savePromptOutputBtn" class="primary-btn" type="button">保存</button>
             <button id="downloadPromptOutputBtn" class="ghost-btn" type="button">下载JSON</button>
+            <button id="clearPromptOutputNegativeBtn" class="ghost-btn" type="button">清空无关项</button>
           </div>
           <span class="meta prompt-output-shortcut-hint">快捷键：Command/Ctrl + Shift + ← / → 切换上一回 / 下一回</span>
         </div>
@@ -231,7 +235,7 @@
       <form method="dialog">
         <div class="dialog-header illustration-preview-header">
           <h3 id="illustrationPreviewTitle">预览插图</h3>
-          <p class="caption">提示：按键盘 ← / → 可切换上一张 / 下一张</p>
+          <p class="caption">提示：按键盘 ← / → 可切换上一张 / 下一张 · <span id="illustrationPreviewTotalCount">插画共 0 个</span></p>
           <button class="dialog-close-btn" type="submit" aria-label="关闭">×</button>
         </div>
         <div class="illustration-preview-meta">
@@ -244,8 +248,21 @@
           <img id="illustrationImagePreview" class="illustration-preview-image" alt="插图预览" />
           <button id="illustrationPreviewNextBtn" class="illustration-preview-nav" type="button" aria-label="下一张" title="下一张">›</button>
         </div>
+        <div class="illustration-preview-json-panel">
+          <div class="illustration-preview-json-head">
+            <strong>JSON</strong>
+            <span class="meta">编辑后保存会替换当前图片对应的 prompt.json 项</span>
+          </div>
+          <div class="illustration-preview-json-editor-wrap">
+            <textarea id="illustrationPreviewJsonEditor" class="dialog-code-block illustration-preview-json-editor" spellcheck="false"></textarea>
+            <span id="illustrationPreviewJsonCount" class="illustration-preview-json-count">0</span>
+          </div>
+        </div>
         <div class="illustration-preview-footer-row">
           <p id="illustrationPreviewFooterMeta" class="meta illustration-preview-footer-meta"></p>
+          <button id="illustrationPreviewCopyJsonBtn" class="ghost-btn" type="button">复制JSON</button>
+          <button id="illustrationPreviewSaveJsonBtn" class="primary-btn" type="button">保存JSON</button>
+          <button id="illustrationPreviewRefreshBtn" class="ghost-btn" type="button">刷新</button>
           <button id="illustrationPreviewRegenerateBtn" class="ghost-btn" type="button">重新生成</button>
         </div>
       </form>

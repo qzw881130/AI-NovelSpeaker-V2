@@ -27,7 +27,13 @@ function parseSrtTimestampSeconds(value) {
   const match = String(value || "").trim().match(/^(\d{1,2}):(\d{2}):(\d{2}),(\d{1,3})$/);
   if (!match) return null;
   const [, hours, minutes, seconds, millis] = match;
+  if (Number(minutes) >= 60 || Number(seconds) >= 60) return null;
   return Number(hours) * 3600 + Number(minutes) * 60 + Number(seconds) + Number(millis.padEnd(3, "0").slice(0, 3)) / 1000;
+}
+
+function srtErrorLine(lines, blockIndex) {
+  const parsedLine = Number(lines[0] || blockIndex + 1);
+  return Number.isFinite(parsedLine) ? parsedLine : blockIndex + 1;
 }
 
 function inspectSrtTimingErrors(text) {
@@ -35,14 +41,20 @@ function inspectSrtTimingErrors(text) {
   const errors = [];
   blocks.forEach((block, blockIndex) => {
     const lines = block.split("\n").map((line) => line.trim()).filter(Boolean);
-    const timeLine = lines.find((line) => line.includes("-->")) || "";
+    const timeLine = lines[1] || lines.find((line) => line.includes("-->")) || "";
     const match = timeLine.match(/^(.*?)\s*-->\s*(.*?)$/);
-    if (!match) return;
+    if (!match) {
+      errors.push({ line: srtErrorLine(lines, blockIndex), block: blockIndex + 1, time: timeLine || "-", type: "format", message: "非法时间格式" });
+      return;
+    }
     const start = parseSrtTimestampSeconds(match[1]);
     const end = parseSrtTimestampSeconds(match[2]);
-    if (start == null || end == null || start < end) return;
-    const parsedLine = Number(lines[0] || blockIndex + 1);
-    errors.push({ line: Number.isFinite(parsedLine) ? parsedLine : blockIndex + 1, block: blockIndex + 1, time: timeLine });
+    if (start == null || end == null) {
+      errors.push({ line: srtErrorLine(lines, blockIndex), block: blockIndex + 1, time: timeLine, type: "format", message: "非法时间格式" });
+      return;
+    }
+    if (start < end) return;
+    errors.push({ line: srtErrorLine(lines, blockIndex), block: blockIndex + 1, time: timeLine, type: "order", message: "开始时间必须小于结束时间" });
   });
   return errors;
 }
@@ -67,7 +79,7 @@ function renderSrtErrorNav(text) {
     nav.innerHTML = '<span class="status-badge status-completed">时间轴正常</span>';
     return errors;
   }
-  nav.innerHTML = `<span class="error-text">时间错误 ${errors.length} 处：</span>${errors.map((error) => `<button class="ghost-btn btn-sm audio-asr-srt-error-jump" type="button" data-line="${Number(error.line)}">${Number(error.line)}</button>`).join("")}`;
+  nav.innerHTML = `<span class="error-text">时间错误/格式错误 ${errors.length} 处：</span>${errors.map((error) => `<button class="ghost-btn btn-sm audio-asr-srt-error-jump" type="button" data-line="${Number(error.line)}" title="${escapeHtml(error.message || "时间错误")}：${escapeHtml(error.time || "")}">${Number(error.line)}</button>`).join("")}`;
   return errors;
 }
 
@@ -430,7 +442,7 @@ async function saveCurrentCorrectedSrt() {
   try {
     const result = await saveChapterCorrectedSrtFile(activeNovel.id, currentSrtViewItem.chapterNum, srtText);
     renderSrtErrorNav(srtText);
-    toast(`修复字幕已保存${Number(result.errorCount || 0) ? `，仍有 ${Number(result.errorCount || 0)} 处时间错误` : ""}`);
+    toast(`修复字幕已保存${Number(result.errorCount || 0) ? `，仍有 ${Number(result.errorCount || 0)} 处时间/格式错误` : ""}`);
     await refreshPage();
   } catch (err) {
     toast(`保存失败：${err.message}`);
@@ -822,6 +834,12 @@ function bindEvents() {
     const btn = event.target.closest(".audio-asr-srt-error-jump");
     if (!btn) return;
     jumpToSrtErrorLine(Number(btn.dataset.line || 0));
+  });
+  document.getElementById("audioAsrViewDialog")?.addEventListener("keydown", async (event) => {
+    if (!currentSrtViewItem) return;
+    if (!(event.ctrlKey || event.metaKey) || String(event.key || "").toLowerCase() !== "s") return;
+    event.preventDefault();
+    await saveCurrentCorrectedSrt();
   });
   document.getElementById("audioAsrViewDialog")?.addEventListener("close", () => {
     currentSrtViewItem = null;

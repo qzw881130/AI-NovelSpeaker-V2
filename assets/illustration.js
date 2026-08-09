@@ -18,6 +18,7 @@ import {
   restartIllustrationLlmWorker,
   retryChapterIllustrationPromptBatch,
   saveChapterIllustrationSceneOutput,
+  saveChapterIllustrationPromptItem,
   saveChapterIllustrationPromptOutput,
   setActiveNovelId,
 } from "./store.js";
@@ -37,16 +38,40 @@ let activePromptBatchesChapterNum = 0;
 let activePromptBatches = [];
 let activePromptBatchIndex = 0;
 let activePromptBatchTab = "llm";
+let activePromptBatchStage = "prompt";
 let promptBatchesRefreshTimer = 0;
 let activePromptOutputChapterNum = 0;
 let currentPreviewItems = [];
 let currentPreviewIndex = -1;
+let currentImagesTotal = 0;
 const selectedChapterNums = new Set();
 let dragSelecting = false;
 let dragSelectValue = true;
 const AUTO_REFRESH_KEY = "ai_novel_illustration_refresh_interval";
 const AUTO_REFRESH_VALUES = ["0", "5", "20", "60"];
 const IMAGES_REFRESH_KEY = "ai_novel_illustration_images_refresh_seconds";
+const REQUIRED_PROMPT_ITEM_KEYS = [
+  "index",
+  "origin",
+  "country",
+  "culture",
+  "era",
+  "visual_style",
+  "scene_type",
+  "scene_type_weight",
+  "style_strength",
+  "scene_title",
+  "cn_summary",
+  "human_count",
+  "visual_character_card",
+  "positive_core",
+  "positive_character",
+  "positive_scene",
+  "positive_camera",
+  "positive_style",
+  "negative",
+  "suggested_size",
+];
 
 const STAGE_LABELS = {
   scene: "Scene",
@@ -233,13 +258,14 @@ function renderStageCell(item, stage) {
   const actionButtons = stage === "prompt"
     ? `
         <button class="ghost-btn btn-sm illustration-run-btn" type="button" data-stage="${stage}" data-chapter-num="${chapterNum}" ${disabled ? "disabled" : ""}>解析插画${STAGE_LABELS[stage].toLowerCase()}</button>
-        <button class="ghost-btn btn-sm illustration-prompt-detail-btn" type="button" data-chapter-num="${chapterNum}">详情</button>
+        <button class="ghost-btn btn-sm illustration-prompt-detail-btn" type="button" data-stage="${stage}" data-chapter-num="${chapterNum}">详情</button>
         <button class="ghost-btn btn-sm illustration-prompt-output-btn" type="button" data-chapter-num="${chapterNum}">输出</button>
         ${data.status === "completed" ? renderImagesButton(item, chapterNum) : ""}
       `
     : `
         <button class="ghost-btn btn-sm illustration-run-btn" type="button" data-stage="${stage}" data-chapter-num="${chapterNum}" ${disabled ? "disabled" : ""}>解析插画${STAGE_LABELS[stage].toLowerCase()}</button>
         <button class="ghost-btn btn-sm illustration-llm-params-btn" type="button" data-stage="${stage}" data-chapter-num="${chapterNum}">LLM参数</button>
+        ${stage === "shot" ? `<button class="ghost-btn btn-sm illustration-prompt-detail-btn" type="button" data-stage="${stage}" data-chapter-num="${chapterNum}">详情</button>` : ""}
         <button class="ghost-btn btn-sm illustration-view-btn" type="button" data-kind="input" data-stage="${stage}" data-chapter-num="${chapterNum}">输入</button>
         <button class="ghost-btn btn-sm illustration-view-btn ${sceneWarning || shotWarning ? "has-illustration-warning" : ""}" type="button" data-kind="output" data-stage="${stage}" data-chapter-num="${chapterNum}" ${sceneWarning || shotWarning ? `title="${escapeHtml(sceneWarning || shotWarning)}"` : ""}>输出${sceneWarning || shotWarning ? '<span class="illustration-alert-dot" aria-hidden="true">!</span>' : ""}</button>
       `;
@@ -808,6 +834,7 @@ async function openPromptOutput(chapterNum) {
   if (findInput) findInput.value = "";
   if (replaceInput) replaceInput.value = "";
   editor.value = "加载中...";
+  updatePromptOutputCharCount();
   dialog.showModal();
   try {
     const payload = await fetchChapterIllustrationPayload(activeNovel.id, chapterNum, "prompt", "output");
@@ -816,6 +843,13 @@ async function openPromptOutput(chapterNum) {
   } catch (err) {
     editor.value = `加载失败：${err.message}`;
   }
+  updatePromptOutputCharCount();
+}
+
+function updatePromptOutputCharCount() {
+  const editor = document.getElementById("promptOutputEditor");
+  const count = document.getElementById("promptOutputCharCount");
+  if (count) count.textContent = String(editor?.value.length || 0);
 }
 
 async function switchPromptOutput(delta) {
@@ -870,6 +904,42 @@ function downloadPromptOutput() {
   const filename = `${safeDownloadFilename(title)}-prompt-output.json`;
   downloadTextFile(filename, `${JSON.stringify(parsed, null, 2)}\n`);
   toast("Prompt 输出已下载");
+}
+
+function promptOutputItems(data) {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.prompts)) return data.prompts;
+  if (Array.isArray(data?.grid)) return data.grid;
+  if (Array.isArray(data?.items)) return data.items;
+  return [];
+}
+
+function clearPromptOutputNegative() {
+  const editor = document.getElementById("promptOutputEditor");
+  const text = String(editor?.value || "").trim();
+  if (!editor || !text || text === "加载中...") {
+    toast("暂无可清空内容");
+    return;
+  }
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch (err) {
+    toast(`JSON 格式错误：${err.message}`);
+    return;
+  }
+  const items = promptOutputItems(data);
+  let count = 0;
+  items.forEach((item) => {
+    if (item && typeof item === "object" && Object.prototype.hasOwnProperty.call(item, "negative") && item.negative !== "") {
+      item.negative = "";
+      count += 1;
+    }
+  });
+  editor.value = JSON.stringify(data, null, 2);
+  updatePromptOutputCharCount();
+  editor.focus();
+  toast(`已清空 ${count} 项 negative`);
 }
 
 function downloadIllustrationPayloadOutput() {
@@ -931,6 +1001,7 @@ function replacePromptOutputText() {
   const start = editor.selectionStart || 0;
   const end = editor.selectionEnd || 0;
   editor.setRangeText(replacement, start, end, "end");
+  updatePromptOutputCharCount();
   editor.focus();
 }
 
@@ -952,6 +1023,7 @@ function replaceAllPromptOutputText() {
     return;
   }
   editor.value = parts.join(replacement);
+  updatePromptOutputCharCount();
   editor.focus();
   toast(`已替换 ${count} 处`);
 }
@@ -1004,12 +1076,13 @@ function renderPromptBatchModal() {
   const content = document.getElementById("promptBatchContent");
   const meta = document.getElementById("promptBatchMeta");
   const retryBtn = document.getElementById("retryPromptBatchBtn");
+  const stageLabel = STAGE_LABELS[activePromptBatchStage] || "Prompt";
   list.innerHTML = activePromptBatches.length ? activePromptBatches.map((batch, idx) => `
     <button class="prompt-batch-item ${idx === activePromptBatchIndex ? "active" : ""}" type="button" data-batch-index="${idx}">
       <strong>第 ${batch.batchIndex} 批</strong>
       <span>#${batch.startIndex}-${batch.endIndex} · ${statusLabel(batch.status)}${batch.progress ? ` ${batch.progress}%` : ""}</span>
     </button>
-  `).join("") : '<p class="empty-text">暂无批次数据，开始解析 Prompt 后生成。</p>';
+  `).join("") : `<p class="empty-text">暂无批次数据，开始解析 ${stageLabel} 后生成。</p>`;
   const batch = activePromptBatches[activePromptBatchIndex] || null;
   meta.textContent = promptBatchMetaText(batch);
   retryBtn.disabled = !batch || ["pending", "running", "processing"].includes(String(batch.status || ""));
@@ -1022,7 +1095,7 @@ function renderPromptBatchModal() {
 async function refreshPromptBatchesModal() {
   if (!activePromptBatchesChapterNum) return;
   if (!document.getElementById("promptBatchDialog")?.open) return;
-  const data = await fetchChapterIllustrationPromptBatches(activeNovel.id, activePromptBatchesChapterNum);
+  const data = await fetchChapterIllustrationPromptBatches(activeNovel.id, activePromptBatchesChapterNum, activePromptBatchStage);
   activePromptBatches = data.batches || [];
   if (activePromptBatchIndex >= activePromptBatches.length) activePromptBatchIndex = Math.max(0, activePromptBatches.length - 1);
   renderPromptBatchModal();
@@ -1040,11 +1113,12 @@ function startPromptBatchesAutoRefresh() {
   promptBatchesRefreshTimer = window.setInterval(() => refreshPromptBatchesModal().catch(() => {}), 3000);
 }
 
-async function openPromptBatches(chapterNum) {
+async function openPromptBatches(chapterNum, stage = "prompt") {
   activePromptBatchesChapterNum = Number(chapterNum || 0);
+  activePromptBatchStage = String(stage || "prompt") === "shot" ? "shot" : "prompt";
   activePromptBatchIndex = 0;
   activePromptBatchTab = "llm";
-  document.getElementById("promptBatchTitle").textContent = `Prompt 详情 · 第${String(chapterNum).padStart(3, "0")}回`;
+  document.getElementById("promptBatchTitle").textContent = `${STAGE_LABELS[activePromptBatchStage]} 详情 · 第${String(chapterNum).padStart(3, "0")}回`;
   document.getElementById("promptBatchContent").textContent = "加载中...";
   document.getElementById("promptBatchDialog").showModal();
   await refreshPromptBatchesModal();
@@ -1052,6 +1126,7 @@ async function openPromptBatches(chapterNum) {
 }
 
 function renderImages(items) {
+  currentImagesTotal = items.length;
   currentPreviewItems = items.filter((item) => Boolean(item.imageUrl));
   const summary = document.getElementById("illustrationImagesQueueSummary");
   if (summary) {
@@ -1106,6 +1181,7 @@ function openPreviewAt(index) {
   const nextBtn = document.getElementById("illustrationPreviewNextBtn");
   const footerMeta = document.getElementById("illustrationPreviewFooterMeta");
   const regenerateBtn = document.getElementById("illustrationPreviewRegenerateBtn");
+  const jsonEditor = document.getElementById("illustrationPreviewJsonEditor");
   const positionText = `${currentPreviewIndex + 1}/${total}`;
   const timeText = imageTimeLabel(item);
   const imageId = String(item.id || "");
@@ -1118,9 +1194,16 @@ function openPreviewAt(index) {
   regenerateBtn.disabled = busy || !item.id;
   regenerateBtn.textContent = busy ? `${statusLabel(item.status)}中` : "重新生成";
   document.getElementById("illustrationPreviewTitle").textContent = `#${item.index} ${item.sceneTitle || "预览插图"}`;
+  document.getElementById("illustrationPreviewTotalCount").textContent = `插画共 ${currentImagesTotal} 个`;
   document.getElementById("illustrationPreviewSummary").textContent = item.cnSummary || "";
   document.getElementById("illustrationPreviewCharacters").textContent = item.characterNames ? `人物：${item.characterNames}` : "";
   document.getElementById("illustrationPreviewPrompt").textContent = item.promptText ? `提示词：${item.promptText}` : "";
+  if (jsonEditor) {
+    const json = item.promptJson && typeof item.promptJson === "object" && Object.keys(item.promptJson).length ? item.promptJson : null;
+    jsonEditor.value = json ? JSON.stringify(json, null, 2) : "";
+    jsonEditor.placeholder = json ? "" : "未找到当前图片对应的原始 prompt.json 项";
+    updatePreviewJsonCount();
+  }
   footerMeta.textContent = [timeText, item.suggestedSize ? `建议尺寸：${item.suggestedSize}` : "", positionText].filter(Boolean).join(" · ");
   img.onload = () => {
     footerMeta.textContent = [timeText, `尺寸：${img.naturalWidth}x${img.naturalHeight}`, `比例：${ratioLabel(img.naturalWidth, img.naturalHeight)}`, positionText].filter(Boolean).join(" · ");
@@ -1134,6 +1217,12 @@ function openPreviewAt(index) {
     footerMeta.textContent = [timeText, `尺寸：${img.naturalWidth}x${img.naturalHeight}`, `比例：${ratioLabel(img.naturalWidth, img.naturalHeight)}`, positionText].filter(Boolean).join(" · ");
   }
   if (!dialog.open) dialog.showModal();
+}
+
+function updatePreviewJsonCount() {
+  const editor = document.getElementById("illustrationPreviewJsonEditor");
+  const count = document.getElementById("illustrationPreviewJsonCount");
+  if (count) count.textContent = String(editor?.value.length || 0);
 }
 
 function switchPreview(delta) {
@@ -1159,17 +1248,115 @@ async function regeneratePreviewImage() {
   }
 }
 
+function currentPreviewJson() {
+  const item = currentPreviewItems[currentPreviewIndex];
+  if (!item) return null;
+  if (item.promptJson && typeof item.promptJson === "object" && Object.keys(item.promptJson).length) {
+    return item.promptJson;
+  }
+  return null;
+}
+
+function copyPreviewJson() {
+  const data = currentPreviewJson();
+  if (!data) {
+    toast("未找到原始完整JSON，请刷新后重试");
+    return;
+  }
+  copyText(JSON.stringify(data, null, 2)).catch((err) => {
+    toast(`复制失败：${err.message}`);
+  });
+}
+
+function missingPromptItemKeys(item) {
+  if (!item || typeof item !== "object" || Array.isArray(item)) return REQUIRED_PROMPT_ITEM_KEYS;
+  return REQUIRED_PROMPT_ITEM_KEYS.filter((key) => !Object.prototype.hasOwnProperty.call(item, key));
+}
+
+async function savePreviewJson() {
+  const item = currentPreviewItems[currentPreviewIndex];
+  const editor = document.getElementById("illustrationPreviewJsonEditor");
+  const btn = document.getElementById("illustrationPreviewSaveJsonBtn");
+  if (!activeNovel || !activeImagesChapterNum || !item) return;
+  const text = String(editor?.value || "").trim();
+  if (!text) {
+    toast("JSON内容为空");
+    return;
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch (err) {
+    toast(`JSON 格式错误：${err.message}`);
+    return;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    toast("JSON必须是对象");
+    return;
+  }
+  const missingKeys = missingPromptItemKeys(parsed);
+  if (missingKeys.length) {
+    toast(`缺少必需字段：${missingKeys.join(", ")}`);
+    return;
+  }
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "保存中...";
+  }
+  try {
+    const result = await saveChapterIllustrationPromptItem(activeNovel.id, activeImagesChapterNum, Number(item.index || 0), JSON.stringify(parsed, null, 2));
+    toast("JSON已保存");
+    await refreshImagesModal();
+    const updatedId = Number(result.item?.id || item.id || 0);
+    const nextIndex = currentPreviewItems.findIndex((entry) => Number(entry.id || 0) === updatedId) >= 0
+      ? currentPreviewItems.findIndex((entry) => Number(entry.id || 0) === updatedId)
+      : currentPreviewItems.findIndex((entry) => Number(entry.index || 0) === Number(item.index || 0));
+    if (nextIndex >= 0) openPreviewAt(nextIndex);
+  } catch (err) {
+    toast(`保存失败：${err.message}`);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "保存JSON";
+    }
+  }
+}
+
 async function refreshImagesModal() {
   if (!document.getElementById("illustrationImagesDialog")?.open) return;
   if (!activeImagesChapterNum) return;
   const previewDialog = document.getElementById("illustrationImagePreviewDialog");
   const previewImageId = previewDialog?.open ? Number(currentPreviewItems[currentPreviewIndex]?.id || 0) : 0;
+  const previewItemIndex = previewDialog?.open ? Number(currentPreviewItems[currentPreviewIndex]?.index || 0) : 0;
   renderImages(await fetchChapterIllustrationImages(activeNovel.id, activeImagesChapterNum));
   if (previewImageId) {
     const index = currentPreviewItems.findIndex((item) => Number(item.id) === previewImageId);
     if (index >= 0) openPreviewAt(index);
+  } else if (previewItemIndex) {
+    const index = currentPreviewItems.findIndex((item) => Number(item.index) === previewItemIndex);
+    if (index >= 0) openPreviewAt(index);
   }
   await refreshPage();
+}
+
+async function refreshPreviewImageData() {
+  const btn = document.getElementById("illustrationPreviewRefreshBtn");
+  if (!activeNovel || !activeImagesChapterNum) return;
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "刷新中...";
+  }
+  try {
+    await refreshImagesModal();
+    toast("预览已刷新");
+  } catch (err) {
+    toast(`刷新失败：${err.message}`);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "刷新";
+    }
+  }
 }
 
 function stopImagesAutoRefresh() {
@@ -1327,7 +1514,7 @@ function bindEvents() {
     }
     const promptDetailBtn = event.target.closest(".illustration-prompt-detail-btn");
     if (promptDetailBtn) {
-      await openPromptBatches(Number(promptDetailBtn.dataset.chapterNum || 0));
+      await openPromptBatches(Number(promptDetailBtn.dataset.chapterNum || 0), String(promptDetailBtn.dataset.stage || "prompt"));
       return;
     }
     const promptOutputBtn = event.target.closest(".illustration-prompt-output-btn");
@@ -1434,6 +1621,8 @@ function bindEvents() {
     }
   });
   document.getElementById("downloadPromptOutputBtn").addEventListener("click", downloadPromptOutput);
+  document.getElementById("clearPromptOutputNegativeBtn").addEventListener("click", clearPromptOutputNegative);
+  document.getElementById("promptOutputEditor").addEventListener("input", updatePromptOutputCharCount);
   document.getElementById("promptOutputDialog").addEventListener("close", () => {
     activePromptOutputChapterNum = 0;
   });
@@ -1462,13 +1651,14 @@ function bindEvents() {
   document.getElementById("retryPromptBatchBtn").addEventListener("click", async () => {
     const batch = activePromptBatches[activePromptBatchIndex];
     if (!batch) return;
-    await retryChapterIllustrationPromptBatch(activeNovel.id, activePromptBatchesChapterNum, batch.batchIndex);
+    await retryChapterIllustrationPromptBatch(activeNovel.id, activePromptBatchesChapterNum, batch.batchIndex, activePromptBatchStage);
     toast(`第 ${batch.batchIndex} 批已重新入队`);
     await refreshPromptBatchesModal();
     await refreshPage();
   });
   document.getElementById("promptBatchDialog").addEventListener("close", () => {
     activePromptBatchesChapterNum = 0;
+    activePromptBatchStage = "prompt";
     stopPromptBatchesAutoRefresh();
   });
   const payloadContent = document.getElementById("illustrationPayloadContent");
@@ -1539,7 +1729,16 @@ function bindEvents() {
   });
   document.getElementById("illustrationPreviewPrevBtn").addEventListener("click", () => switchPreview(-1));
   document.getElementById("illustrationPreviewNextBtn").addEventListener("click", () => switchPreview(1));
+  document.getElementById("illustrationPreviewCopyJsonBtn").addEventListener("click", copyPreviewJson);
+  document.getElementById("illustrationPreviewSaveJsonBtn").addEventListener("click", savePreviewJson);
+  document.getElementById("illustrationPreviewRefreshBtn").addEventListener("click", refreshPreviewImageData);
   document.getElementById("illustrationPreviewRegenerateBtn").addEventListener("click", regeneratePreviewImage);
+  document.getElementById("illustrationPreviewJsonEditor").addEventListener("input", updatePreviewJsonCount);
+  document.getElementById("illustrationImagePreviewDialog").addEventListener("keydown", async (event) => {
+    if (!(event.ctrlKey || event.metaKey) || String(event.key || "").toLowerCase() !== "s") return;
+    event.preventDefault();
+    await savePreviewJson();
+  });
   document.getElementById("illustrationImagesDialog").addEventListener("close", stopImagesAutoRefresh);
   initImagesRefreshControl();
 }
