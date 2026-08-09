@@ -22,7 +22,7 @@ DEFAULT_VIDEO_WIDTH = 1080
 DEFAULT_VIDEO_HEIGHT = 1920
 DEFAULT_VIDEO_FPS = 30
 FADE_SECONDS = 1.0
-COVER_STYLE_VERSION = 15
+COVER_STYLE_VERSION = 18
 
 
 @dataclass
@@ -436,23 +436,6 @@ def _compose_cover_image(frame_path: Path, cover_path: Path, *, novel_name: str,
     canvas = Image.alpha_composite(canvas.convert("RGBA"), overlay)
     draw = ImageDraw.Draw(canvas)
 
-    if logo_path and logo_path.exists():
-        try:
-            logo = Image.open(logo_path).convert("RGBA")
-            logo_size = int(target_w * 0.095)
-            logo.thumbnail((logo_size, logo_size), Image.Resampling.LANCZOS)
-            alpha = logo.getchannel("A").point(lambda p: int(p * 0.78))
-            logo.putalpha(alpha)
-            logo_x = target_w - logo.width - int(target_w * 0.045)
-            logo_y = target_h - logo.height - int(target_h * 0.052)
-            shadow_alpha = alpha.filter(ImageFilter.GaussianBlur(8)).point(lambda p: int(p * 0.55))
-            shadow = Image.new("RGBA", logo.size, (0, 0, 0, 0))
-            shadow.putalpha(shadow_alpha)
-            canvas.alpha_composite(shadow, (logo_x + 4, logo_y + 5))
-            canvas.alpha_composite(logo, (logo_x, logo_y))
-        except Exception:
-            pass
-
     badge_text = str(novel_name or "").strip() or "有声小说"
     badge_font = _load_cover_font(max(56, int(target_w * 0.042)), "plaque")
     badge_w = _text_width(draw, badge_text, badge_font) + int(target_w * 0.04)
@@ -507,6 +490,26 @@ def _compose_cover_image(frame_path: Path, cover_path: Path, *, novel_name: str,
         fill = (255, 223, 48) if idx == len(display_title_lines) - 1 else (255, 250, 238)
         draw.text((x - bbox[0], current_y - bbox[1]), line, font=title_font, fill=fill, stroke_width=max(5, target_w // 360), stroke_fill=(0, 0, 0))
         current_y += bbox[3] + title_gap
+
+    if logo_path and logo_path.exists():
+        try:
+            logo = Image.open(logo_path).convert("RGBA")
+            logo_size = int(target_w * 0.095)
+            logo.thumbnail((logo_size, logo_size), Image.Resampling.LANCZOS)
+            alpha = logo.getchannel("A").point(lambda p: int(p * 0.78))
+            logo.putalpha(alpha)
+            logo_x = target_w - logo.width - int(target_w * 0.045)
+            logo_y = target_h - logo.height - int(target_h * 0.052)
+            shadow_alpha = alpha.filter(ImageFilter.GaussianBlur(8)).point(lambda p: int(p * 0.55))
+            shadow = Image.new("RGBA", logo.size, (0, 0, 0, 0))
+            shadow.putalpha(shadow_alpha)
+            logo_backdrop = Image.new("RGBA", logo.size, (255, 255, 255, 0))
+            ImageDraw.Draw(logo_backdrop).ellipse((0, 0, logo.width - 1, logo.height - 1), fill=(255, 255, 255, 238))
+            canvas.alpha_composite(shadow, (logo_x + 4, logo_y + 5))
+            canvas.alpha_composite(logo_backdrop, (logo_x, logo_y))
+            canvas.alpha_composite(logo, (logo_x, logo_y))
+        except Exception:
+            pass
 
     cover_path.parent.mkdir(parents=True, exist_ok=True)
     canvas.convert("RGB").save(cover_path, format="JPEG", quality=94, optimize=True)
