@@ -4660,6 +4660,20 @@ body.is-nsfw-review-drag-selecting .novel-download-table {
   box-shadow: var(--shadow);
 }
 
+.video-cover-dialog {
+  width: min(92vw, 980px);
+  max-height: 92vh;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--panel-strong);
+  box-shadow: var(--shadow);
+}
+
+.video-cover-dialog::backdrop {
+  background: rgba(26, 18, 10, 0.58);
+}
+
 .video-player-dialog::backdrop {
   background: rgba(26, 18, 10, 0.58);
 }
@@ -4676,10 +4690,68 @@ body.is-nsfw-review-drag-selecting .novel-download-table {
   margin: 0 0 6px;
 }
 
+.video-cover-head-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.video-cover-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.video-cover-controls label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+}
+
+.video-cover-controls select {
+  min-width: min(560px, 72vw);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 9px 12px;
+  background: #fffaf2;
+  color: var(--text);
+  font: inherit;
+}
+
+.cover-logo-settings-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.cover-logo-preview {
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fffaf2;
+  padding: 4px;
+}
+
 .video-player-dialog video {
   display: block;
   width: 100%;
   max-height: 72vh;
+  border-radius: 14px;
+  background: #100c08;
+}
+
+.video-cover-preview {
+  display: block;
+  width: 100%;
+  max-height: 72vh;
+  object-fit: contain;
   border-radius: 14px;
   background: #100c08;
 }
@@ -4920,12 +4992,16 @@ body.is-illustration-drag-selecting {
   margin: 0;
 }
 
+.scene-stats-panel {
+  margin-top: 10px;
+}
+
 .scene-stats-summary {
   margin: 0 0 12px;
 }
 
 .scene-stats-table-wrap {
-  max-height: min(70vh, 720px);
+  max-height: min(36vh, 420px);
   overflow: auto;
   border: 1px solid var(--border);
   border-radius: 14px;

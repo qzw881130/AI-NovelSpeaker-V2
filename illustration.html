@@ -103,17 +103,9 @@
           </div>
           <span id="illustrationPayloadShortcutHint" class="meta prompt-output-shortcut-hint" hidden>快捷键：Command/Ctrl + Shift + ← / → 切换上一回 / 下一回</span>
         </div>
-      </form>
-    </dialog>
-
-    <dialog id="sceneStatsDialog" class="modal modal-large scene-stats-dialog">
-      <form method="dialog">
-        <div class="dialog-header">
-          <h3 id="sceneStatsTitle">统计Scene</h3>
-          <button class="dialog-close-btn" type="submit" aria-label="关闭">×</button>
-        </div>
-        <p id="sceneStatsSummary" class="meta scene-stats-summary">-</p>
-        <div class="scene-stats-table-wrap">
+        <div id="sceneStatsPanel" class="scene-stats-panel" hidden>
+          <p id="sceneStatsSummary" class="meta scene-stats-summary">-</p>
+          <div class="scene-stats-table-wrap">
           <table class="roles-table scene-stats-table">
             <thead>
               <tr>
@@ -126,6 +118,7 @@
             </thead>
             <tbody id="sceneStatsTableBody"></tbody>
           </table>
+          </div>
         </div>
       </form>
     </dialog>

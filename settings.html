@@ -205,6 +205,18 @@
           </div>
         </section>
 
+        <section class="panel form-panel">
+          <h2>视频封面 Logo</h2>
+          <div class="cover-logo-settings-row">
+            <label class="switch-row"><input id="videoCoverLogoEnabled" type="checkbox" /> <span>启用</span></label>
+            <input id="videoCoverLogoFile" type="file" accept="image/*,.png,.jpg,.jpeg,.webp" class="hidden" />
+            <button id="uploadVideoCoverLogoBtn" class="ghost-btn" type="button">上传视频封面Logo</button>
+            <img id="videoCoverLogoPreview" class="cover-logo-preview hidden" alt="视频封面 Logo 预览" />
+            <span id="videoCoverLogoStatus" class="caption"></span>
+          </div>
+          <p class="caption">启用后，视频封面右下角会叠加该 Logo 水印；未上传时使用内置默认 Logo。建议尺寸：512×512 PNG，透明背景最佳。</p>
+        </section>
+
         <section class="settings-actions-bottom">
           <button class="primary-btn" id="saveSettingsBtn" type="button">保存配置</button>
         </section>

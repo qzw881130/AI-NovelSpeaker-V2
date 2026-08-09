@@ -79,6 +79,28 @@
       <video id="videoExportPlayer" controls playsinline preload="metadata"></video>
     </dialog>
 
+    <dialog id="videoExportCoverDialog" class="video-cover-dialog">
+      <div class="video-player-dialog-head">
+        <div>
+          <h2 id="videoExportCoverTitle">预览封面</h2>
+          <p id="videoExportCoverMeta" class="meta"></p>
+        </div>
+        <div class="video-cover-head-actions">
+          <button id="videoExportCoverPrevBtn" class="ghost-btn" type="button">前一个</button>
+          <button id="videoExportCoverNextBtn" class="ghost-btn" type="button">后一个</button>
+          <a id="videoExportCoverDownloadBtn" class="primary-btn" href="#" download>下载封面</a>
+          <button id="videoExportCoverCloseBtn" class="ghost-btn" type="button">关闭</button>
+        </div>
+      </div>
+      <div class="video-cover-controls">
+        <label>底图
+          <select id="videoExportCoverImageSelect"></select>
+        </label>
+        <span id="videoExportCoverImageMeta" class="meta"></span>
+      </div>
+      <img id="videoExportCoverPreview" class="video-cover-preview" alt="视频封面预览" />
+    </dialog>
+
     <div id="toast" class="toast"></div>
     <script type="module" src="./assets/video-export.js"></script>
   </body>

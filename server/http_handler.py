@@ -1,5 +1,6 @@
 import zipfile
 import base64
+import io
 import shutil
 import subprocess
 from pathlib import Path
@@ -79,6 +80,7 @@ from .illustration import (
 from .video_export import (
     cancel_video_export_task,
     enqueue_video_export_task,
+    get_video_export_cover_path,
     get_video_export_file_path,
     get_video_export_task,
     list_video_export_tasks,
@@ -1455,6 +1457,22 @@ class Handler(BaseHTTPRequestHandler):
             self.send_file_response(path, "video/mp4", download_name=filename, cache_control="no-store")
             return
 
+        m_video_export_cover = re.match(r"^/api/video-export-tasks/(\d+)/cover$", route)
+        if m_video_export_cover:
+            task_id = int(m_video_export_cover.group(1))
+            image_index_raw = str((query.get("imageIndex") or [""])[0] or "").strip()
+            image_index = int(image_index_raw) if image_index_raw.isdigit() else None
+            try:
+                path, filename = get_video_export_cover_path(task_id, image_index=image_index)
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, 400)
+                return
+            if not path:
+                self.send_json({"error": "cover file not found"}, 404)
+                return
+            self.send_file_response(path, "image/jpeg", download_name=filename, cache_control="no-store")
+            return
+
         if route == "/api/settings":
             conn = db_conn()
             data = fetch_settings(conn)
@@ -1637,6 +1655,18 @@ class Handler(BaseHTTPRequestHandler):
                 return
             ctype = mimetypes.guess_type(abs_path.name)[0] or "audio/flac"
             self.send_file_response(abs_path, ctype, cache_control="no-store")
+            return
+
+        if route == "/api/settings/video-cover-logo/file":
+            conn = db_conn()
+            settings = fetch_settings(conn)
+            conn.close()
+            path = resolve_video_cover_logo_path(settings)
+            if not path or not path.exists() or not path.is_file():
+                self.send_json({"error": "logo file not found"}, 404)
+                return
+            ctype = mimetypes.guess_type(path.name)[0] or "image/png"
+            self.send_file_response(path, ctype, cache_control="no-store")
             return
 
         # 台词音频API
@@ -2052,6 +2082,54 @@ class Handler(BaseHTTPRequestHandler):
                 """,
                 (f"copyright_audio_{kind}_path", rel_path),
             )
+            conn.commit()
+            conn.close()
+            self.send_json({"status": "ok", "path": rel_path})
+            return
+
+        if route == "/api/settings/video-cover-logo":
+            body = self.read_json()
+            image_base64 = str(body.get("imageBase64") or "").strip()
+            file_name = str(body.get("fileName") or "video-cover-logo.png").strip() or "video-cover-logo.png"
+            if not image_base64:
+                self.send_json({"error": "imageBase64 is required"}, 400)
+                return
+            try:
+                image_bytes = base64.b64decode(image_base64)
+            except Exception:
+                self.send_json({"error": "invalid imageBase64"}, 400)
+                return
+            safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", file_name).strip("._") or "video-cover-logo.png"
+            suffix = Path(safe_name).suffix.lower() or ".png"
+            if suffix not in {".png", ".jpg", ".jpeg", ".webp"}:
+                self.send_json({"error": "unsupported logo image type"}, 400)
+                return
+            target_dir = ROOT_DIR / "temp" / "settings"
+            target_dir.mkdir(parents=True, exist_ok=True)
+            target_path = target_dir / f"video-cover-logo{suffix}"
+            try:
+                from PIL import Image
+
+                with Image.open(io.BytesIO(image_bytes)) as img:
+                    img.verify()
+            except Exception:
+                self.send_json({"error": "invalid logo image"}, 400)
+                return
+            target_path.write_bytes(image_bytes)
+            rel_path = db_rel_path(target_path.relative_to(ROOT_DIR))
+            conn = db_conn()
+            for setting_key, setting_value in (
+                ("video_cover_logo_path", rel_path),
+                ("video_cover_logo_enabled", "1"),
+            ):
+                conn.execute(
+                    """
+                    INSERT INTO app_settings (setting_key,setting_value,updated_at)
+                    VALUES (?, ?, CURRENT_TIMESTAMP)
+                    ON CONFLICT(setting_key) DO UPDATE SET setting_value=excluded.setting_value, updated_at=CURRENT_TIMESTAMP
+                    """,
+                    (setting_key, setting_value),
+                )
             conn.commit()
             conn.close()
             self.send_json({"status": "ok", "path": rel_path})
@@ -3967,6 +4045,18 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 line_audio_queue_scheduled_at = ""
 
+            video_cover_logo = body.get("videoCoverLogo") or {}
+            if not isinstance(video_cover_logo, dict):
+                video_cover_logo = {}
+            video_cover_logo_path = str(video_cover_logo.get("path") or "").strip()
+            if video_cover_logo_path:
+                logo_abs = (ROOT_DIR / video_cover_logo_path).resolve()
+                allowed_logo_dir = (ROOT_DIR / "temp" / "settings").resolve()
+                try:
+                    logo_abs.relative_to(allowed_logo_dir)
+                except ValueError:
+                    video_cover_logo_path = ""
+
             pairs = {
                 "comfy_url": str(body.get("comfyUrl") or ""),
                 "proxy_url": str(body.get("proxyUrl") or ""),
@@ -4012,6 +4102,8 @@ class Handler(BaseHTTPRequestHandler):
                     ensure_ascii=False,
                 ),
                 "live_ending_audio_path": "",
+                "video_cover_logo_enabled": "1" if bool(video_cover_logo.get("enabled")) else "0",
+                "video_cover_logo_path": video_cover_logo_path,
             }
             conn = db_conn()
             for k, v in pairs.items():

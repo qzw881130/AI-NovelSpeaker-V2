@@ -15,12 +15,14 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .app_context import NOVEL_DIR, ROOT_DIR, db_conn
+from .services import fetch_settings, resolve_video_cover_logo_path
 
 
 DEFAULT_VIDEO_WIDTH = 1080
 DEFAULT_VIDEO_HEIGHT = 1920
 DEFAULT_VIDEO_FPS = 30
 FADE_SECONDS = 1.0
+COVER_STYLE_VERSION = 15
 
 
 @dataclass
@@ -58,6 +60,12 @@ def _safe_filename(value: str, fallback: str = "chapter") -> str:
     text = re.sub(r"[\\/:*?\"<>|\x00-\x1f]+", "_", text)
     text = re.sub(r"\s+", " ", text).strip(" ._")
     return text or fallback
+
+
+def _strip_chapter_prefix(value: str) -> str:
+    text = str(value or "").strip()
+    text = re.sub(r"^第\s*[0-9０-９零〇一二三四五六七八九十百千万两]+\s*回[\s　·、，,：:—-]*", "", text)
+    return text.strip() or str(value or "").strip()
 
 
 def _parse_timestamp(value: str) -> float | None:
@@ -216,12 +224,64 @@ def _load_font(size: int):
     return ImageFont.load_default()
 
 
+def _load_cover_font(size: int, role: str = "title"):
+    from PIL import ImageFont
+
+    if role == "plaque":
+        candidates = [
+            "/System/Library/Fonts/Supplemental/Kaiti.ttc",
+            "/System/Library/Fonts/Supplemental/Songti.ttc",
+            "/System/Library/Fonts/Supplemental/STKaiti.ttf",
+            "/System/Library/Fonts/Supplemental/STSong.ttf",
+        ]
+    else:
+        candidates = [
+            "/System/Library/Fonts/Supplemental/Songti.ttc",
+            "/System/Library/Fonts/Supplemental/Kaiti.ttc",
+            "/System/Library/Fonts/Supplemental/STSong.ttf",
+            "/System/Library/Fonts/Supplemental/STFangsong.ttf",
+        ]
+    candidates.extend(
+        [
+            "/System/Library/Fonts/PingFang.ttc",
+            "/System/Library/Fonts/STHeiti Light.ttc",
+            "/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/noto/NotoSerifCJK-Regular.ttc",
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        ]
+    )
+    for path in candidates:
+        if Path(path).exists():
+            try:
+                return ImageFont.truetype(path, size=size)
+            except Exception:
+                continue
+    return _load_font(size)
+
+
+def _line_height(font) -> int:
+    try:
+        bbox = font.getbbox("国")
+        return max(1, int((bbox[3] - bbox[1]) * 1.18))
+    except Exception:
+        return 48
+
+
 def _text_width(draw, text: str, font) -> int:
     try:
         return int(draw.textlength(text, font=font))
     except Exception:
         bbox = draw.textbbox((0, 0), text, font=font)
         return int(bbox[2] - bbox[0])
+
+
+def _text_size(draw, text: str, font) -> tuple[int, int, int, int]:
+    try:
+        bbox = draw.textbbox((0, 0), text, font=font)
+        return int(bbox[0]), int(bbox[1]), int(bbox[2] - bbox[0]), int(bbox[3] - bbox[1])
+    except Exception:
+        width = _text_width(draw, text, font)
+        return 0, 0, width, _line_height(font)
 
 
 def _wrap_text(draw, text: str, font, max_width: int, max_lines: int = 2) -> list[str]:
@@ -247,6 +307,209 @@ def _draw_text_with_shadow(draw, xy: tuple[int, int], text: str, font, fill: tup
     for dx, dy in ((-2, -2), (2, -2), (-2, 2), (2, 2), (0, 2), (2, 0)):
         draw.text((x + dx, y + dy), text, fill=shadow, font=font)
     draw.text((x, y), text, fill=fill, font=font)
+
+
+def _draw_cover_text(draw, xy: tuple[int, int], text: str, font, fill: tuple[int, int, int], stroke: tuple[int, int, int], stroke_width: int = 5) -> None:
+    draw.text(xy, text, fill=stroke, font=font, stroke_width=stroke_width + 2, stroke_fill=stroke)
+    draw.text(xy, text, fill=fill, font=font, stroke_width=stroke_width, stroke_fill=stroke)
+
+
+def _fit_cover_font(draw, text: str, max_width: int, max_lines: int, start_size: int, min_size: int = 46):
+    size = int(start_size)
+    while size >= min_size:
+        font = _load_font(size)
+        lines = _wrap_text(draw, text, font, max_width, max_lines=max_lines)
+        if all(_text_width(draw, line, font) <= max_width for line in lines):
+            return font, lines
+        size -= 4
+    font = _load_font(min_size)
+    return font, _wrap_text(draw, text, font, max_width, max_lines=max_lines)
+
+
+def _int_to_chinese(value: int) -> str:
+    digits = "零一二三四五六七八九"
+    units = [(1000, "千"), (100, "百"), (10, "十")]
+    value = max(0, int(value or 0))
+    if value <= 10:
+        return "十" if value == 10 else digits[value]
+    result = ""
+    pending_zero = False
+    for unit_value, unit_name in units:
+        digit = value // unit_value
+        value %= unit_value
+        if digit:
+            if pending_zero:
+                result += "零"
+                pending_zero = False
+            if not (unit_value == 10 and digit == 1 and not result):
+                result += digits[digit]
+            result += unit_name
+        elif result and value:
+            pending_zero = True
+    if value:
+        if pending_zero:
+            result += "零"
+        result += digits[value]
+    return result or digits[0]
+
+
+def _split_cover_title(chapter_num: int, chapter_title: str) -> tuple[str, list[str]]:
+    raw = re.sub(r"\s+", " ", str(chapter_title or "").strip())
+    match = re.match(r"^(第\s*[0-9０-９零〇一二三四五六七八九十百千万两]+\s*[回章])[\s　·、，,：:—-]*(.*)$", raw)
+    label = re.sub(r"\s+", "", match.group(1)) if match else f"第{_int_to_chinese(int(chapter_num or 0))}回"
+    title = str(match.group(2) if match else raw).strip()
+    if not title:
+        return label, []
+    parts = [part.strip() for part in re.split(r"[\s　/|；;，,。]+", title) if part.strip()]
+    if len(parts) <= 1 and len(title) >= 12:
+        split_at = len(title) // 2
+        for idx in range(max(4, split_at - 4), min(len(title) - 4, split_at + 4) + 1):
+            if title[idx : idx + 1] in "，,、；; ":
+                split_at = idx + 1
+                break
+        parts = [title[:split_at].strip(" ，,、；;"), title[split_at:].strip(" ，,、；;")]
+    return label, [part for part in parts if part][:2]
+
+
+def _fit_cover_lines(draw, lines: list[str], start_size: int, min_size: int, max_width: int):
+    size = int(start_size)
+    while size >= min_size:
+        font = _load_cover_font(size, "title")
+        wrapped: list[str] = []
+        for line in lines:
+            wrapped.extend(_wrap_text(draw, line, font, max_width, max_lines=2))
+        if len(wrapped) <= 3 and all(_text_width(draw, line, font) <= max_width for line in wrapped):
+            return font, wrapped
+        size -= 4
+    font = _load_cover_font(min_size, "title")
+    wrapped = []
+    for line in lines:
+        wrapped.extend(_wrap_text(draw, line, font, max_width, max_lines=2))
+    return font, wrapped[:3]
+
+
+def _cover_fill_image(base, target_w: int, target_h: int):
+    from PIL import Image, ImageFilter
+
+    src_w, src_h = base.size
+    scale = min(target_w / src_w, target_h / src_h)
+    full = base.resize((max(1, int(src_w * scale)), max(1, int(src_h * scale))), Image.Resampling.LANCZOS)
+    bg_scale = max(target_w / src_w, target_h / src_h)
+    bg = base.resize((max(1, int(src_w * bg_scale)), max(1, int(src_h * bg_scale))), Image.Resampling.LANCZOS)
+    left = max(0, (bg.width - target_w) // 2)
+    top = max(0, (bg.height - target_h) // 2)
+    canvas = bg.crop((left, top, left + target_w, top + target_h)).filter(ImageFilter.GaussianBlur(14))
+    x = (target_w - full.width) // 2
+    y = (target_h - full.height) // 2
+    canvas.paste(full, (x, y))
+    return canvas
+
+
+def _compose_cover_image(frame_path: Path, cover_path: Path, *, novel_name: str, chapter_num: int, chapter_title: str, logo_path: Path | None = None) -> None:
+    from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
+
+    base = Image.open(frame_path).convert("RGB")
+    target_w, target_h = 1920, 1080
+    canvas = _cover_fill_image(base, target_w, target_h)
+    canvas = ImageEnhance.Color(canvas).enhance(0.92)
+    canvas = ImageEnhance.Contrast(canvas).enhance(1.06)
+    warm = Image.new("RGB", (target_w, target_h), (246, 210, 150))
+    canvas = Image.blend(canvas, warm, 0.055)
+    overlay = Image.new("RGBA", (target_w, target_h), (0, 0, 0, 0))
+    odraw = ImageDraw.Draw(overlay)
+    for row in range(target_h):
+        top_alpha = max(0, 72 - int(row * 0.22))
+        bottom_alpha = max(0, int((row - target_h * 0.48) / (target_h * 0.52) * 178))
+        edge = max(abs(row - target_h / 2) / (target_h / 2), 0)
+        alpha = max(top_alpha, bottom_alpha, int((edge**2.2) * 36))
+        if alpha > 0:
+            odraw.line([(0, row), (target_w, row)], fill=(0, 0, 0, min(188, alpha)))
+    for col in range(target_w):
+        edge = abs(col - target_w / 2) / (target_w / 2)
+        alpha = int((edge**2.4) * 60)
+        if alpha > 0:
+            odraw.line([(col, 0), (col, target_h)], fill=(0, 0, 0, alpha))
+    noise = Image.effect_noise((target_w, target_h), 18).convert("L")
+    paper = Image.new("RGBA", (target_w, target_h), (232, 205, 150, 0))
+    paper.putalpha(noise.point(lambda p: 10 if p > 142 else 0))
+    overlay = Image.alpha_composite(overlay, paper)
+    canvas = Image.alpha_composite(canvas.convert("RGBA"), overlay)
+    draw = ImageDraw.Draw(canvas)
+
+    if logo_path and logo_path.exists():
+        try:
+            logo = Image.open(logo_path).convert("RGBA")
+            logo_size = int(target_w * 0.095)
+            logo.thumbnail((logo_size, logo_size), Image.Resampling.LANCZOS)
+            alpha = logo.getchannel("A").point(lambda p: int(p * 0.78))
+            logo.putalpha(alpha)
+            logo_x = target_w - logo.width - int(target_w * 0.045)
+            logo_y = target_h - logo.height - int(target_h * 0.052)
+            shadow_alpha = alpha.filter(ImageFilter.GaussianBlur(8)).point(lambda p: int(p * 0.55))
+            shadow = Image.new("RGBA", logo.size, (0, 0, 0, 0))
+            shadow.putalpha(shadow_alpha)
+            canvas.alpha_composite(shadow, (logo_x + 4, logo_y + 5))
+            canvas.alpha_composite(logo, (logo_x, logo_y))
+        except Exception:
+            pass
+
+    badge_text = str(novel_name or "").strip() or "有声小说"
+    badge_font = _load_cover_font(max(56, int(target_w * 0.042)), "plaque")
+    badge_w = _text_width(draw, badge_text, badge_font) + int(target_w * 0.04)
+    badge_h = int(_line_height(badge_font) * 1.18)
+    badge_x = target_w - badge_w - int(target_w * 0.052)
+    badge_y = int(target_h * 0.06)
+    draw.rounded_rectangle((badge_x + 5, badge_y + 6, badge_x + badge_w + 5, badge_y + badge_h + 6), radius=10, fill=(0, 0, 0, 80))
+    draw.rounded_rectangle((badge_x, badge_y, badge_x + badge_w, badge_y + badge_h), radius=10, fill=(233, 206, 150, 210), outline=(92, 52, 18, 220), width=2)
+    draw.rectangle((badge_x + 8, badge_y + 8, badge_x + badge_w - 8, badge_y + badge_h - 8), outline=(146, 91, 34, 150), width=1)
+    badge_text_left, badge_text_top, badge_text_w, badge_text_h = _text_size(draw, badge_text, badge_font)
+    draw.text(
+        (
+            badge_x + (badge_w - badge_text_w) // 2 - badge_text_left,
+            badge_y + (badge_h - badge_text_h) // 2 - badge_text_top,
+        ),
+        badge_text,
+        font=badge_font,
+        fill=(63, 34, 13),
+        stroke_width=1,
+        stroke_fill=(255, 236, 190),
+    )
+
+    label, title_parts = _split_cover_title(chapter_num, chapter_title)
+    label_font = _load_cover_font(max(46, int(target_w * 0.028)), "title")
+    title_font, title_lines = _fit_cover_lines(draw, title_parts, start_size=int(target_w * 0.052), min_size=max(64, int(target_w * 0.036)), max_width=int(target_w * 0.86))
+    title_lines = title_lines[:2]
+    display_title_lines = title_lines or [_strip_chapter_prefix(chapter_title)]
+    label_bbox = _text_size(draw, label, label_font)
+    title_bboxes = [_text_size(draw, line, title_font) for line in display_title_lines]
+    label_h = label_bbox[3]
+    title_heights = [bbox[3] for bbox in title_bboxes]
+    label_gap = int(target_h * 0.018)
+    title_gap = int(target_h * 0.006)
+    block_h = label_h + label_gap + sum(title_heights) + title_gap * max(0, len(display_title_lines) - 1)
+    panel_h = int(target_h * 0.30)
+    panel_y = int(target_h * 0.61)
+    panel_pad_y = max(18, (panel_h - block_h) // 2)
+    title_y = panel_y + panel_pad_y
+    center_x = target_w // 2
+    title_overlay = Image.new("RGBA", (target_w, target_h), (0, 0, 0, 0))
+    title_overlay_draw = ImageDraw.Draw(title_overlay)
+    title_overlay_draw.rectangle((0, panel_y, target_w, panel_y + panel_h), fill=(0, 0, 0, 153))
+    canvas = Image.alpha_composite(canvas, title_overlay)
+    draw = ImageDraw.Draw(canvas)
+
+    label_x = center_x - _text_width(draw, label, label_font) // 2
+    draw.text((label_x - label_bbox[0], title_y - label_bbox[1]), label, font=label_font, fill=(236, 190, 99), stroke_width=4, stroke_fill=(0, 0, 0))
+    current_y = title_y + label_h + label_gap
+    for idx, line in enumerate(display_title_lines):
+        bbox = title_bboxes[idx] if idx < len(title_bboxes) else _text_size(draw, line, title_font)
+        x = center_x - _text_width(draw, line, title_font) // 2
+        fill = (255, 223, 48) if idx == len(display_title_lines) - 1 else (255, 250, 238)
+        draw.text((x - bbox[0], current_y - bbox[1]), line, font=title_font, fill=fill, stroke_width=max(5, target_w // 360), stroke_fill=(0, 0, 0))
+        current_y += bbox[3] + title_gap
+
+    cover_path.parent.mkdir(parents=True, exist_ok=True)
+    canvas.convert("RGB").save(cover_path, format="JPEG", quality=94, optimize=True)
 
 
 def _motion_for_index(index: int) -> dict:
@@ -772,6 +1035,100 @@ def get_video_export_file_path(task_id: int) -> tuple[Path | None, str]:
     subtitle_suffix = "nosub" if str(row["subtitle_mode"] or "srt") == "none" else "srt"
     name = f"第{int(row['chapter_num']):03d}回-{_safe_filename(str(row['chapter_title'] or '视频'))}-{int(row['width'] or DEFAULT_VIDEO_WIDTH)}x{int(row['height'] or DEFAULT_VIDEO_HEIGHT)}-{subtitle_suffix}.mp4"
     return path, name
+
+
+def get_video_export_cover_path(task_id: int, image_index: int | None = None) -> tuple[Path | None, str]:
+    conn = db_conn()
+    row = conn.execute(
+        """
+        SELECT t.output_file_path,t.novel_id,t.chapter_id,t.chapter_num,t.chapter_title,t.width,t.height,t.subtitle_mode,n.name AS novel_name
+        FROM chapter_video_export_tasks t
+        JOIN novels n ON n.id=t.novel_id
+        WHERE t.id=? AND t.status='completed'
+        """,
+        (task_id,),
+    ).fetchone()
+    if not row:
+        conn.close()
+        return None, ""
+    image_params = [int(row["novel_id"]), int(row["chapter_id"])]
+    image_where = "novel_id=? AND chapter_id=? AND status='completed' AND COALESCE(image_file_path,'')<>''"
+    if image_index is not None and int(image_index) > 0:
+        image_where += " AND item_index=?"
+        image_params.append(int(image_index))
+    image_row = conn.execute(
+        f"""
+        SELECT item_index,image_file_path,updated_at
+        FROM chapter_illustration_images
+        WHERE {image_where}
+        ORDER BY item_index ASC LIMIT 1
+        """,
+        tuple(image_params),
+    ).fetchone()
+    settings = fetch_settings(conn)
+    conn.close()
+    video_path = _resolve_path(str(row["output_file_path"] or ""))
+    if not video_path or not video_path.exists():
+        return None, ""
+    subtitle_suffix = "nosub" if str(row["subtitle_mode"] or "srt") == "none" else "srt"
+    selected_suffix = f"-img{int(image_row['item_index']):03d}" if image_row else "-frame"
+    stem = f"chapter-{int(row['chapter_num']):03d}-{int(row['width'] or DEFAULT_VIDEO_WIDTH)}x{int(row['height'] or DEFAULT_VIDEO_HEIGHT)}-{subtitle_suffix}-cover-v{COVER_STYLE_VERSION}{selected_suffix}"
+    cover_path = video_path.with_name(f"{stem}.jpg")
+    source_path = _resolve_path(str(image_row["image_file_path"] or "")) if image_row else None
+    logo_path = resolve_video_cover_logo_path(settings)
+    cache_mtime = video_path.stat().st_mtime
+    if source_path and source_path.exists():
+        cache_mtime = max(cache_mtime, source_path.stat().st_mtime)
+    if logo_path and logo_path.exists():
+        cache_mtime = max(cache_mtime, logo_path.stat().st_mtime)
+    if cover_path.exists() and cover_path.stat().st_mtime >= cache_mtime:
+        name = f"第{int(row['chapter_num']):03d}回-{_safe_filename(str(row['chapter_title'] or '封面'))}-cover.jpg"
+        return cover_path, name
+    try:
+        import PIL  # noqa: F401
+    except ImportError as exc:
+        raise RuntimeError("缺少 Pillow，请安装 pillow") from exc
+    temp_frame_path: Path | None = None
+    if not source_path or not source_path.exists():
+        ffmpeg = shutil.which("ffmpeg")
+        if not ffmpeg:
+            raise RuntimeError("缺少章回首张插画，且 ffmpeg not found")
+        temp_frame_path = video_path.with_name(f"{stem}-frame.png")
+        command = [
+            ffmpeg,
+            "-y",
+            "-loglevel",
+            "error",
+            "-ss",
+            "1",
+            "-i",
+            str(video_path),
+            "-frames:v",
+            "1",
+            str(temp_frame_path),
+        ]
+        proc = subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, timeout=60)
+        if proc.returncode != 0 or not temp_frame_path.exists():
+            message = (proc.stderr or "").strip()[-1000:] or f"ffmpeg failed ({proc.returncode})"
+            raise RuntimeError(message)
+        source_path = temp_frame_path
+    try:
+        _compose_cover_image(
+            source_path,
+            cover_path,
+            novel_name=str(row["novel_name"] or ""),
+            chapter_num=int(row["chapter_num"] or 0),
+            chapter_title=str(row["chapter_title"] or ""),
+            logo_path=logo_path,
+        )
+    finally:
+        if temp_frame_path:
+            try:
+                temp_frame_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+    name = f"第{int(row['chapter_num']):03d}回-{_safe_filename(str(row['chapter_title'] or '封面'))}-cover.jpg"
+    return cover_path, name
 
 
 def _run_task_in_subprocess(task_id: int, progress_callback=None) -> None:

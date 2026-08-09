@@ -649,11 +649,9 @@ function sceneStatsFromText(text) {
   });
 }
 
-function openSceneStatsModal() {
+function renderSceneStatsPanel() {
   if (activePayloadStage !== "scene" || activePayloadKind !== "output") return;
   const editor = document.getElementById("illustrationPayloadContent");
-  const dialog = document.getElementById("sceneStatsDialog");
-  const title = document.getElementById("sceneStatsTitle");
   const summary = document.getElementById("sceneStatsSummary");
   const tbody = document.getElementById("sceneStatsTableBody");
   const text = String(editor?.value || "").trim();
@@ -665,7 +663,6 @@ function openSceneStatsModal() {
     return;
   }
   const totalDuration = stats.reduce((sum, item) => sum + Math.max(0, Number(item.duration || 0)), 0);
-  title.textContent = `统计Scene · 第${String(activePayloadChapterNum || 0).padStart(3, "0")}回`;
   summary.textContent = `Scene ${stats.length} 项 · 合计时长 ${formatSceneDuration(totalDuration)}`;
   tbody.innerHTML = stats.length ? stats.map((item) => `
     <tr>
@@ -676,7 +673,20 @@ function openSceneStatsModal() {
       <td>${escapeHtml(formatSceneDuration(item.duration))}</td>
     </tr>
   `).join("") : '<tr><td colspan="5" class="empty-text">未找到 Scene 列表</td></tr>';
-  dialog.showModal();
+}
+
+function toggleSceneStatsPanel() {
+  const panel = document.getElementById("sceneStatsPanel");
+  const btn = document.getElementById("sceneStatsBtn");
+  if (!panel) return;
+  if (panel.hidden) {
+    renderSceneStatsPanel();
+    panel.hidden = false;
+    if (btn) btn.textContent = "收起Scene统计";
+  } else {
+    panel.hidden = true;
+    if (btn) btn.textContent = "统计Scene";
+  }
 }
 
 function hidePayloadTimeTooltip() {
@@ -770,6 +780,9 @@ async function openPayload(chapterNum, stage, kind) {
   if (downloadBtn) downloadBtn.hidden = kind !== "output";
   if (saveBtn) saveBtn.hidden = !isEditableSceneOutput;
   if (sceneStatsBtn) sceneStatsBtn.hidden = !isEditableSceneOutput;
+  if (sceneStatsBtn) sceneStatsBtn.textContent = "统计Scene";
+  const sceneStatsPanel = document.getElementById("sceneStatsPanel");
+  if (sceneStatsPanel) sceneStatsPanel.hidden = true;
   if (shortcutHint) shortcutHint.hidden = !isEditableSceneOutput;
   if (content) content.readOnly = !isEditableSceneOutput;
   const chapter = chapterItems.find((item) => Number(item.chapterNum || 0) === Number(chapterNum || 0));
@@ -1564,7 +1577,7 @@ function bindEvents() {
       toast(`保存失败：${err.message}`);
     }
   });
-  document.getElementById("sceneStatsBtn").addEventListener("click", openSceneStatsModal);
+  document.getElementById("sceneStatsBtn").addEventListener("click", toggleSceneStatsPanel);
   document.getElementById("illustrationPayloadDialog").addEventListener("keydown", async (event) => {
     if ((event.ctrlKey || event.metaKey) && String(event.key || "").toLowerCase() === "s") {
       event.preventDefault();

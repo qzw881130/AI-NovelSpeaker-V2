@@ -171,6 +171,7 @@ function load(settings) {
   const lineAudioQueue = settings.lineAudioQueue || {};
   const copyrightAudio = settings.copyrightAudio || {};
   const liveEndingAudio = settings.liveEndingAudio || {};
+  const videoCoverLogo = settings.videoCoverLogo || {};
   document.getElementById("comfyUrl").value = settings.comfyUrl || "";
   document.getElementById("proxyUrl").value = settings.proxyUrl || "";
   document.getElementById("llmProvider").value = llm.provider || "grok";
@@ -216,6 +217,8 @@ function load(settings) {
   document.getElementById("copyrightOutroEnabled").checked = Boolean(copyrightAudio.outroEnabled);
   applyCopyrightAudioState("intro", String(copyrightAudio.introPath || ""));
   applyCopyrightAudioState("outro", String(copyrightAudio.outroPath || ""));
+  document.getElementById("videoCoverLogoEnabled").checked = Boolean(videoCoverLogo.enabled);
+  applyVideoCoverLogoState(String(videoCoverLogo.path || ""));
   renderLiveEndingAudioItems(liveEndingAudio.items || []);
   syncLineAudioQueueModeVisibility();
   syncOllamaFieldVisibility();
@@ -229,6 +232,17 @@ function applyCopyrightAudioState(kind, path) {
   player.classList.toggle("hidden", !normalized);
   player.src = normalized ? `/api/settings/copyright-audio/${kind}/file?v=${Date.now()}` : "";
   status.textContent = normalized ? "已上传音频" : "未上传音频";
+}
+
+function applyVideoCoverLogoState(path) {
+  const normalized = String(path || "").trim();
+  const preview = document.getElementById("videoCoverLogoPreview");
+  const status = document.getElementById("videoCoverLogoStatus");
+  if (!preview || !status) return;
+  preview.dataset.path = normalized;
+  preview.classList.toggle("hidden", !normalized);
+  preview.src = normalized ? `/api/settings/video-cover-logo/file?v=${Date.now()}` : "";
+  status.textContent = normalized ? "已上传Logo" : "未上传，启用时使用默认Logo";
 }
 
 function renderLiveEndingAudioItems(items) {
@@ -288,6 +302,26 @@ async function uploadLiveEndingAudio(index, file) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ index: Number(index), audioBase64, fileName: file.name }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || `HTTP ${res.status}`);
+  }
+  return String(data.path || "");
+}
+
+async function uploadVideoCoverLogo(file) {
+  const buffer = await file.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  bytes.forEach((b) => {
+    binary += String.fromCharCode(b);
+  });
+  const imageBase64 = btoa(binary);
+  const res = await fetch("/api/settings/video-cover-logo", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ imageBase64, fileName: file.name }),
   });
   const data = await res.json();
   if (!res.ok) {
@@ -405,6 +439,10 @@ function readSettingsForm() {
           path: player?.dataset.path || "",
         };
       }).filter((item) => item.path),
+    },
+    videoCoverLogo: {
+      enabled: document.getElementById("videoCoverLogoEnabled").checked,
+      path: document.getElementById("videoCoverLogoPreview")?.dataset.path || "",
     },
   };
 }
@@ -552,6 +590,26 @@ function bindEvents() {
   document.getElementById("lineAudioQueueScheduledAt").addEventListener("change", markLlmDirty);
   document.getElementById("copyrightIntroEnabled").addEventListener("change", markLlmDirty);
   document.getElementById("copyrightOutroEnabled").addEventListener("change", markLlmDirty);
+  document.getElementById("videoCoverLogoEnabled").addEventListener("change", markLlmDirty);
+
+  document.getElementById("uploadVideoCoverLogoBtn").addEventListener("click", () => {
+    document.getElementById("videoCoverLogoFile").click();
+  });
+  document.getElementById("videoCoverLogoFile").addEventListener("change", async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const path = await uploadVideoCoverLogo(file);
+      applyVideoCoverLogoState(path);
+      document.getElementById("videoCoverLogoEnabled").checked = true;
+      toast("视频封面 Logo 已上传");
+      markLlmDirty();
+    } catch (err) {
+      toast(err.message);
+    } finally {
+      event.target.value = "";
+    }
+  });
 
   document.getElementById("uploadCopyrightIntroBtn").addEventListener("click", () => {
     document.getElementById("copyrightIntroFile").click();

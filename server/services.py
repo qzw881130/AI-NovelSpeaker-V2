@@ -1308,7 +1308,81 @@ def fetch_settings(conn: sqlite3.Connection) -> dict:
                 str(kv.get("live_ending_audio_path", "") or "").strip(),
             ),
         },
+        "videoCoverLogo": {
+            "enabled": str(kv.get("video_cover_logo_enabled", "0") or "0") == "1",
+            "path": str(kv.get("video_cover_logo_path", "") or "").strip(),
+        },
     }
+
+
+def ensure_default_video_cover_logo() -> Path:
+    from PIL import Image, ImageDraw, ImageFont
+
+    target_dir = ROOT_DIR / "temp" / "settings"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    path = target_dir / "video-cover-logo-default.png"
+    if path.exists():
+        return path
+    size = 512
+    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    draw.ellipse((18, 18, size - 18, size - 18), fill=(252, 219, 142, 255), outline=(91, 42, 14, 255), width=16)
+    draw.ellipse((44, 44, size - 44, size - 44), outline=(255, 249, 228, 230), width=10)
+    draw.rounded_rectangle((66, 294, size - 66, 410), radius=34, fill=(104, 50, 22, 255), outline=(255, 240, 160, 255), width=8)
+    font_paths = [
+        "/System/Library/Fonts/Supplemental/Songti.ttc",
+        "/System/Library/Fonts/Supplemental/Kaiti.ttc",
+        "/System/Library/Fonts/PingFang.ttc",
+    ]
+    def load_font(font_size: int):
+        for font_path in font_paths:
+            if Path(font_path).exists():
+                try:
+                    return ImageFont.truetype(font_path, font_size)
+                except Exception:
+                    continue
+        return ImageFont.load_default()
+    title_font = load_font(58)
+    small_font = load_font(38)
+    for text, font, y, fill in (("旺仔", title_font, 302, (255, 238, 83, 255)), ("有声小说", small_font, 358, (255, 250, 232, 255))):
+        bbox = draw.textbbox((0, 0), text, font=font, stroke_width=4)
+        x = (size - (bbox[2] - bbox[0])) // 2
+        draw.text((x, y), text, font=font, fill=fill, stroke_width=4, stroke_fill=(36, 20, 10, 255))
+    draw.ellipse((172, 74, 340, 242), fill=(255, 229, 178, 255), outline=(70, 39, 22, 255), width=8)
+    draw.arc((138, 110, 202, 212), 95, 265, fill=(101, 57, 29, 255), width=10)
+    draw.arc((310, 110, 374, 212), -85, 85, fill=(101, 57, 29, 255), width=10)
+    draw.ellipse((207, 140, 227, 164), fill=(24, 18, 14, 255))
+    draw.ellipse((285, 140, 305, 164), fill=(24, 18, 14, 255))
+    draw.arc((220, 164, 292, 214), 20, 160, fill=(136, 55, 34, 255), width=7)
+    draw.line((180, 92, 220, 58, 264, 70, 308, 58, 334, 94), fill=(58, 34, 20, 255), width=18, joint="curve")
+    draw.rectangle((138, 156, 158, 220), fill=(41, 25, 17, 255))
+    draw.ellipse((120, 124, 176, 180), fill=(245, 161, 49, 255), outline=(41, 25, 17, 255), width=8)
+    draw.rectangle((354, 112, 376, 220), fill=(41, 25, 17, 255))
+    draw.ellipse((336, 92, 394, 150), fill=(41, 25, 17, 255))
+    draw.rectangle((350, 214, 380, 234), fill=(41, 25, 17, 255))
+    draw.line((206, 438, 306, 438), fill=(91, 42, 14, 255), width=8)
+    draw.arc((222, 416, 290, 460), 0, 180, fill=(91, 42, 14, 255), width=6)
+    img.save(path, format="PNG")
+    return path
+
+
+def resolve_video_cover_logo_path(settings: dict | None = None) -> Path | None:
+    config = (settings or {}).get("videoCoverLogo") or {}
+    if not isinstance(config, dict) or not config.get("enabled"):
+        return None
+    raw_path = str(config.get("path") or "").strip()
+    if raw_path:
+        path = Path(raw_path)
+        if not path.is_absolute():
+            path = ROOT_DIR / path
+        try:
+            resolved = path.resolve()
+            allowed = (ROOT_DIR / "temp" / "settings").resolve()
+            if resolved.exists() and resolved.is_file() and resolved.is_relative_to(allowed):
+                return resolved
+        except Exception:
+            pass
+    return ensure_default_video_cover_logo()
 
 
 def normalize_live_ending_audio_items(raw_json: str, legacy_path: str = "") -> list[dict]:
@@ -2368,8 +2442,39 @@ def extract_chat_content(data: dict) -> str:
                 text = item.get("text")
                 if isinstance(text, str):
                     parts.append(text)
-        return "".join(parts).strip()
-    return str(content or "").strip()
+        joined = "".join(parts).strip()
+        if joined:
+            return joined
+    else:
+        text = str(content or "").strip()
+        if text:
+            return text
+    return str(message.get("reasoning_content") or "").strip()
+
+
+def empty_chat_content_detail(data: dict) -> str:
+    choices = data.get("choices")
+    if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+        return ""
+    first = choices[0]
+    parts = []
+    finish_reason = str(first.get("finish_reason") or "").strip()
+    if finish_reason:
+        parts.append(f"finish_reason={finish_reason}")
+    message = first.get("message")
+    if isinstance(message, dict):
+        keys = ",".join(str(key) for key in message.keys())
+        if keys:
+            parts.append(f"message_keys={keys}")
+    usage = data.get("usage")
+    if isinstance(usage, dict):
+        usage_parts = []
+        for key in ("prompt_tokens", "completion_tokens", "total_tokens"):
+            if key in usage:
+                usage_parts.append(f"{key}={usage.get(key)}")
+        if usage_parts:
+            parts.append("usage(" + ",".join(usage_parts) + ")")
+    return "; ".join(parts)
 
 
 def read_chapter_text(file_path: str) -> str:
@@ -2524,7 +2629,8 @@ def call_llm_json_parse(
         raise RuntimeError("LLM response is not object")
     content = extract_chat_content(parsed_body)
     if not content:
-        raise RuntimeError("LLM response content is empty")
+        detail = empty_chat_content_detail(parsed_body)
+        raise RuntimeError("LLM response content is empty" + (f" ({detail})" if detail else ""))
     return content
 
 
@@ -2572,7 +2678,8 @@ def call_llm_prompt_json(
         raise RuntimeError("LLM response is not object")
     content = extract_chat_content(parsed_body)
     if not content:
-        raise RuntimeError("LLM response content is empty")
+        detail = empty_chat_content_detail(parsed_body)
+        raise RuntimeError("LLM response content is empty" + (f" ({detail})" if detail else ""))
     return content
 
 

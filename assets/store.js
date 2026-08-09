@@ -36,6 +36,10 @@ const DEFAULT_SETTINGS = {
   liveEndingAudio: {
     items: [],
   },
+  videoCoverLogo: {
+    enabled: false,
+    path: "",
+  },
 };
 
 let cache = {
@@ -70,6 +74,10 @@ function normalizeSettings(raw) {
     liveEndingAudio: {
       ...DEFAULT_SETTINGS.liveEndingAudio,
       ...(next.liveEndingAudio || {}),
+    },
+    videoCoverLogo: {
+      ...DEFAULT_SETTINGS.videoCoverLogo,
+      ...(next.videoCoverLogo || {}),
     },
   };
 }
@@ -1071,6 +1079,13 @@ function getVideoExportFileUrl(taskId) {
   return `/api/video-export-tasks/${Number(taskId)}/file`;
 }
 
+function getVideoExportCoverUrl(taskId, options = {}) {
+  const params = new URLSearchParams();
+  if (options.imageIndex) params.set("imageIndex", String(Number(options.imageIndex)));
+  const query = params.toString();
+  return `/api/video-export-tasks/${Number(taskId)}/cover${query ? `?${query}` : ""}`;
+}
+
 export {
   advanceJsonTasks,
   bytesToText,
@@ -1206,5 +1221,6 @@ export {
   retryVideoExportTask,
   cancelVideoExportTask,
   getVideoExportFileUrl,
+  getVideoExportCoverUrl,
   downloadNovelBundleFile,
 };
