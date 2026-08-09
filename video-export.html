@@ -61,7 +61,11 @@
         <section class="panel">
           <div class="panel-head">
             <h2>导出任务</h2>
-            <span id="videoExportSummary" class="queue-summary-badge">0 个任务</span>
+            <div class="video-export-task-head-actions">
+              <button id="videoExportCoverBundleBtn" class="ghost-btn" type="button">下载所有封面</button>
+              <button id="videoExportSortOrderBtn" class="ghost-btn icon-btn video-export-sort-btn" type="button" aria-label="按 ID 降序排列" title="按 ID 降序排列"></button>
+              <span id="videoExportSummary" class="queue-summary-badge">0 个任务</span>
+            </div>
           </div>
           <div id="videoExportTaskList" class="task-detail-content"></div>
         </section>
@@ -99,6 +103,24 @@
         <span id="videoExportCoverImageMeta" class="meta"></span>
       </div>
       <img id="videoExportCoverPreview" class="video-cover-preview" alt="视频封面预览" />
+    </dialog>
+
+    <dialog id="videoExportCoverBundleDialog" class="video-cover-bundle-dialog">
+      <div class="video-player-dialog-head">
+        <div>
+          <h2>下载所有封面</h2>
+          <p id="videoExportCoverBundleMeta" class="meta">将当前小说已完成的视频封面打包为 ZIP。</p>
+        </div>
+        <button id="videoExportCoverBundleCloseBtn" class="ghost-btn" type="button">关闭</button>
+      </div>
+      <div class="video-cover-bundle-body">
+        <button id="videoExportCoverBundleStartBtn" class="primary-btn" type="button">打包封面</button>
+        <div id="videoExportCoverBundleProgressWrap" class="video-cover-bundle-progress hidden">
+          <div class="progress-row"><span id="videoExportCoverBundleProgressBar" style="width:0%"></span></div>
+          <p id="videoExportCoverBundleStatus" class="meta">等待打包</p>
+        </div>
+        <a id="videoExportCoverBundleDownloadLink" class="primary-btn hidden" href="#" download>下载 ZIP</a>
+      </div>
     </dialog>
 
     <div id="toast" class="toast"></div>

@@ -313,6 +313,8 @@ BUNDLE_AUDIO_PRESETS = {
 
 BUNDLE_TASKS_LOCK = threading.Lock()
 BUNDLE_TASKS: dict[int, dict] = {}
+VIDEO_COVER_BUNDLE_TASKS_LOCK = threading.Lock()
+VIDEO_COVER_BUNDLE_TASKS: dict[int, dict] = {}
 
 
 def _normalize_bundle_audio_preset(value: str) -> str:
@@ -332,6 +334,145 @@ def _set_bundle_task_status(novel_id: int, **updates) -> dict:
         current.update(updates)
         BUNDLE_TASKS[int(novel_id)] = current
         return dict(current)
+
+
+def _video_cover_bundle_output_dir() -> Path:
+    output_dir = ROOT_DIR / "output" / "video-covers"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    return output_dir
+
+
+def _build_video_cover_bundle_record(zip_path: Path) -> dict:
+    stat = zip_path.stat()
+    return {
+        "fileName": zip_path.name,
+        "sizeBytes": int(stat.st_size),
+        "createdAt": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+    }
+
+
+def _get_video_cover_bundle_status(novel_id: int) -> dict | None:
+    with VIDEO_COVER_BUNDLE_TASKS_LOCK:
+        task = VIDEO_COVER_BUNDLE_TASKS.get(int(novel_id))
+        return dict(task) if task else None
+
+
+def _set_video_cover_bundle_status(novel_id: int, **updates) -> dict:
+    with VIDEO_COVER_BUNDLE_TASKS_LOCK:
+        current = dict(VIDEO_COVER_BUNDLE_TASKS.get(int(novel_id)) or {})
+        current.update(updates)
+        VIDEO_COVER_BUNDLE_TASKS[int(novel_id)] = current
+        return dict(current)
+
+
+def _get_video_cover_bundle_entries(novel_id: int) -> tuple[bool, str, str, list[dict]]:
+    conn = db_conn()
+    novel = conn.execute(
+        "SELECT id,english_dir FROM novels WHERE id=?",
+        (novel_id,),
+    ).fetchone()
+    if not novel:
+        conn.close()
+        return False, "novel not found", "", []
+    rows = conn.execute(
+        """
+        SELECT id,chapter_num,chapter_title
+        FROM chapter_video_export_tasks
+        WHERE novel_id=? AND status='completed' AND COALESCE(output_file_path,'')<>''
+        ORDER BY chapter_num ASC,id ASC
+        """,
+        (novel_id,),
+    ).fetchall()
+    conn.close()
+    english_dir = str(novel["english_dir"] or "").strip()
+    if not english_dir:
+        return False, "novel english_dir missing", "", []
+    entries = [
+        {
+            "taskId": int(row["id"]),
+            "chapterNum": int(row["chapter_num"] or 0),
+            "chapterTitle": str(row["chapter_title"] or ""),
+        }
+        for row in rows
+    ]
+    if not entries:
+        return False, "completed video export covers not found", english_dir, []
+    return True, "ok", english_dir, entries
+
+
+def _run_video_cover_bundle_task(novel_id: int) -> None:
+    try:
+        ok, msg, english_dir, entries = _get_video_cover_bundle_entries(novel_id)
+        if not ok:
+            _set_video_cover_bundle_status(novel_id, status="failed", error=msg)
+            return
+        stamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+        out_name = f"{english_dir}-video-covers-{stamp}.zip"
+        zip_path = _video_cover_bundle_output_dir() / out_name
+        total = len(entries)
+        _set_video_cover_bundle_status(
+            novel_id,
+            status="running",
+            current=0,
+            total=total,
+            error="",
+            fileName=out_name,
+            bundle=None,
+        )
+        with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for index, entry in enumerate(entries, start=1):
+                cover_path, cover_name = get_video_export_cover_path(int(entry["taskId"]))
+                if not cover_path or not cover_path.exists():
+                    _set_video_cover_bundle_status(novel_id, current=index)
+                    continue
+                safe_name = re.sub(r"[\\/:*?\"<>|\x00-\x1f]+", "_", cover_name or f"cover-{entry['taskId']}.jpg").strip(" ._") or "cover.jpg"
+                arcname = Path(english_dir) / "video-covers" / f"{int(entry['chapterNum']):03d}-{int(entry['taskId'])}-{safe_name}"
+                zf.write(cover_path, arcname=str(arcname))
+                _set_video_cover_bundle_status(novel_id, current=index)
+        _set_video_cover_bundle_status(
+            novel_id,
+            status="completed",
+            current=total,
+            total=total,
+            bundle=_build_video_cover_bundle_record(zip_path),
+        )
+    except Exception as exc:
+        _set_video_cover_bundle_status(novel_id, status="failed", error=str(exc))
+
+
+def _start_video_cover_bundle_task(novel_id: int) -> tuple[bool, str, dict | None]:
+    current = _get_video_cover_bundle_status(novel_id)
+    if current and current.get("status") == "running":
+        return True, "running", current
+    task = _set_video_cover_bundle_status(
+        novel_id,
+        status="queued",
+        current=0,
+        total=0,
+        error="",
+        startedAt=datetime.now().isoformat(),
+        fileName="",
+        bundle=None,
+    )
+    threading.Thread(target=_run_video_cover_bundle_task, args=(int(novel_id),), daemon=True).start()
+    return True, "started", task
+
+
+def _list_video_cover_bundle_files(novel_id: int) -> tuple[bool, str, str, list[dict]]:
+    conn = db_conn()
+    row = conn.execute("SELECT english_dir FROM novels WHERE id=?", (novel_id,)).fetchone()
+    conn.close()
+    if not row:
+        return False, "novel not found", "", []
+    english_dir = str(row["english_dir"] or "").strip()
+    if not english_dir:
+        return False, "novel english_dir missing", "", []
+    files = sorted(
+        _video_cover_bundle_output_dir().glob(f"{english_dir}-video-covers-*.zip"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    return True, "ok", english_dir, [_build_video_cover_bundle_record(path) for path in files if path.is_file()]
 
 
 def _detect_bundle_audio_preset(file_name: str) -> str:
@@ -1428,6 +1569,40 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"tasks": list_video_export_tasks(novel_id or None)})
             return
 
+        m_video_cover_bundle_status = re.match(r"^/api/novels/(\d+)/video-cover-bundle/status$", route)
+        if m_video_cover_bundle_status:
+            novel_id = int(m_video_cover_bundle_status.group(1))
+            task = _get_video_cover_bundle_status(novel_id) or {
+                "status": "idle",
+                "current": 0,
+                "total": 0,
+                "error": "",
+                "fileName": "",
+                "bundle": None,
+            }
+            self.send_json({"task": task})
+            return
+
+        m_video_cover_bundle_file = re.match(r"^/api/novels/(\d+)/video-cover-bundles/(.+)$", route)
+        if m_video_cover_bundle_file:
+            novel_id = int(m_video_cover_bundle_file.group(1))
+            file_name = unquote(str(m_video_cover_bundle_file.group(2) or "").strip())
+            ok, msg, english_dir, bundles = _list_video_cover_bundle_files(novel_id)
+            if not ok:
+                code = 404 if "not found" in msg else 400
+                self.send_json({"error": msg}, code)
+                return
+            allowed = {str(item["fileName"]) for item in bundles}
+            if file_name not in allowed or not file_name.startswith(f"{english_dir}-video-covers-"):
+                self.send_json({"error": "cover bundle not found"}, 404)
+                return
+            zip_path = (_video_cover_bundle_output_dir() / file_name).resolve()
+            if not zip_path.exists() or not zip_path.is_file():
+                self.send_json({"error": "cover bundle not found"}, 404)
+                return
+            self.send_file_response(zip_path, "application/zip", download_name=file_name, cache_control="no-store")
+            return
+
         m_video_export_status = re.match(r"^/api/novels/(\d+)/chapters/(\d+)/video-export/status$", route)
         if m_video_export_status:
             novel_id = int(m_video_export_status.group(1))
@@ -2042,6 +2217,17 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": str(exc)}, 409)
                 return
             self.send_json({"status": "ok", "message": "上下文已清空"})
+            return
+
+        m_video_cover_bundle_start = re.match(r"^/api/novels/(\d+)/video-cover-bundle$", route)
+        if m_video_cover_bundle_start:
+            novel_id = int(m_video_cover_bundle_start.group(1))
+            ok, msg, task = _start_video_cover_bundle_task(novel_id)
+            if not ok:
+                code = 404 if "not found" in msg else 400
+                self.send_json({"error": msg}, code)
+                return
+            self.send_json({"status": msg, "task": task})
             return
 
         m_copyright_audio_upload = re.match(

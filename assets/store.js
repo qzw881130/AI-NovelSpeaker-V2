@@ -1086,6 +1086,23 @@ function getVideoExportCoverUrl(taskId, options = {}) {
   return `/api/video-export-tasks/${Number(taskId)}/cover${query ? `?${query}` : ""}`;
 }
 
+async function createVideoCoverBundle(novelId) {
+  const data = await api(`/api/novels/${Number(novelId)}/video-cover-bundle`, {
+    method: "POST",
+    body: "{}",
+  });
+  return data.task || null;
+}
+
+async function fetchVideoCoverBundleStatus(novelId) {
+  const data = await api(`/api/novels/${Number(novelId)}/video-cover-bundle/status`);
+  return data.task || null;
+}
+
+function getVideoCoverBundleFileUrl(novelId, fileName) {
+  return `/api/novels/${Number(novelId)}/video-cover-bundles/${encodeURIComponent(String(fileName || ""))}`;
+}
+
 export {
   advanceJsonTasks,
   bytesToText,
@@ -1222,5 +1239,8 @@ export {
   cancelVideoExportTask,
   getVideoExportFileUrl,
   getVideoExportCoverUrl,
+  createVideoCoverBundle,
+  fetchVideoCoverBundleStatus,
+  getVideoCoverBundleFileUrl,
   downloadNovelBundleFile,
 };

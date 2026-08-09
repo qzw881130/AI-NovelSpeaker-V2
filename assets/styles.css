@@ -740,6 +740,67 @@ a.ghost-btn {
   margin-bottom: 10px;
 }
 
+.video-export-task-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.video-export-sort-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+}
+
+.sort-order-icon {
+  width: 22px;
+  height: 22px;
+}
+
+.sort-order-line,
+.sort-order-arrow {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.sort-order-line {
+  stroke: #6f4a2d;
+  stroke-width: 1.8;
+}
+
+.sort-order-arrow {
+  stroke: #b24a18;
+  stroke-width: 2.2;
+}
+
+.video-cover-bundle-dialog {
+  width: min(92vw, 520px);
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--panel-strong);
+  box-shadow: var(--shadow);
+}
+
+.video-cover-bundle-dialog::backdrop {
+  background: rgba(26, 18, 10, 0.58);
+}
+
+.video-cover-bundle-body {
+  display: grid;
+  gap: 14px;
+}
+
+.video-cover-bundle-progress {
+  display: grid;
+  gap: 8px;
+}
+
+.video-cover-bundle-progress .meta {
+  margin: 0;
+}
+
 .toolbar {
   display: flex;
   gap: 8px;

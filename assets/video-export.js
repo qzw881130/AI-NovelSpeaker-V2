@@ -1,11 +1,14 @@
 import {
   bytesToText,
   cancelVideoExportTask,
+  createVideoCoverBundle,
   fetchVideoExportTasks,
   fetchVideoExportWorkerStatus,
+  fetchVideoCoverBundleStatus,
   fetchChapterIllustrationImages,
   getActiveNovelId,
   getData,
+  getVideoCoverBundleFileUrl,
   getVideoExportCoverUrl,
   getVideoExportFileUrl,
   restartVideoExportWorker,
@@ -22,6 +25,8 @@ let refreshTimer = null;
 let activeCoverTaskId = null;
 let coverImageOptions = [];
 let coverPreviewLoading = false;
+let taskIdSortDirection = "desc";
+let coverBundlePollTimer = null;
 const VIDEO_EXPORT_REFRESH_INTERVAL_KEY = "ai_novel_video_export_refresh_interval";
 
 function escapeHtml(text) {
@@ -110,10 +115,28 @@ function filteredTasks() {
   });
 }
 
+function sortedTasks(items) {
+  const direction = taskIdSortDirection === "asc" ? 1 : -1;
+  return items.slice().sort((a, b) => (Number(a.id || 0) - Number(b.id || 0)) * direction);
+}
+
+function renderSortOrderButton() {
+  const btn = document.getElementById("videoExportSortOrderBtn");
+  if (!btn) return;
+  const isAsc = taskIdSortDirection === "asc";
+  btn.innerHTML = isAsc
+    ? `<svg class="sort-order-icon" viewBox="0 0 24 24" aria-hidden="true"><path class="sort-order-line" d="M4 18h8M4 13h11M4 8h14"/><path class="sort-order-arrow" d="M19 18V6m0 0-4 4m4-4 4 4"/></svg>`
+    : `<svg class="sort-order-icon" viewBox="0 0 24 24" aria-hidden="true"><path class="sort-order-line" d="M4 6h8M4 11h11M4 16h14"/><path class="sort-order-arrow" d="M19 6v12m0 0-4-4m4 4 4-4"/></svg>`;
+  const label = isAsc ? "按 ID 升序排列" : "按 ID 降序排列";
+  btn.setAttribute("aria-label", label);
+  btn.title = label;
+}
+
 function renderTasks() {
   const list = document.getElementById("videoExportTaskList");
   const summary = document.getElementById("videoExportSummary");
-  const visible = filteredTasks();
+  const visible = sortedTasks(filteredTasks());
+  renderSortOrderButton();
   summary.textContent = `${visible.length} / ${tasks.length} 个任务`;
   if (!visible.length) {
     list.innerHTML = `<p class="empty-text">暂无视频导出任务。</p>`;
@@ -322,6 +345,83 @@ function closeCoverPreview() {
   if (dialog?.open) dialog.close();
 }
 
+function clearCoverBundlePoll() {
+  if (coverBundlePollTimer) {
+    clearInterval(coverBundlePollTimer);
+    coverBundlePollTimer = null;
+  }
+}
+
+function renderCoverBundleStatus(task) {
+  const progressWrap = document.getElementById("videoExportCoverBundleProgressWrap");
+  const progressBar = document.getElementById("videoExportCoverBundleProgressBar");
+  const status = document.getElementById("videoExportCoverBundleStatus");
+  const link = document.getElementById("videoExportCoverBundleDownloadLink");
+  const startBtn = document.getElementById("videoExportCoverBundleStartBtn");
+  const current = Number(task?.current || 0);
+  const total = Number(task?.total || 0);
+  const percent = total > 0 ? Math.max(0, Math.min(100, Math.round((current / total) * 100))) : 0;
+  progressWrap?.classList.remove("hidden");
+  if (progressBar) progressBar.style.width = `${percent}%`;
+  if (link) {
+    const fileName = String(task?.bundle?.fileName || "");
+    link.classList.toggle("hidden", !fileName || task?.status !== "completed");
+    if (fileName && activeNovel) {
+      link.href = getVideoCoverBundleFileUrl(activeNovel.id, fileName);
+      link.textContent = `下载 ZIP (${bytesToText(task.bundle.sizeBytes || 0)})`;
+    }
+  }
+  if (startBtn) startBtn.disabled = task?.status === "queued" || task?.status === "running";
+  if (!status) return;
+  if (task?.status === "completed") {
+    status.textContent = `打包完成：${current} / ${total}`;
+    clearCoverBundlePoll();
+  } else if (task?.status === "failed") {
+    status.textContent = `打包失败：${task.error || "未知错误"}`;
+    clearCoverBundlePoll();
+  } else if (task?.status === "queued") {
+    status.textContent = "已加入打包队列...";
+  } else if (task?.status === "running") {
+    status.textContent = `正在打包：${current} / ${total}`;
+  } else {
+    status.textContent = "等待打包";
+  }
+}
+
+async function pollCoverBundleStatus() {
+  if (!activeNovel) return;
+  const task = await fetchVideoCoverBundleStatus(activeNovel.id);
+  renderCoverBundleStatus(task || { status: "idle", current: 0, total: 0 });
+}
+
+function openCoverBundleDialog() {
+  const dialog = document.getElementById("videoExportCoverBundleDialog");
+  const meta = document.getElementById("videoExportCoverBundleMeta");
+  const link = document.getElementById("videoExportCoverBundleDownloadLink");
+  if (!dialog) return;
+  if (meta) meta.textContent = `将《${activeNovel?.name || "当前小说"}》已完成的视频封面打包为 ZIP。`;
+  link?.classList.add("hidden");
+  renderCoverBundleStatus({ status: "idle", current: 0, total: 0 });
+  dialog.showModal();
+}
+
+function closeCoverBundleDialog() {
+  clearCoverBundlePoll();
+  const dialog = document.getElementById("videoExportCoverBundleDialog");
+  if (dialog?.open) dialog.close();
+}
+
+async function startCoverBundle() {
+  if (!activeNovel) return;
+  clearCoverBundlePoll();
+  const task = await createVideoCoverBundle(activeNovel.id);
+  renderCoverBundleStatus(task || { status: "queued", current: 0, total: 0 });
+  coverBundlePollTimer = setInterval(() => {
+    pollCoverBundleStatus().catch((err) => toast(err.message));
+  }, 1000);
+  await pollCoverBundleStatus();
+}
+
 function handleCoverPreviewKeydown(event) {
   const dialog = document.getElementById("videoExportCoverDialog");
   if (!dialog?.open) return;
@@ -365,6 +465,16 @@ function bindEvents() {
   document.getElementById("videoExportStatusFilter")?.addEventListener("change", renderTasks);
   document.getElementById("videoExportSizeFilter")?.addEventListener("change", renderTasks);
   document.getElementById("videoExportSubtitleFilter")?.addEventListener("change", renderTasks);
+  document.getElementById("videoExportSortOrderBtn")?.addEventListener("click", () => {
+    taskIdSortDirection = taskIdSortDirection === "asc" ? "desc" : "asc";
+    renderTasks();
+  });
+  document.getElementById("videoExportCoverBundleBtn")?.addEventListener("click", openCoverBundleDialog);
+  document.getElementById("videoExportCoverBundleCloseBtn")?.addEventListener("click", closeCoverBundleDialog);
+  document.getElementById("videoExportCoverBundleDialog")?.addEventListener("close", closeCoverBundleDialog);
+  document.getElementById("videoExportCoverBundleStartBtn")?.addEventListener("click", () => {
+    startCoverBundle().catch((err) => toast(err.message));
+  });
   document.getElementById("videoExportRefreshIntervalSelect")?.addEventListener("change", (event) => {
     localStorage.setItem(VIDEO_EXPORT_REFRESH_INTERVAL_KEY, String(event.target.value || 0));
     applyRefreshInterval();
@@ -427,6 +537,7 @@ async function init() {
 
 window.addEventListener("beforeunload", () => {
   if (refreshTimer) clearInterval(refreshTimer);
+  clearCoverBundlePoll();
 });
 
 init().catch((err) => toast(err.message));
