@@ -22,7 +22,7 @@ DEFAULT_VIDEO_WIDTH = 1080
 DEFAULT_VIDEO_HEIGHT = 1920
 DEFAULT_VIDEO_FPS = 30
 FADE_SECONDS = 1.0
-COVER_STYLE_VERSION = 18
+COVER_STYLE_VERSION = 23
 
 
 @dataclass
@@ -459,34 +459,34 @@ def _compose_cover_image(frame_path: Path, cover_path: Path, *, novel_name: str,
     )
 
     label, title_parts = _split_cover_title(chapter_num, chapter_title)
-    label_font = _load_cover_font(max(46, int(target_w * 0.028)), "title")
-    title_font, title_lines = _fit_cover_lines(draw, title_parts, start_size=int(target_w * 0.052), min_size=max(64, int(target_w * 0.036)), max_width=int(target_w * 0.86))
+    label_font = _load_cover_font(max(70, int(target_w * 0.046)), "title")
+    title_font, title_lines = _fit_cover_lines(draw, title_parts, start_size=int(target_w * 0.074), min_size=max(92, int(target_w * 0.048)), max_width=int(target_w * 0.60))
     title_lines = title_lines[:2]
     display_title_lines = title_lines or [_strip_chapter_prefix(chapter_title)]
     label_bbox = _text_size(draw, label, label_font)
     title_bboxes = [_text_size(draw, line, title_font) for line in display_title_lines]
-    label_h = label_bbox[3]
     title_heights = [bbox[3] for bbox in title_bboxes]
-    label_gap = int(target_h * 0.018)
     title_gap = int(target_h * 0.006)
-    block_h = label_h + label_gap + sum(title_heights) + title_gap * max(0, len(display_title_lines) - 1)
-    panel_h = int(target_h * 0.30)
-    panel_y = int(target_h * 0.61)
+    block_h = sum(title_heights) + title_gap * max(0, len(display_title_lines) - 1)
+    panel_h = int(target_h * 0.38)
+    panel_y = int(target_h * 0.53)
     panel_pad_y = max(18, (panel_h - block_h) // 2)
     title_y = panel_y + panel_pad_y
-    center_x = target_w // 2
     title_overlay = Image.new("RGBA", (target_w, target_h), (0, 0, 0, 0))
     title_overlay_draw = ImageDraw.Draw(title_overlay)
     title_overlay_draw.rectangle((0, panel_y, target_w, panel_y + panel_h), fill=(0, 0, 0, 153))
     canvas = Image.alpha_composite(canvas, title_overlay)
     draw = ImageDraw.Draw(canvas)
 
-    label_x = center_x - _text_width(draw, label, label_font) // 2
-    draw.text((label_x - label_bbox[0], title_y - label_bbox[1]), label, font=label_font, fill=(236, 190, 99), stroke_width=4, stroke_fill=(0, 0, 0))
-    current_y = title_y + label_h + label_gap
+    label_x = int(target_w * 0.17) - _text_width(draw, label, label_font) // 2
+    label_y = panel_y + (panel_h - label_bbox[3]) // 2
+    draw.text((label_x - label_bbox[0], label_y - label_bbox[1]), label, font=label_font, fill=(255, 250, 238), stroke_width=max(5, target_w // 360), stroke_fill=(0, 0, 0))
+
+    title_center_x = int(target_w * 0.63)
+    current_y = title_y
     for idx, line in enumerate(display_title_lines):
         bbox = title_bboxes[idx] if idx < len(title_bboxes) else _text_size(draw, line, title_font)
-        x = center_x - _text_width(draw, line, title_font) // 2
+        x = title_center_x - _text_width(draw, line, title_font) // 2
         fill = (255, 223, 48) if idx == len(display_title_lines) - 1 else (255, 250, 238)
         draw.text((x - bbox[0], current_y - bbox[1]), line, font=title_font, fill=fill, stroke_width=max(5, target_w // 360), stroke_fill=(0, 0, 0))
         current_y += bbox[3] + title_gap
@@ -498,8 +498,8 @@ def _compose_cover_image(frame_path: Path, cover_path: Path, *, novel_name: str,
             logo.thumbnail((logo_size, logo_size), Image.Resampling.LANCZOS)
             alpha = logo.getchannel("A").point(lambda p: int(p * 0.78))
             logo.putalpha(alpha)
-            logo_x = target_w - logo.width - int(target_w * 0.045)
-            logo_y = target_h - logo.height - int(target_h * 0.052)
+            logo_x = int(target_w * 0.045)
+            logo_y = int(target_h * 0.052)
             shadow_alpha = alpha.filter(ImageFilter.GaussianBlur(8)).point(lambda p: int(p * 0.55))
             shadow = Image.new("RGBA", logo.size, (0, 0, 0, 0))
             shadow.putalpha(shadow_alpha)
