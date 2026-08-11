@@ -736,6 +736,7 @@ const STATIC_TEXT_MAP = {
   模型名称: { "en-US": "Model", "zh-TW": "模型名稱", "ja-JP": "モデル名", "ko-KR": "모델명" },
   每批最多处理文本字数: { "en-US": "Max chars per batch", "zh-TW": "每批最多處理字數", "ja-JP": "1バッチ最大文字数", "ko-KR": "배치당 최대 문자수" },
   "代理 Proxy URL": { "en-US": "Proxy URL", "zh-TW": "代理 Proxy URL", "ja-JP": "プロキシ URL", "ko-KR": "프록시 URL" },
+  启用代理: { "en-US": "Enable proxy", "zh-TW": "啟用代理", "ja-JP": "プロキシを有効化", "ko-KR": "프록시 사용" },
   名称: { "en-US": "Name", "zh-TW": "名稱", "ja-JP": "名前", "ko-KR": "이름" },
   描述: { "en-US": "Description", "zh-TW": "描述", "ja-JP": "説明", "ko-KR": "설명" },
   内容: { "en-US": "Content", "zh-TW": "內容", "ja-JP": "内容", "ko-KR": "내용" },

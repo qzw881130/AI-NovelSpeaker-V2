@@ -9,11 +9,14 @@ from typing import Any
 from .app_context import db_conn
 from .services import (
     LlmRequestTimeoutError,
+    apply_openai_compatible_thinking_payload,
     apply_prompt_llm_settings,
     clear_local_llama_context,
+    effective_proxy_url,
     extract_chat_content,
     fetch_settings,
     http_json_request,
+    llm_max_tokens_payload_key,
     normalize_ollama_keep_alive,
     normalize_llm_max_tokens,
     load_prompt_llm_settings,
@@ -97,10 +100,9 @@ def _call_llm_nsfw_review(
         "stream": False,
         "temperature": temperature,
         "top_p": top_p,
-        "max_tokens": max_tokens,
     }
-    if provider == "local_llama":
-        payload["chat_template_kwargs"] = {"enable_thinking": think}
+    payload[llm_max_tokens_payload_key(provider)] = max_tokens
+    apply_openai_compatible_thinking_payload(payload, provider, think)
     request_timeout = float(max(60, batch_timeout_minutes * 60))
     url = f"{base_url.rstrip('/')}/chat/completions"
     if provider == "ollama":
@@ -399,7 +401,7 @@ def process_chapter_nsfw_review_task(task_id: int) -> None:
 
         settings = fetch_settings(conn)
         llm = apply_prompt_llm_settings(settings.get("llm") or {}, load_prompt_llm_settings(conn, prompt_id))
-        proxy_url = str(settings.get("proxyUrl") or "")
+        proxy_url = effective_proxy_url(settings)
         model_name = str(llm.get("model") or "")
         think_enabled = 1 if bool(llm.get("think", True)) else 0
         chapter_title = str(row["chapter_title"] or f"第{int(row['chapter_num'])}回")

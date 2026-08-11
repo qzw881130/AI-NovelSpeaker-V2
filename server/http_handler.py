@@ -2184,7 +2184,9 @@ class Handler(BaseHTTPRequestHandler):
                 base_url=str(llm.get("baseUrl") or "").strip(),
                 model=str(llm.get("model") or "").strip(),
                 api_key=str(llm.get("apiKey") or "").strip(),
-                proxy_url=str(body.get("proxyUrl") or "").strip(),
+                proxy_url=str(body.get("proxyUrl") or "").strip()
+                if bool(body.get("proxyEnabled", False))
+                else "",
                 think=bool(llm.get("think", True)),
                 num_ctx=int(llm.get("numCtx") or 65536),
                 keep_alive=str(llm.get("keepAlive") or "30m").strip() or "30m",
@@ -2210,7 +2212,9 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 clear_local_llama_context(
                     base_url=base_url,
-                    proxy_url=str(body.get("proxyUrl") or "").strip(),
+                    proxy_url=str(body.get("proxyUrl") or "").strip()
+                    if bool(body.get("proxyEnabled", False))
+                    else "",
                     timeout=10.0,
                 )
             except Exception as exc:
@@ -4245,6 +4249,7 @@ class Handler(BaseHTTPRequestHandler):
 
             pairs = {
                 "comfy_url": str(body.get("comfyUrl") or ""),
+                "proxy_enabled": "1" if bool(body.get("proxyEnabled", False)) else "0",
                 "proxy_url": str(body.get("proxyUrl") or ""),
                 "llm_provider": llm_provider,
                 "llm_base_url": str(llm.get("baseUrl") or ""),

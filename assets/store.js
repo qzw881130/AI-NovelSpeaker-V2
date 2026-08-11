@@ -4,6 +4,7 @@ const ACTIVE_KEY = "ai_novel_speaker_v1_active_novel";
 
 const DEFAULT_SETTINGS = {
   comfyUrl: "http://127.0.0.1:8188",
+  proxyEnabled: false,
   proxyUrl: "",
   llm: {
     provider: "grok",
@@ -54,6 +55,7 @@ function normalizeSettings(raw) {
   const next = raw || {};
   return {
     comfyUrl: String(next.comfyUrl || DEFAULT_SETTINGS.comfyUrl),
+    proxyEnabled: Boolean(next.proxyEnabled),
     proxyUrl: String(next.proxyUrl || ""),
     llm: {
       ...DEFAULT_SETTINGS.llm,

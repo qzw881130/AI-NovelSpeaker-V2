@@ -8,6 +8,7 @@ const providerDefaults = {
   qwen: { baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen-plus" },
   gemini: { baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", model: "gemini-2.0-flash" },
   openai: { baseUrl: "https://api.openai.com/v1", model: "gpt-4.1-mini" },
+  minimax: { baseUrl: "https://api.minimax.io/v1", model: "MiniMax-M3", maxTokens: 131072 },
   ollama: { baseUrl: "http://127.0.0.1:11434/v1", model: "qwen2.5:7b" },
   local_llama: {
     baseUrl: "http://192.168.50.1:12080/v1",
@@ -21,6 +22,7 @@ const providerDefaults = {
 
 const PROVIDER_MAX_TOKENS = {
   deepseek: 384000,
+  minimax: 524288,
 };
 
 const BATCH_CHAR_OPTIONS = new Set([0, 3500, 4000, 5000, 6000, 7000, 8000, 9000, 10000]);
@@ -173,6 +175,7 @@ function load(settings) {
   const liveEndingAudio = settings.liveEndingAudio || {};
   const videoCoverLogo = settings.videoCoverLogo || {};
   document.getElementById("comfyUrl").value = settings.comfyUrl || "";
+  document.getElementById("proxyEnabled").checked = Boolean(settings.proxyEnabled);
   document.getElementById("proxyUrl").value = settings.proxyUrl || "";
   document.getElementById("llmProvider").value = llm.provider || "grok";
   document.getElementById("llmBase").value = llm.baseUrl || "";
@@ -362,7 +365,7 @@ function syncOllamaFieldVisibility() {
   const isOllama = provider === "ollama";
   const isLocalLlama = provider === "local_llama";
   const isLocalNoKey = isOllama || isLocalLlama;
-  const supportsThink = isOllama || isLocalLlama;
+  const supportsThink = isOllama || isLocalLlama || provider === "minimax";
   document.getElementById("llmNumCtxWrap")?.classList.toggle("hidden", !(isOllama || isLocalLlama));
   document.getElementById("llmKeepAliveWrap")?.classList.toggle("hidden", !isOllama);
   document.getElementById("llmUnloadAfterCallWrap")?.classList.toggle("hidden", !(isOllama || isLocalLlama));
@@ -395,6 +398,7 @@ function normalizeProviderMaxTokens(provider, value) {
 function readSettingsForm() {
   return {
     comfyUrl: document.getElementById("comfyUrl").value.trim(),
+    proxyEnabled: document.getElementById("proxyEnabled").checked,
     proxyUrl: document.getElementById("proxyUrl").value.trim(),
     llm: {
       provider: document.getElementById("llmProvider").value,
@@ -571,6 +575,7 @@ function bindEvents() {
   });
 
   document.getElementById("comfyUrl").addEventListener("input", markComfyDirty);
+  document.getElementById("proxyEnabled").addEventListener("change", markLlmDirty);
   document.getElementById("proxyUrl").addEventListener("input", markLlmDirty);
   document.getElementById("llmBase").addEventListener("input", markLlmDirty);
   document.getElementById("llmModel").addEventListener("input", markLlmDirty);

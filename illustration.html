@@ -224,6 +224,17 @@
       </form>
     </dialog>
 
+    <dialog id="illustrationVideoDialog" class="video-player-dialog illustration-video-dialog">
+      <div class="video-player-dialog-head">
+        <div>
+          <h2 id="illustrationVideoTitle">播放视频</h2>
+          <p id="illustrationVideoMeta" class="meta"></p>
+        </div>
+        <button id="illustrationVideoCloseBtn" class="ghost-btn" type="button">关闭</button>
+      </div>
+      <video id="illustrationVideoPlayer" controls playsinline preload="metadata"></video>
+    </dialog>
+
     <dialog id="illustrationImagePreviewDialog" class="modal modal-large">
       <form method="dialog">
         <div class="dialog-header illustration-preview-header">

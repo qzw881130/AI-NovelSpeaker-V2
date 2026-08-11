@@ -94,6 +94,7 @@ JSON_LLM_MIN_INTERVAL_SECONDS = 3.0
 LEGACY_SYSTEM_WORKFLOW_NAME = "古典小说默认工作流"
 LLM_PROVIDER_MAX_TOKENS = {
     "deepseek": 384000,
+    "minimax": 524288,
 }
 
 
@@ -108,6 +109,24 @@ def normalize_llm_max_tokens(provider: str, value, fallback: int = 8192) -> int:
     if limit:
         max_tokens = min(max_tokens, limit)
     return max_tokens
+
+
+def llm_max_tokens_payload_key(provider: str) -> str:
+    return "max_completion_tokens" if str(provider or "").strip().lower() == "minimax" else "max_tokens"
+
+
+def apply_openai_compatible_thinking_payload(payload: dict, provider: str, think: bool) -> None:
+    provider_key = str(provider or "").strip().lower()
+    if provider_key == "local_llama":
+        payload["chat_template_kwargs"] = {"enable_thinking": bool(think)}
+    elif provider_key == "minimax":
+        payload["thinking"] = {"type": "adaptive" if bool(think) else "disabled"}
+
+
+def effective_proxy_url(settings: dict) -> str:
+    if not bool((settings or {}).get("proxyEnabled", False)):
+        return ""
+    return str((settings or {}).get("proxyUrl") or "").strip()
 
 
 def now_iso() -> str:
@@ -1279,6 +1298,7 @@ def fetch_settings(conn: sqlite3.Connection) -> dict:
     )
     return {
         "comfyUrl": comfy_url,
+        "proxyEnabled": str(kv.get("proxy_enabled", "0") or "0").strip() == "1",
         "proxyUrl": kv.get("proxy_url", ""),
         "llm": llm,
         "ui": {
@@ -2113,11 +2133,10 @@ def test_llm_endpoint(
             {"role": "system", "content": "You are a healthcheck bot."},
             {"role": "user", "content": "reply with pong"},
         ],
-        "max_tokens": 8,
         "temperature": 0,
     }
-    if provider == "local_llama":
-        payload["chat_template_kwargs"] = {"enable_thinking": bool(think)}
+    payload[llm_max_tokens_payload_key(provider)] = 8
+    apply_openai_compatible_thinking_payload(payload, provider, bool(think))
     if provider == "ollama":
         url = build_ollama_chat_url(base_url)
         request_keep_alive = normalize_ollama_keep_alive(keep_alive)
@@ -2545,10 +2564,9 @@ def call_llm_json_parse(
         "stream": False,
         "temperature": temperature,
         "top_p": top_p,
-        "max_tokens": max_tokens,
     }
-    if provider == "local_llama":
-        payload["chat_template_kwargs"] = {"enable_thinking": think}
+    payload[llm_max_tokens_payload_key(provider)] = max_tokens
+    apply_openai_compatible_thinking_payload(payload, provider, think)
     request_timeout = float(max(60, batch_timeout_minutes * 60))
     url = f"{base_url.rstrip('/')}/chat/completions"
     if provider == "ollama":
@@ -2718,10 +2736,9 @@ def build_llm_prompt_json_request(
         "stream": False,
         "temperature": temperature,
         "top_p": top_p,
-        "max_tokens": max_tokens,
     }
-    if provider == "local_llama":
-        payload["chat_template_kwargs"] = {"enable_thinking": think}
+    payload[llm_max_tokens_payload_key(provider)] = max_tokens
+    apply_openai_compatible_thinking_payload(payload, provider, think)
     url = f"{base_url.rstrip('/')}/chat/completions"
     if provider == "ollama":
         url = build_ollama_chat_url(base_url)
@@ -2824,7 +2841,7 @@ def cancel_json_task(task_id: int) -> tuple[bool, str]:
                 unload_ollama_model(
                     base_url=str(llm.get("baseUrl") or "").strip(),
                     model=str(row["model_name"] or llm.get("model") or "").strip(),
-                    proxy_url=str(settings.get("proxyUrl") or "").strip(),
+                    proxy_url=effective_proxy_url(settings),
                     timeout=10.0,
                 )
             except Exception:
@@ -2909,7 +2926,7 @@ def process_json_task(task_id: int) -> None:
 
         settings = fetch_settings(conn)
         llm = apply_prompt_llm_settings(settings.get("llm") or {}, load_prompt_llm_settings(conn, prompt_id))
-        proxy_url = str(settings.get("proxyUrl") or "")
+        proxy_url = effective_proxy_url(settings)
         model_name = str(llm.get("model") or "")
         think_enabled = 1 if bool(llm.get("think", True)) else 0
 
@@ -3165,7 +3182,7 @@ def _load_json_task_context(task_id: int) -> dict:
 
     settings = fetch_settings(conn)
     llm = apply_prompt_llm_settings(settings.get("llm") or {}, load_prompt_llm_settings(conn, prompt_id))
-    proxy_url = str(settings.get("proxyUrl") or "")
+    proxy_url = effective_proxy_url(settings)
     model_name = str(llm.get("model") or "")
     think_enabled = bool(llm.get("think", True))
     conn.close()

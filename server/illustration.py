@@ -16,6 +16,7 @@ from .services import (
     comfy_download_file,
     comfy_request_json,
     db_rel_path,
+    effective_proxy_url,
     fetch_settings,
     load_prompt_llm_settings,
     read_chapter_text,
@@ -601,6 +602,15 @@ def list_illustration_chapters(novel_id: int) -> list[dict]:
     rows = conn.execute(
         """
         SELECT c.id, c.chapter_num, c.title, c.word_count, c.audio_duration_seconds,
+               (
+                   SELECT v.id
+                   FROM chapter_video_export_tasks v
+                   WHERE v.novel_id=c.novel_id
+                     AND v.chapter_id=c.id
+                     AND v.status='completed'
+                     AND COALESCE(v.output_file_path, '')<>''
+                   ORDER BY v.id DESC LIMIT 1
+               ) AS video_task_id,
                s.status AS scene_status, s.progress AS scene_progress, s.error_message AS scene_error,
                s.started_at AS scene_started_at, s.updated_at AS scene_updated_at,
                s.result_json_text AS scene_result_json,
@@ -698,6 +708,7 @@ def list_illustration_chapters(novel_id: int) -> list[dict]:
             "title": str(r["title"] or ""),
             "wordCount": int(r["word_count"] or 0),
             "audioDurationSeconds": float(r["audio_duration_seconds"] or 0),
+            "videoExportTaskId": int(r["video_task_id"] or 0),
             "illustrationCount": scene_count,
             "images": {
                 "expected": image_expected,
@@ -954,7 +965,7 @@ def get_illustration_llm_request_preview(novel_id: int, chapter_id: int, stage: 
     user_input = _build_user_input(conn, stage, row)
     settings = fetch_settings(conn)
     llm = apply_prompt_llm_settings(settings.get("llm") or {}, load_prompt_llm_settings(conn, prompt_id))
-    proxy_url = str(settings.get("proxyUrl") or "")
+    proxy_url = effective_proxy_url(settings)
     conn.close()
     request = build_llm_prompt_json_request(
         llm=llm,
@@ -1472,7 +1483,7 @@ def process_illustration_task(task_id: int) -> None:
         system_prompt = str(prompt["content"] or "").strip()
         settings = fetch_settings(conn)
         llm = apply_prompt_llm_settings(settings.get("llm") or {}, load_prompt_llm_settings(conn, prompt_id))
-        proxy_url = str(settings.get("proxyUrl") or "")
+        proxy_url = effective_proxy_url(settings)
         if stage == "shot":
             _process_shot_task_batches(conn, row, prompt_id, system_prompt, llm, proxy_url)
             return

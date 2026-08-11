@@ -21,6 +21,7 @@ from .services import (
     comfy_request_json,
     comfy_upload_input_file,
     create_workflow_log,
+    effective_proxy_url,
     file_md5_hex,
     fetch_settings,
     load_prompt_llm_settings,
@@ -692,7 +693,7 @@ def repair_chapter_audio_asr_subtitle(novel_id: int, chapter_id: int) -> dict:
     prompt_id, prompt_template = _get_subtitle_fix_prompt(conn)
     settings = fetch_settings(conn)
     llm = apply_prompt_llm_settings(settings.get("llm") or {}, load_prompt_llm_settings(conn, prompt_id))
-    proxy_url = str(settings.get("proxyUrl") or "").strip()
+    proxy_url = effective_proxy_url(settings)
     conn.execute(
         "UPDATE chapter_asr_tasks SET subtitle_fix_status='processing', subtitle_fix_error='', subtitle_fix_current_batch_index=0, subtitle_fix_total_batch_count=0, updated_at=CURRENT_TIMESTAMP WHERE id=?",
         (task_id,),

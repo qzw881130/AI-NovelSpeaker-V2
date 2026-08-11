@@ -37,6 +37,7 @@
                 <option value="qwen">千问</option>
                 <option value="gemini">Gemini</option>
                 <option value="openai">OpenAI</option>
+                <option value="minimax">MiniMax</option>
                 <option value="ollama">本地 Ollama</option>
                 <option value="local_llama">本地LLama</option>
                 <option value="custom">自定义API</option>
@@ -105,16 +106,22 @@
                 <input id="llmThink" type="checkbox" checked />
                 <span>开启</span>
               </div>
-              <span id="llmThinkHint" class="caption">仅本地 Ollama / 本地LLama 生效，默认开启</span>
+              <span id="llmThinkHint" class="caption">MiniMax / 本地 Ollama / 本地LLama 生效，默认开启</span>
             </label>
-            <label class="full">代理 Proxy URL<input id="proxyUrl" placeholder="留空则继承环境代理；如需显式指定可填 http://127.0.0.1:7890" /></label>
+            <div class="full proxy-field">
+              <div class="proxy-field-head">
+                <span>代理 Proxy URL</span>
+                <label class="switch-row proxy-enable-row"><input id="proxyEnabled" type="checkbox" /> <span>启用代理</span></label>
+              </div>
+              <input id="proxyUrl" placeholder="未启用时不使用代理；启用后可填 http://127.0.0.1:7890" />
+            </div>
           </div>
           <div class="test-row">
             <button class="ghost-btn" id="testLlmBtn" type="button">测试 LLM</button>
             <button class="ghost-btn hidden" id="clearLocalLlamaContextBtn" type="button">清空上下文</button>
             <span id="testLlmResult" class="test-result">未测试</span>
           </div>
-          <p class="caption">支持 Grok / DeepSeek / 千问 / Gemini / OpenAI / 本地 Ollama / 本地LLama / 自定义 API。</p>
+          <p class="caption">支持 Grok / DeepSeek / 千问 / Gemini / OpenAI / MiniMax / 本地 Ollama / 本地LLama / 自定义 API。</p>
         </section>
 
         <section class="panel form-panel">

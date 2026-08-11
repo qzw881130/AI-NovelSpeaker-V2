@@ -14,6 +14,7 @@ import {
   fetchNovelIllustrationChapters,
   getActiveNovelId,
   getData,
+  getVideoExportFileUrl,
   restartIllustrationImageWorker,
   restartIllustrationLlmWorker,
   retryChapterIllustrationPromptBatch,
@@ -260,6 +261,7 @@ function renderStageCell(item, stage) {
         <button class="ghost-btn btn-sm illustration-run-btn" type="button" data-stage="${stage}" data-chapter-num="${chapterNum}" ${disabled ? "disabled" : ""}>解析插画${STAGE_LABELS[stage].toLowerCase()}</button>
         <button class="ghost-btn btn-sm illustration-prompt-detail-btn" type="button" data-stage="${stage}" data-chapter-num="${chapterNum}">详情</button>
         <button class="ghost-btn btn-sm illustration-prompt-output-btn" type="button" data-chapter-num="${chapterNum}">输出</button>
+        ${item.videoExportTaskId ? `<button class="primary-btn btn-sm illustration-video-btn" type="button" data-chapter-num="${chapterNum}" data-task-id="${Number(item.videoExportTaskId)}"><span aria-hidden="true">▶</span> 播放视频</button>` : ""}
         ${data.status === "completed" ? renderImagesButton(item, chapterNum) : ""}
       `
     : `
@@ -344,6 +346,30 @@ function renderImagesButton(item, chapterNum) {
       ${missing > 0 ? '<span class="illustration-alert-dot" aria-hidden="true">!</span>' : ""}
     </button>
   `;
+}
+
+function openIllustrationVideo(chapterNum, taskId) {
+  const dialog = document.getElementById("illustrationVideoDialog");
+  const player = document.getElementById("illustrationVideoPlayer");
+  const title = document.getElementById("illustrationVideoTitle");
+  const meta = document.getElementById("illustrationVideoMeta");
+  if (!dialog || !player || !taskId) return;
+  const chapter = chapterItems.find((item) => Number(item.chapterNum || 0) === Number(chapterNum || 0));
+  title.textContent = `播放视频 · 第${String(chapterNum).padStart(3, "0")}回`;
+  meta.textContent = chapter?.title || "";
+  player.src = getVideoExportFileUrl(taskId);
+  dialog.showModal();
+}
+
+function closeIllustrationVideo() {
+  const dialog = document.getElementById("illustrationVideoDialog");
+  const player = document.getElementById("illustrationVideoPlayer");
+  if (player) {
+    player.pause();
+    player.removeAttribute("src");
+    player.load();
+  }
+  if (dialog?.open) dialog.close();
 }
 
 function isBusyStatus(status) {
@@ -1535,6 +1561,11 @@ function bindEvents() {
       await openPromptOutput(Number(promptOutputBtn.dataset.chapterNum || 0));
       return;
     }
+    const videoBtn = event.target.closest(".illustration-video-btn");
+    if (videoBtn) {
+      openIllustrationVideo(Number(videoBtn.dataset.chapterNum || 0), Number(videoBtn.dataset.taskId || 0));
+      return;
+    }
     const viewBtn = event.target.closest(".illustration-view-btn");
     if (viewBtn) {
       await openPayload(Number(viewBtn.dataset.chapterNum || 0), String(viewBtn.dataset.stage || ""), String(viewBtn.dataset.kind || ""));
@@ -1639,6 +1670,8 @@ function bindEvents() {
   document.getElementById("promptOutputDialog").addEventListener("close", () => {
     activePromptOutputChapterNum = 0;
   });
+  document.getElementById("illustrationVideoCloseBtn")?.addEventListener("click", closeIllustrationVideo);
+  document.getElementById("illustrationVideoDialog")?.addEventListener("close", closeIllustrationVideo);
   document.getElementById("promptOutputDialog").addEventListener("keydown", async (event) => {
     if ((event.ctrlKey || event.metaKey) && String(event.key || "").toLowerCase() === "s") {
       event.preventDefault();

@@ -1704,6 +1704,27 @@ textarea {
   grid-column: 1 / -1;
 }
 
+.proxy-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.proxy-field-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.proxy-enable-row {
+  font-size: 14px;
+}
+
+.proxy-enable-row input {
+  width: auto;
+}
+
 .panel-head.compact {
   margin-bottom: 8px;
 }
@@ -4719,6 +4740,21 @@ body.is-nsfw-review-drag-selecting .novel-download-table {
   border-radius: 20px;
   background: var(--panel-strong);
   box-shadow: var(--shadow);
+}
+
+.illustration-video-dialog {
+  width: min(92vw, 980px);
+}
+
+.illustration-video-btn {
+  border-color: #a94316;
+  background: linear-gradient(135deg, #b94d19, #d57935);
+  color: #fffaf2;
+  box-shadow: 0 8px 18px rgba(169, 67, 22, 0.22);
+}
+
+.illustration-video-btn:hover {
+  filter: brightness(1.04);
 }
 
 .video-cover-dialog {
