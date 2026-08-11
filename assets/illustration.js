@@ -11,10 +11,13 @@ import {
   fetchIllustrationImageWorkerStatus,
   fetchIllustrationLlmWorkerStatus,
   fetchIllustrationWorkerStatus,
+  fetchIllustrationPromptItemOriginal,
   fetchNovelIllustrationChapters,
   getActiveNovelId,
   getData,
   getVideoExportFileUrl,
+  optimizeIllustrationPromptItem,
+  prepareIllustrationPromptItemOptimization,
   restartIllustrationImageWorker,
   restartIllustrationLlmWorker,
   retryChapterIllustrationPromptBatch,
@@ -42,9 +45,15 @@ let activePromptBatchTab = "llm";
 let activePromptBatchStage = "prompt";
 let promptBatchesRefreshTimer = 0;
 let activePromptOutputChapterNum = 0;
+let currentImageItems = [];
 let currentPreviewItems = [];
 let currentPreviewIndex = -1;
 let currentImagesTotal = 0;
+let previewJsonDirty = false;
+let previewJsonImageKey = "";
+let previewJsonOriginalText = "";
+let optimizeDetailTab = "llm";
+let optimizeDetail = { requestPreview: null, inputText: "", outputText: "", jsonText: "", status: "idle", error: "" };
 const selectedChapterNums = new Set();
 let dragSelecting = false;
 let dragSelectValue = true;
@@ -109,6 +118,24 @@ function copyText(text) {
   document.body.removeChild(textarea);
   toast("内容已复制");
   return Promise.resolve();
+}
+
+function formatJsonIfPossible(text) {
+  const value = String(text || "").trim();
+  if (!value) return "";
+  try {
+    return JSON.stringify(JSON.parse(value), null, 2);
+  } catch {
+    return value;
+  }
+}
+
+function parseJsonObjectText(text) {
+  const parsed = JSON.parse(String(text || ""));
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("JSON必须是对象");
+  }
+  return parsed;
 }
 
 function safeDownloadFilename(value, fallback = "prompt-output") {
@@ -1166,6 +1193,7 @@ async function openPromptBatches(chapterNum, stage = "prompt") {
 
 function renderImages(items) {
   currentImagesTotal = items.length;
+  currentImageItems = items;
   currentPreviewItems = items.filter((item) => Boolean(item.imageUrl));
   const summary = document.getElementById("illustrationImagesQueueSummary");
   if (summary) {
@@ -1182,8 +1210,9 @@ function renderImages(items) {
   root.innerHTML = items.map((item) => {
     const hasImage = Boolean(item.imageUrl);
     const busy = ["pending", "running", "processing"].includes(String(item.status || ""));
+    const missingKeys = missingPromptItemKeys(item.promptJson);
     return `
-      <article class="illustration-image-card">
+      <article class="illustration-image-card ${missingKeys.length ? "has-json-key-warning" : ""}" data-image-id="${item.id}" data-image-index="${item.index}">
         <div class="illustration-image-slot ${hasImage ? "has-image" : ""}" data-image-url="${hasImage ? item.imageUrl : ""}">
           ${hasImage ? `<img src="${item.imageUrl}?v=${Date.now()}" alt="${escapeHtml(item.sceneTitle || "插图")}" data-image-id="${item.id}" />` : '<span>图片位置</span>'}
         </div>
@@ -1194,6 +1223,7 @@ function renderImages(items) {
         <p class="meta illustration-size-meta" data-size-id="${item.id}">尺寸：${escapeHtml(item.suggestedSize || "待读取")} · 比例：-</p>
         ${imageTimeLabel(item) ? `<p class="meta illustration-time-meta">${escapeHtml(imageTimeLabel(item))}</p>` : ""}
         <p class="meta">人物：${escapeHtml(item.characterNames || "")}</p>
+        ${missingKeys.length ? `<p class="meta illustration-json-card-warning">缺少key：${escapeHtml(missingKeys.join(", "))}</p>` : ""}
         <p class="meta illustration-summary-meta">${escapeHtml(item.cnSummary || "-")}</p>
         <div class="card-actions">
           <button class="ghost-btn btn-sm illustration-generate-image-btn" type="button" data-image-id="${item.id}" ${busy ? "disabled" : ""}>${hasImage ? "重新生成" : "生成"}</button>
@@ -1207,9 +1237,37 @@ function renderImages(items) {
       if (meta) meta.textContent = `尺寸：${img.naturalWidth}x${img.naturalHeight} · 比例：${ratioLabel(img.naturalWidth, img.naturalHeight)}`;
     }, { once: true });
   });
+  updateImagesJsonWarning();
 }
 
-function openPreviewAt(index) {
+function previewJsonKey(item) {
+  return `${Number(item?.id || 0)}:${Number(item?.index || 0)}`;
+}
+
+function setPreviewJsonEditorValue(item) {
+  const jsonEditor = document.getElementById("illustrationPreviewJsonEditor");
+  if (!jsonEditor) return;
+  const json = item?.promptJson && typeof item.promptJson === "object" && Object.keys(item.promptJson).length ? item.promptJson : null;
+  const text = json ? JSON.stringify(json, null, 2) : "";
+  jsonEditor.value = text;
+  jsonEditor.placeholder = json ? "" : "未找到当前图片对应的原始 prompt.json 项";
+  previewJsonDirty = false;
+  previewJsonImageKey = previewJsonKey(item);
+  previewJsonOriginalText = text;
+  updatePreviewJsonCount();
+  updatePreviewJsonWarning();
+  updateImagesJsonWarning();
+}
+
+function markPreviewJsonDirty() {
+  const editor = document.getElementById("illustrationPreviewJsonEditor");
+  previewJsonDirty = String(editor?.value || "") !== previewJsonOriginalText;
+  updatePreviewJsonCount();
+  updatePreviewJsonWarning();
+  updateImagesJsonWarning();
+}
+
+function openPreviewAt(index, options = {}) {
   if (!currentPreviewItems.length) return;
   const total = currentPreviewItems.length;
   currentPreviewIndex = ((Number(index) || 0) + total) % total;
@@ -1220,6 +1278,8 @@ function openPreviewAt(index) {
   const nextBtn = document.getElementById("illustrationPreviewNextBtn");
   const footerMeta = document.getElementById("illustrationPreviewFooterMeta");
   const regenerateBtn = document.getElementById("illustrationPreviewRegenerateBtn");
+  const restoreBtn = document.getElementById("illustrationPreviewRestoreJsonBtn");
+  const optimizeBtn = document.getElementById("illustrationPreviewOptimizeJsonBtn");
   const jsonEditor = document.getElementById("illustrationPreviewJsonEditor");
   const positionText = `${currentPreviewIndex + 1}/${total}`;
   const timeText = imageTimeLabel(item);
@@ -1232,16 +1292,27 @@ function openPreviewAt(index) {
   regenerateBtn.dataset.imageId = imageId;
   regenerateBtn.disabled = busy || !item.id;
   regenerateBtn.textContent = busy ? `${statusLabel(item.status)}中` : "重新生成";
+  if (optimizeBtn) {
+    optimizeBtn.dataset.imageId = imageId;
+    optimizeBtn.disabled = !item.id;
+  }
+  if (restoreBtn) {
+    restoreBtn.dataset.imageId = imageId;
+    restoreBtn.hidden = !item.hasOriginalPromptBackup;
+    restoreBtn.disabled = !item.id;
+  }
   document.getElementById("illustrationPreviewTitle").textContent = `#${item.index} ${item.sceneTitle || "预览插图"}`;
   document.getElementById("illustrationPreviewTotalCount").textContent = `插画共 ${currentImagesTotal} 个`;
   document.getElementById("illustrationPreviewSummary").textContent = item.cnSummary || "";
   document.getElementById("illustrationPreviewCharacters").textContent = item.characterNames ? `人物：${item.characterNames}` : "";
   document.getElementById("illustrationPreviewPrompt").textContent = item.promptText ? `提示词：${item.promptText}` : "";
   if (jsonEditor) {
-    const json = item.promptJson && typeof item.promptJson === "object" && Object.keys(item.promptJson).length ? item.promptJson : null;
-    jsonEditor.value = json ? JSON.stringify(json, null, 2) : "";
-    jsonEditor.placeholder = json ? "" : "未找到当前图片对应的原始 prompt.json 项";
-    updatePreviewJsonCount();
+    const samePreviewJson = previewJsonImageKey === previewJsonKey(item);
+    if (!options.preserveDirtyJson || !previewJsonDirty || !samePreviewJson) {
+      setPreviewJsonEditorValue(item);
+    } else {
+      updatePreviewJsonCount();
+    }
   }
   footerMeta.textContent = [timeText, item.suggestedSize ? `建议尺寸：${item.suggestedSize}` : "", positionText].filter(Boolean).join(" · ");
   img.onload = () => {
@@ -1262,6 +1333,73 @@ function updatePreviewJsonCount() {
   const editor = document.getElementById("illustrationPreviewJsonEditor");
   const count = document.getElementById("illustrationPreviewJsonCount");
   if (count) count.textContent = String(editor?.value.length || 0);
+}
+
+function parsePreviewJsonEditorObject() {
+  const editor = document.getElementById("illustrationPreviewJsonEditor");
+  const text = String(editor?.value || "").trim();
+  if (!text) return { value: null, error: "JSON内容为空" };
+  try {
+    const value = parseJsonObjectText(text);
+    return { value, error: "" };
+  } catch (err) {
+    return { value: null, error: err.message || String(err) };
+  }
+}
+
+function currentItemMissingPromptKeys(item) {
+  if (!item) return REQUIRED_PROMPT_ITEM_KEYS;
+  if (previewJsonDirty && previewJsonImageKey === previewJsonKey(item)) {
+    const parsed = parsePreviewJsonEditorObject();
+    return parsed.value ? missingPromptItemKeys(parsed.value) : REQUIRED_PROMPT_ITEM_KEYS;
+  }
+  return missingPromptItemKeys(item.promptJson);
+}
+
+function updatePreviewJsonWarning() {
+  const warning = document.getElementById("illustrationPreviewJsonWarning");
+  if (!warning) return;
+  const parsed = parsePreviewJsonEditorObject();
+  if (parsed.error) {
+    warning.textContent = `JSON错误：${parsed.error}`;
+    warning.hidden = false;
+    return;
+  }
+  const missingKeys = missingPromptItemKeys(parsed.value);
+  warning.textContent = missingKeys.length ? `缺少key：${missingKeys.join("、")}` : "";
+  warning.hidden = !missingKeys.length;
+}
+
+function updateImagesJsonWarning() {
+  const warning = document.getElementById("illustrationImagesJsonWarning");
+  const root = document.getElementById("illustrationImagesList");
+  if (!warning || !root) return;
+  const invalidItems = currentImageItems.filter((item) => currentItemMissingPromptKeys(item).length);
+  root.querySelectorAll(".illustration-image-card").forEach((card) => {
+    const item = currentImageItems.find((entry) => String(entry.id) === String(card.dataset.imageId || ""));
+    const missingKeys = currentItemMissingPromptKeys(item);
+    card.classList.toggle("has-json-key-warning", Boolean(missingKeys.length));
+    let warningEl = card.querySelector(".illustration-json-card-warning");
+    if (missingKeys.length && !warningEl) {
+      warningEl = document.createElement("p");
+      warningEl.className = "meta illustration-json-card-warning";
+      card.querySelector(".illustration-summary-meta")?.before(warningEl);
+    }
+    if (warningEl) {
+      if (missingKeys.length) {
+        warningEl.textContent = `缺少key：${missingKeys.join(", ")}`;
+      } else {
+        warningEl.remove();
+      }
+    }
+  });
+  if (!invalidItems.length) {
+    warning.hidden = true;
+    warning.innerHTML = "";
+    return;
+  }
+  warning.hidden = false;
+  warning.innerHTML = `异常：${invalidItems.map((item) => `<button class="illustration-json-warning-link" type="button" data-image-id="${item.id}">【${escapeHtml(item.index)}】</button>`).join("")}`;
 }
 
 function switchPreview(delta) {
@@ -1312,25 +1450,54 @@ function missingPromptItemKeys(item) {
   return REQUIRED_PROMPT_ITEM_KEYS.filter((key) => !Object.prototype.hasOwnProperty.call(item, key));
 }
 
-async function savePreviewJson() {
+function optimizeDetailContent() {
+  if (optimizeDetailTab === "input") return optimizeDetail.inputText || "暂无输入";
+  if (optimizeDetailTab === "output") return formatJsonIfPossible(optimizeDetail.outputText) || (optimizeDetail.error ? `优化失败：${optimizeDetail.error}` : "优化中...");
+  return optimizeDetail.requestPreview ? JSON.stringify(optimizeDetail.requestPreview, null, 2) : "等待 LLM 参数...";
+}
+
+function renderOptimizeDetail() {
+  const meta = document.getElementById("illustrationOptimizeMeta");
+  const content = document.getElementById("illustrationOptimizeContent");
+  const applyBtn = document.getElementById("illustrationOptimizeApplyBtn");
+  if (meta) {
+    const label = optimizeDetail.status === "running" ? "优化中" : optimizeDetail.status === "completed" ? "已完成" : optimizeDetail.status === "failed" ? "失败" : "等待优化";
+    meta.textContent = optimizeDetail.error ? `${label} · ${optimizeDetail.error}` : label;
+  }
+  if (content) content.textContent = optimizeDetailContent();
+  document.querySelectorAll(".illustration-optimize-tab").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.tab === optimizeDetailTab);
+  });
+  if (applyBtn) {
+    applyBtn.disabled = !optimizeDetail.jsonText || optimizeDetail.status !== "completed";
+  }
+}
+
+function openOptimizeDetail(title, inputText) {
+  optimizeDetailTab = "llm";
+  optimizeDetail = { requestPreview: null, inputText, outputText: "", jsonText: "", status: "running", error: "" };
+  document.getElementById("illustrationOptimizeTitle").textContent = title || "优化提示词";
+  renderOptimizeDetail();
+  const dialog = document.getElementById("illustrationOptimizeDialog");
+  if (!dialog.open) dialog.showModal();
+}
+
+async function savePreviewJson(jsonText = null, options = {}) {
+  if (jsonText && typeof jsonText === "object" && typeof jsonText.preventDefault === "function") jsonText = null;
   const item = currentPreviewItems[currentPreviewIndex];
   const editor = document.getElementById("illustrationPreviewJsonEditor");
   const btn = document.getElementById("illustrationPreviewSaveJsonBtn");
   if (!activeNovel || !activeImagesChapterNum || !item) return;
-  const text = String(editor?.value || "").trim();
+  const text = String(jsonText ?? (editor?.value || "")).trim();
   if (!text) {
     toast("JSON内容为空");
     return;
   }
   let parsed;
   try {
-    parsed = JSON.parse(text);
+    parsed = parseJsonObjectText(text);
   } catch (err) {
     toast(`JSON 格式错误：${err.message}`);
-    return;
-  }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    toast("JSON必须是对象");
     return;
   }
   const missingKeys = missingPromptItemKeys(parsed);
@@ -1344,12 +1511,13 @@ async function savePreviewJson() {
   }
   try {
     const result = await saveChapterIllustrationPromptItem(activeNovel.id, activeImagesChapterNum, Number(item.index || 0), JSON.stringify(parsed, null, 2));
-    toast("JSON已保存");
+    if (!options.quietSuccess) toast("JSON已保存");
     await refreshImagesModal();
     const updatedId = Number(result.item?.id || item.id || 0);
     const nextIndex = currentPreviewItems.findIndex((entry) => Number(entry.id || 0) === updatedId) >= 0
       ? currentPreviewItems.findIndex((entry) => Number(entry.id || 0) === updatedId)
       : currentPreviewItems.findIndex((entry) => Number(entry.index || 0) === Number(item.index || 0));
+    previewJsonDirty = false;
     if (nextIndex >= 0) openPreviewAt(nextIndex);
   } catch (err) {
     toast(`保存失败：${err.message}`);
@@ -1357,6 +1525,150 @@ async function savePreviewJson() {
     if (btn) {
       btn.disabled = false;
       btn.textContent = "保存JSON";
+    }
+  }
+}
+
+async function optimizePreviewJson() {
+  const item = currentPreviewItems[currentPreviewIndex];
+  const editor = document.getElementById("illustrationPreviewJsonEditor");
+  const btn = document.getElementById("illustrationPreviewOptimizeJsonBtn");
+  const restoreBtn = document.getElementById("illustrationPreviewRestoreJsonBtn");
+  if (!item?.id || !editor) return;
+  const text = String(editor.value || "").trim();
+  if (!text) {
+    toast("JSON内容为空");
+    return;
+  }
+  try {
+    JSON.parse(text);
+  } catch (err) {
+    toast(`JSON 格式错误：${err.message}`);
+    return;
+  }
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "优化中...";
+  }
+  openOptimizeDetail(`优化提示词 · #${item.index || ""} ${item.sceneTitle || ""}`.trim(), text);
+  try {
+    const prepared = await prepareIllustrationPromptItemOptimization(item.id, text);
+    optimizeDetail = {
+      requestPreview: prepared.requestPreview || null,
+      inputText: prepared.inputText || text,
+      outputText: "",
+      jsonText: "",
+      status: "running",
+      error: "",
+    };
+    renderOptimizeDetail();
+    const result = await optimizeIllustrationPromptItem(item.id, text);
+    optimizeDetail = {
+      requestPreview: result.requestPreview || prepared.requestPreview || null,
+      inputText: result.inputText || prepared.inputText || text,
+      outputText: result.outputText || result.jsonText || "",
+      jsonText: result.jsonText || "",
+      status: "completed",
+      error: "",
+    };
+    renderOptimizeDetail();
+    editor.value = String(result.jsonText || "");
+    const key = previewJsonKey(item);
+    const target = currentPreviewItems.find((entry) => previewJsonKey(entry) === key);
+    if (target) target.hasOriginalPromptBackup = true;
+    if (restoreBtn) restoreBtn.hidden = false;
+    previewJsonDirty = true;
+    updatePreviewJsonCount();
+    updatePreviewJsonWarning();
+    updateImagesJsonWarning();
+    editor.focus();
+    toast("提示词已优化，请检查后保存JSON");
+  } catch (err) {
+    const data = err.data || {};
+    optimizeDetail = {
+      requestPreview: data.requestPreview || optimizeDetail.requestPreview || null,
+      inputText: data.inputText || optimizeDetail.inputText || text,
+      outputText: data.outputText || optimizeDetail.outputText || `优化失败：${err.message || String(err)}`,
+      jsonText: data.jsonText || "",
+      status: "failed",
+      error: err.message || String(err),
+    };
+    if (data.outputText) optimizeDetailTab = "output";
+    renderOptimizeDetail();
+    toast(`优化失败：${err.message}`);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "优化提示词";
+    }
+  }
+}
+
+async function restorePreviewJson() {
+  const item = currentPreviewItems[currentPreviewIndex];
+  const editor = document.getElementById("illustrationPreviewJsonEditor");
+  const btn = document.getElementById("illustrationPreviewRestoreJsonBtn");
+  if (!item?.id || !editor) return;
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "还原中...";
+  }
+  try {
+    const result = await fetchIllustrationPromptItemOriginal(item.id);
+    editor.value = String(result.jsonText || "");
+    previewJsonDirty = true;
+    updatePreviewJsonCount();
+    updatePreviewJsonWarning();
+    updateImagesJsonWarning();
+    editor.focus();
+    toast("已还原到原始提示词，请检查后保存JSON");
+  } catch (err) {
+    toast(`还原失败：${err.message}`);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "还原";
+    }
+  }
+}
+
+async function applyOptimizedPreviewJson() {
+  const editor = document.getElementById("illustrationPreviewJsonEditor");
+  const btn = document.getElementById("illustrationOptimizeApplyBtn");
+  const text = String(optimizeDetail.jsonText || optimizeDetail.outputText || "").trim();
+  if (!text) {
+    toast("暂无可应用的优化输出");
+    return;
+  }
+  let parsed;
+  try {
+    parsed = parseJsonObjectText(text);
+  } catch (err) {
+    toast(`优化输出不是有效 JSON：${err.message}`);
+    return;
+  }
+  const missingKeys = missingPromptItemKeys(parsed);
+  if (missingKeys.length) {
+    toast(`优化输出缺少必需字段：${missingKeys.join(", ")}`);
+    return;
+  }
+  const normalized = JSON.stringify(parsed, null, 2);
+  if (editor) editor.value = normalized;
+  previewJsonDirty = true;
+  updatePreviewJsonCount();
+  updatePreviewJsonWarning();
+  updateImagesJsonWarning();
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "应用中...";
+  }
+  try {
+    await savePreviewJson(normalized, { quietSuccess: true });
+    toast("优化提示词已应用并保存成功");
+  } finally {
+    if (btn) {
+      btn.textContent = "应用";
+      renderOptimizeDetail();
     }
   }
 }
@@ -1370,10 +1682,10 @@ async function refreshImagesModal() {
   renderImages(await fetchChapterIllustrationImages(activeNovel.id, activeImagesChapterNum));
   if (previewImageId) {
     const index = currentPreviewItems.findIndex((item) => Number(item.id) === previewImageId);
-    if (index >= 0) openPreviewAt(index);
+    if (index >= 0) openPreviewAt(index, { preserveDirtyJson: true });
   } else if (previewItemIndex) {
     const index = currentPreviewItems.findIndex((item) => Number(item.index) === previewItemIndex);
-    if (index >= 0) openPreviewAt(index);
+    if (index >= 0) openPreviewAt(index, { preserveDirtyJson: true });
   }
   await refreshPage();
 }
@@ -1697,10 +2009,12 @@ function bindEvents() {
   document.getElementById("retryPromptBatchBtn").addEventListener("click", async () => {
     const batch = activePromptBatches[activePromptBatchIndex];
     if (!batch) return;
-    await retryChapterIllustrationPromptBatch(activeNovel.id, activePromptBatchesChapterNum, batch.batchIndex, activePromptBatchStage);
-    toast(`第 ${batch.batchIndex} 批已重新入队`);
+    const result = await retryChapterIllustrationPromptBatch(activeNovel.id, activePromptBatchesChapterNum, batch.batchIndex, activePromptBatchStage);
+    const deletedImages = Number(result.deletedImages || 0);
+    toast(`第 ${batch.batchIndex} 批已重新入队${deletedImages ? `，已清理 ${deletedImages} 张图片` : ""}`);
     await refreshPromptBatchesModal();
     await refreshPage();
+    await refreshImagesModal().catch(() => {});
   });
   document.getElementById("promptBatchDialog").addEventListener("close", () => {
     activePromptBatchesChapterNum = 0;
@@ -1747,6 +2061,12 @@ function bindEvents() {
       openPreviewAt(index >= 0 ? index : 0);
     }
   });
+  document.getElementById("illustrationImagesJsonWarning")?.addEventListener("click", (event) => {
+    const btn = event.target.closest(".illustration-json-warning-link");
+    if (!btn) return;
+    const card = document.querySelector(`.illustration-image-card[data-image-id="${btn.dataset.imageId}"]`);
+    if (card) card.scrollIntoView({ behavior: "smooth", block: "center" });
+  });
   document.addEventListener("keydown", async (event) => {
     if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
     if (event.target.closest("input,select,textarea")) return;
@@ -1776,8 +2096,28 @@ function bindEvents() {
   document.getElementById("illustrationPreviewPrevBtn").addEventListener("click", () => switchPreview(-1));
   document.getElementById("illustrationPreviewNextBtn").addEventListener("click", () => switchPreview(1));
   document.getElementById("illustrationPreviewCopyJsonBtn").addEventListener("click", copyPreviewJson);
-  document.getElementById("illustrationPreviewSaveJsonBtn").addEventListener("click", savePreviewJson);
+  document.getElementById("illustrationPreviewOptimizeJsonBtn")?.addEventListener("click", optimizePreviewJson);
+  document.getElementById("illustrationPreviewRestoreJsonBtn")?.addEventListener("click", restorePreviewJson);
+  document.getElementById("illustrationPreviewSaveJsonBtn").addEventListener("click", () => savePreviewJson());
+  document.getElementById("illustrationOptimizeTabs")?.addEventListener("click", (event) => {
+    const btn = event.target.closest(".illustration-optimize-tab");
+    if (!btn) return;
+    optimizeDetailTab = String(btn.dataset.tab || "llm");
+    renderOptimizeDetail();
+  });
+  document.getElementById("illustrationOptimizeApplyBtn")?.addEventListener("click", applyOptimizedPreviewJson);
+  document.getElementById("illustrationOptimizeCopyBtn")?.addEventListener("click", () => {
+    copyText(document.getElementById("illustrationOptimizeContent")?.textContent || "").catch((err) => {
+      toast(`复制失败：${err.message}`);
+    });
+  });
   document.getElementById("illustrationPreviewRefreshBtn").addEventListener("click", refreshPreviewImageData);
+  document.getElementById("illustrationPreviewJsonEditor")?.addEventListener("input", markPreviewJsonDirty);
+  document.getElementById("illustrationImagePreviewDialog")?.addEventListener("close", () => {
+    previewJsonDirty = false;
+    previewJsonImageKey = "";
+    previewJsonOriginalText = "";
+  });
   document.getElementById("illustrationPreviewRegenerateBtn").addEventListener("click", regeneratePreviewImage);
   document.getElementById("illustrationPreviewJsonEditor").addEventListener("input", updatePreviewJsonCount);
   document.getElementById("illustrationImagePreviewDialog").addEventListener("keydown", async (event) => {

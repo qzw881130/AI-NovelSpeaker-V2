@@ -91,13 +91,17 @@ async function api(path, options = {}) {
   });
   if (!res.ok) {
     let errorText = `HTTP ${res.status}`;
+    let errorData = null;
     try {
       const data = await res.json();
+      errorData = data;
       errorText = translateBackendError(data.error || errorText);
     } catch {
       // ignore
     }
-    throw new Error(errorText);
+    const error = new Error(errorText);
+    error.data = errorData;
+    throw error;
   }
   const contentType = res.headers.get("Content-Type") || "";
   if (contentType.includes("application/json")) {
@@ -741,6 +745,27 @@ async function enqueueIllustrationImage(imageId) {
   });
 }
 
+async function optimizeIllustrationPromptItem(imageId, jsonText) {
+  return api(`/api/illustration-images/${Number(imageId)}/prompt/optimize`, {
+    method: "POST",
+    body: JSON.stringify({ jsonText }),
+  });
+}
+
+async function prepareIllustrationPromptItemOptimization(imageId, jsonText) {
+  return api(`/api/illustration-images/${Number(imageId)}/prompt/optimize/prepare`, {
+    method: "POST",
+    body: JSON.stringify({ jsonText }),
+  });
+}
+
+async function fetchIllustrationPromptItemOriginal(imageId) {
+  return api(`/api/illustration-images/${Number(imageId)}/prompt/original`, {
+    method: "POST",
+    body: "{}",
+  });
+}
+
 async function enqueueAllIllustrationImages(novelId, chapterNum) {
   return api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/illustration/images/enqueue-all`, {
     method: "POST",
@@ -1160,7 +1185,10 @@ export {
   saveChapterIllustrationPromptItem,
   saveChapterIllustrationPromptOutput,
   fetchChapterIllustrationImages,
+  fetchIllustrationPromptItemOriginal,
   enqueueIllustrationImage,
+  optimizeIllustrationPromptItem,
+  prepareIllustrationPromptItemOptimization,
   enqueueAllIllustrationImages,
   retryChapterIllustrationPromptBatch,
   fetchChapterAsrFile,

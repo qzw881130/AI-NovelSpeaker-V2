@@ -5334,6 +5334,44 @@ body.is-illustration-drag-selecting {
   background: #fffdf8;
 }
 
+.illustration-image-card.has-json-key-warning {
+  border: 3px solid #d93025;
+  box-shadow: 0 0 0 2px rgba(217, 48, 37, 0.12);
+}
+
+.illustration-json-warning {
+  margin: 8px 0;
+  padding: 8px 10px;
+  border: 1px solid rgba(217, 48, 37, 0.45);
+  border-radius: 10px;
+  background: rgba(217, 48, 37, 0.08);
+  color: #a61b16;
+  font-weight: 600;
+}
+
+.illustration-images-json-warning {
+  margin: 0 0 10px;
+}
+
+.illustration-json-warning-link {
+  border: 0;
+  background: transparent;
+  color: #a61b16;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  padding: 0 2px;
+}
+
+.illustration-json-warning-link:hover {
+  text-decoration: underline;
+}
+
+.illustration-json-card-warning {
+  color: #a61b16;
+  font-weight: 700;
+}
+
 .illustration-summary-meta {
   height: 3em;
   overflow: hidden;

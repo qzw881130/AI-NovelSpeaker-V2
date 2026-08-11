@@ -9,7 +9,7 @@ let activePromptCategory = "json_parse";
 let promptSaving = false;
 let settingsPromptCategory = "json_parse";
 
-const NO_BATCH_PROMPT_CATEGORIES = new Set(["illustration_scene", "illustration_shot", "illustration_prompt", "subtitle_fix"]);
+const NO_BATCH_PROMPT_CATEGORIES = new Set(["illustration_scene", "illustration_shot", "illustration_prompt", "illustration_prompt_optimize", "subtitle_fix"]);
 const BATCH_CHAR_OPTIONS = [
   { value: "0", label: "不拆分" },
   { value: "3500", label: "3500" },
@@ -29,6 +29,7 @@ function promptCategoryLabel(category) {
     illustration_scene: "插画-scene提示词",
     illustration_shot: "插画-shot提示词",
     illustration_prompt: "插画-prompt提示词",
+    illustration_prompt_optimize: "插画-提示词优化",
     subtitle_fix: "修复字幕提示词",
   };
   return labels[String(category || "json_parse")] || "JSON 解析提示词";

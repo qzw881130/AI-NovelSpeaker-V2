@@ -238,6 +238,7 @@ DDL_STATEMENTS = [
         cn_summary TEXT NOT NULL DEFAULT '',
         character_names TEXT NOT NULL DEFAULT '',
         suggested_size TEXT NOT NULL DEFAULT '',
+        original_prompt_json_text TEXT NOT NULL DEFAULT '',
         prompt_text TEXT NOT NULL DEFAULT '',
         status TEXT NOT NULL DEFAULT 'idle',
         progress INTEGER NOT NULL DEFAULT 0,

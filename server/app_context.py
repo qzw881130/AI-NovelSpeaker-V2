@@ -106,6 +106,21 @@ SUBTITLE_FIX_PROMPT_LLM_DEFAULTS = {
     },
 }
 
+ILLUSTRATION_PROMPT_OPTIMIZE_LLM_DEFAULTS = {
+    "enabled": True,
+    "llm": {
+        "temperature": 0.2,
+        "topP": 0.85,
+        "maxTokens": 32768,
+        "numCtx": 65536,
+        "keepAlive": "30m",
+        "unloadAfterCall": False,
+        "batchTimeoutMinutes": 10,
+        "think": False,
+        "batchMaxChars": 0,
+    },
+}
+
 SYSTEM_PROMPTS = [
     {
         "file": SYSTEM_PROMPT_FILE,
@@ -183,6 +198,15 @@ SYSTEM_PROMPTS = [
         "category": "subtitle_fix",
         "default_content": "请根据小说正文校正ASR字幕，并只输出修正后的SRT内容。",
         "default_llm_settings": SUBTITLE_FIX_PROMPT_LLM_DEFAULTS,
+        "legacy_names": [],
+    },
+    {
+        "file": PROMPTS_DIR / "illustration_prompt_optimize_system_prompt.txt",
+        "name": "插画-提示词优化",
+        "description": "系统内置，适用于优化单个 AI 绘画 prompt.json 项",
+        "category": "illustration_prompt_optimize",
+        "default_content": "请优化输入的 prompt.json，使其更适合 AI 图片生成，并只输出完整 JSON。",
+        "default_llm_settings": ILLUSTRATION_PROMPT_OPTIMIZE_LLM_DEFAULTS,
         "legacy_names": [],
     },
 ]
@@ -632,6 +656,7 @@ def migrate_chapter_illustration_images_table(conn: sqlite3.Connection) -> None:
             cn_summary TEXT NOT NULL DEFAULT '',
             character_names TEXT NOT NULL DEFAULT '',
             suggested_size TEXT NOT NULL DEFAULT '',
+            original_prompt_json_text TEXT NOT NULL DEFAULT '',
             prompt_text TEXT NOT NULL DEFAULT '',
             status TEXT NOT NULL DEFAULT 'idle',
             progress INTEGER NOT NULL DEFAULT 0,
@@ -652,6 +677,8 @@ def migrate_chapter_illustration_images_table(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE chapter_illustration_images ADD COLUMN character_names TEXT NOT NULL DEFAULT ''")
     if "suggested_size" not in column_names:
         conn.execute("ALTER TABLE chapter_illustration_images ADD COLUMN suggested_size TEXT NOT NULL DEFAULT ''")
+    if "original_prompt_json_text" not in column_names:
+        conn.execute("ALTER TABLE chapter_illustration_images ADD COLUMN original_prompt_json_text TEXT NOT NULL DEFAULT ''")
 
 
 def migrate_chapter_illustration_prompt_batches_table(conn: sqlite3.Connection) -> None:

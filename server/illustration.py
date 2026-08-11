@@ -41,6 +41,8 @@ STAGE_NOVEL_PROMPT_COLUMN = {
 ILLUSTRATION_IMAGE_QUEUE_LOCK = threading.Lock()
 ILLUSTRATION_LLM_QUEUE_LOCK = threading.Lock()
 DEFAULT_VISUAL_STYLE = "3D皮克斯动画电影风格"
+ILLUSTRATION_PROMPT_OPTIMIZE_CATEGORY = "illustration_prompt_optimize"
+ILLUSTRATION_PROMPT_OPTIMIZE_NAME = "插画-提示词优化"
 
 
 def _status_value(value: str | None) -> str:
@@ -199,6 +201,11 @@ def _parse_json_any(raw: str):
 
 def _json_dumps(data) -> str:
     return json.dumps(data, ensure_ascii=False, indent=2)
+
+
+def _validate_optimized_prompt_item(original: dict, optimized: dict) -> None:
+    if set(original.keys()) != set(optimized.keys()):
+        raise RuntimeError("优化结果最外层字段与原 JSON 不一致")
 
 
 def _prompt_items(parsed) -> list:
@@ -372,6 +379,46 @@ def _delete_illustration_image_files(conn, novel_id: int, chapter_id: int) -> No
                 resolved.rmdir()
         except Exception:
             pass
+
+
+def _reset_illustration_images_in_range(conn, novel_id: int, chapter_id: int, start_index: int, end_index: int) -> int:
+    start = min(int(start_index), int(end_index))
+    end = max(int(start_index), int(end_index))
+    rows = conn.execute(
+        """
+        SELECT image_file_path
+        FROM chapter_illustration_images
+        WHERE novel_id=? AND chapter_id=? AND item_index BETWEEN ? AND ?
+        """,
+        (novel_id, chapter_id, start, end),
+    ).fetchall()
+    deleted = 0
+    touched_dirs: set[Path] = set()
+    for row in rows:
+        rel = str(row["image_file_path"] or "").strip()
+        if not rel:
+            continue
+        path = ROOT_DIR / rel
+        touched_dirs.add(path.parent)
+        if path.exists():
+            deleted += 1
+        _safe_unlink_under_root(path)
+    for directory in touched_dirs:
+        try:
+            resolved = directory.resolve()
+            if resolved.is_dir() and resolved.is_relative_to(ROOT_DIR.resolve()) and not any(resolved.iterdir()):
+                resolved.rmdir()
+        except Exception:
+            pass
+    conn.execute(
+        """
+        UPDATE chapter_illustration_images
+        SET status='idle', progress=0, image_file_path='', error_message='', started_at=NULL, updated_at=CURRENT_TIMESTAMP
+        WHERE novel_id=? AND chapter_id=? AND item_index BETWEEN ? AND ?
+        """,
+        (novel_id, chapter_id, start, end),
+    )
+    return deleted
 
 
 def _write_optimized_illustration_image(data: bytes, source_filename: str, out_dir: Path, item_index: int) -> Path:
@@ -911,6 +958,148 @@ def save_illustration_prompt_item(novel_id: int, chapter_id: int, item_index: in
     return {"promptCount": len(prompts), "imageCount": len(items), "item": updated or {}}
 
 
+def _load_prompt_item_for_image(conn, image_id: int) -> tuple[dict, dict, list, dict]:
+    image = conn.execute(
+        "SELECT * FROM chapter_illustration_images WHERE id=?",
+        (int(image_id),),
+    ).fetchone()
+    if not image:
+        raise RuntimeError("image item not found")
+    row = conn.execute(
+        "SELECT id,result_json_text FROM chapter_illustration_tasks WHERE novel_id=? AND chapter_id=? AND stage='prompt'",
+        (int(image["novel_id"]), int(image["chapter_id"])),
+    ).fetchone()
+    if not row:
+        raise RuntimeError("prompt task not found")
+    parsed = _parse_json_any(str(row["result_json_text"] or ""))
+    prompts = _prompt_items(parsed)
+    item_index = int(image["item_index"] or 0)
+    for pos, item in enumerate(prompts, start=1):
+        if not isinstance(item, dict):
+            continue
+        try:
+            idx = int(item.get("index") or pos)
+        except (TypeError, ValueError):
+            idx = pos
+        if idx == item_index:
+            return image, row, prompts, item
+    raise RuntimeError(f"prompt item #{item_index} not found")
+
+
+def _prepare_illustration_prompt_item_optimization(image_id: int, json_text: str) -> dict:
+    current = _parse_json_any(json_text)
+    if not isinstance(current, dict):
+        raise RuntimeError("prompt item must be a JSON object")
+    current = dict(current)
+    current_text = _json_dumps(current)
+    conn = db_conn()
+    try:
+        image, _, _, _ = _load_prompt_item_for_image(conn, image_id)
+        if not str(image["original_prompt_json_text"] or "").strip():
+            conn.execute(
+                "UPDATE chapter_illustration_images SET original_prompt_json_text=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                (current_text, int(image_id)),
+            )
+            conn.commit()
+        settings = fetch_settings(conn)
+        prompt_row = conn.execute(
+            "SELECT id,content FROM json_prompts WHERE prompt_category=? ORDER BY CASE WHEN prompt_type='system' THEN 0 ELSE 1 END, id DESC LIMIT 1",
+            (ILLUSTRATION_PROMPT_OPTIMIZE_CATEGORY,),
+        ).fetchone()
+        if not prompt_row:
+            prompt_row = conn.execute(
+                "SELECT id,content FROM json_prompts WHERE name=? LIMIT 1",
+                (ILLUSTRATION_PROMPT_OPTIMIZE_NAME,),
+            ).fetchone()
+        if not prompt_row:
+            raise RuntimeError("未找到插画-提示词优化提示词")
+        llm = apply_prompt_llm_settings(settings.get("llm") or {}, load_prompt_llm_settings(conn, int(prompt_row["id"])))
+        proxy_url = effective_proxy_url(settings)
+        system_prompt = str(prompt_row["content"] or "").strip()
+    finally:
+        conn.close()
+    request_preview = build_llm_prompt_json_request(
+        llm=llm,
+        proxy_url=proxy_url,
+        system_prompt=system_prompt,
+        user_prompt=current_text,
+    )
+    headers = dict(request_preview.get("headers") or {})
+    if headers.get("Authorization"):
+        headers["Authorization"] = "Bearer ***"
+    request_preview["headers"] = headers
+    return {
+        "llm": llm,
+        "proxyUrl": proxy_url,
+        "systemPrompt": system_prompt,
+        "inputText": current_text,
+        "requestPreview": request_preview,
+        "hasOriginalPromptBackup": True,
+    }
+
+
+def prepare_illustration_prompt_item_optimization(image_id: int, json_text: str) -> dict:
+    prepared = _prepare_illustration_prompt_item_optimization(image_id, json_text)
+    return {
+        "requestPreview": prepared["requestPreview"],
+        "inputText": prepared["inputText"],
+        "hasOriginalPromptBackup": True,
+    }
+
+
+def optimize_illustration_prompt_item(image_id: int, json_text: str) -> dict:
+    prepared = _prepare_illustration_prompt_item_optimization(image_id, json_text)
+    raw = call_llm_prompt_json(
+        llm=prepared["llm"],
+        proxy_url=prepared["proxyUrl"],
+        system_prompt=prepared["systemPrompt"],
+        user_prompt=prepared["inputText"],
+    )
+    try:
+        optimized = _parse_json_any(raw)
+        if not isinstance(optimized, dict):
+            raise RuntimeError("优化结果不是 JSON 对象")
+        current = _parse_json_any(prepared["inputText"])
+        _validate_optimized_prompt_item(current, optimized)
+    except Exception as exc:
+        error = RuntimeError(str(exc))
+        error.detail = {
+            "requestPreview": prepared["requestPreview"],
+            "inputText": prepared["inputText"],
+            "outputText": raw,
+            "hasOriginalPromptBackup": True,
+        }
+        raise error from exc
+    optimized_text = _json_dumps(optimized)
+    return {
+        "jsonText": optimized_text,
+        "hasOriginalPromptBackup": True,
+        "requestPreview": prepared["requestPreview"],
+        "inputText": prepared["inputText"],
+        "outputText": raw,
+    }
+
+
+def get_illustration_prompt_item_original(image_id: int) -> dict:
+    conn = db_conn()
+    try:
+        row = conn.execute(
+            "SELECT original_prompt_json_text FROM chapter_illustration_images WHERE id=?",
+            (int(image_id),),
+        ).fetchone()
+        if not row:
+            raise RuntimeError("image item not found")
+        text = str(row["original_prompt_json_text"] or "").strip()
+        if not text:
+            raise RuntimeError("尚未备份原始提示词")
+        parsed = _parse_json_any(text)
+        if not isinstance(parsed, dict):
+            raise RuntimeError("原始提示词备份不是 JSON 对象")
+        return {"jsonText": _json_dumps(parsed), "hasOriginalPromptBackup": True}
+    finally:
+        conn.close()
+
+
 def save_illustration_scene_output(novel_id: int, chapter_id: int, json_text: str) -> dict:
     parsed = _parse_json_any(json_text)
     if not isinstance(parsed, dict):
@@ -1228,7 +1417,7 @@ def list_prompt_batches(novel_id: int, chapter_id: int, stage: str = "prompt") -
     }
 
 
-def retry_prompt_batch(novel_id: int, chapter_id: int, batch_index: int, stage: str = "prompt") -> tuple[bool, str]:
+def retry_prompt_batch(novel_id: int, chapter_id: int, batch_index: int, stage: str = "prompt") -> tuple[bool, str, int]:
     stage = "shot" if str(stage or "") == "shot" else "prompt"
     conn = db_conn()
     task = conn.execute(
@@ -1237,17 +1426,20 @@ def retry_prompt_batch(novel_id: int, chapter_id: int, batch_index: int, stage: 
     ).fetchone()
     if not task:
         conn.close()
-        return False, f"{stage} task not found"
+        return False, f"{stage} task not found", 0
     if str(task["status"] or "") in {"running", "processing"}:
         conn.close()
-        return False, f"{stage} task is running"
+        return False, f"{stage} task is running", 0
     batch = conn.execute(
-        "SELECT id FROM chapter_illustration_prompt_batches WHERE task_id=? AND batch_index=?",
+        "SELECT id,start_index,end_index FROM chapter_illustration_prompt_batches WHERE task_id=? AND batch_index=?",
         (int(task["id"]), int(batch_index)),
     ).fetchone()
     if not batch:
         conn.close()
-        return False, "batch not found"
+        return False, "batch not found", 0
+    deleted_images = 0
+    if stage == "prompt":
+        deleted_images = _reset_illustration_images_in_range(conn, novel_id, chapter_id, int(batch["start_index"] or 0), int(batch["end_index"] or 0))
     conn.execute(
         "UPDATE chapter_illustration_prompt_batches SET status='pending',progress=0,output_text='',result_json_text='',error_message='',started_at=NULL,updated_at=CURRENT_TIMESTAMP WHERE id=?",
         (int(batch["id"]),),
@@ -1258,7 +1450,7 @@ def retry_prompt_batch(novel_id: int, chapter_id: int, batch_index: int, stage: 
     )
     conn.commit()
     conn.close()
-    return True, "queued"
+    return True, "queued", deleted_images
 
 
 def sync_prompt_images(novel_id: int, chapter_id: int) -> list[dict]:
@@ -1357,6 +1549,7 @@ def list_illustration_images(novel_id: int, chapter_id: int, conn=None) -> list[
             "suggestedSize": str(r["suggested_size"] or ""),
             "promptText": str(r["prompt_text"] or ""),
             "promptJson": prompt_items_by_index.get(idx) or {},
+            "hasOriginalPromptBackup": bool(str(r["original_prompt_json_text"] or "").strip()),
             "start": meta.get("start"),
             "end": meta.get("end"),
             "duration": meta.get("duration"),

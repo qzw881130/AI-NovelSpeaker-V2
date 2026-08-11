@@ -68,9 +68,12 @@ from .illustration import (
     enqueue_illustration_image,
     get_illustration_task_payload,
     get_illustration_llm_request_preview,
+    get_illustration_prompt_item_original,
     list_illustration_images,
     list_illustration_chapters,
     list_prompt_batches,
+    optimize_illustration_prompt_item,
+    prepare_illustration_prompt_item_optimization,
     retry_prompt_batch,
     save_illustration_scene_output,
     save_illustration_prompt_item,
@@ -3429,11 +3432,11 @@ class Handler(BaseHTTPRequestHandler):
             if not chapter_row:
                 self.send_json({"error": "chapter not found"}, 404)
                 return
-            ok, msg = retry_prompt_batch(novel_id, int(chapter_row["id"]), batch_index, stage)
+            ok, msg, deleted_images = retry_prompt_batch(novel_id, int(chapter_row["id"]), batch_index, stage)
             if not ok:
                 self.send_json({"error": msg}, 409)
                 return
-            self.send_json({"status": "queued"})
+            self.send_json({"status": "queued", "deletedImages": deleted_images})
             return
 
         m_prompt_output_save = re.match(
@@ -3536,6 +3539,45 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": msg}, 409)
                 return
             self.send_json({"status": "queued"})
+            return
+
+        m_illustration_image_optimize = re.match(r"^/api/illustration-images/(\d+)/prompt/optimize$", route)
+        if m_illustration_image_optimize:
+            image_id = int(m_illustration_image_optimize.group(1))
+            payload = self.read_json()
+            try:
+                data = optimize_illustration_prompt_item(image_id, str(payload.get("jsonText") or ""))
+            except Exception as exc:
+                detail = getattr(exc, "detail", None)
+                if isinstance(detail, dict):
+                    self.send_json({"error": str(exc), **detail}, 400)
+                else:
+                    self.send_json({"error": str(exc)}, 400)
+                return
+            self.send_json({"status": "optimized", **data})
+            return
+
+        m_illustration_image_optimize_prepare = re.match(r"^/api/illustration-images/(\d+)/prompt/optimize/prepare$", route)
+        if m_illustration_image_optimize_prepare:
+            image_id = int(m_illustration_image_optimize_prepare.group(1))
+            payload = self.read_json()
+            try:
+                data = prepare_illustration_prompt_item_optimization(image_id, str(payload.get("jsonText") or ""))
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, 400)
+                return
+            self.send_json({"status": "prepared", **data})
+            return
+
+        m_illustration_image_original = re.match(r"^/api/illustration-images/(\d+)/prompt/original$", route)
+        if m_illustration_image_original:
+            image_id = int(m_illustration_image_original.group(1))
+            try:
+                data = get_illustration_prompt_item_original(image_id)
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, 404)
+                return
+            self.send_json({"status": "ok", **data})
             return
 
         m_illustration_images_enqueue_all = re.match(
