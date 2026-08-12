@@ -54,6 +54,7 @@ let previewJsonImageKey = "";
 let previewJsonOriginalText = "";
 let optimizeDetailTab = "llm";
 let optimizeDetail = { requestPreview: null, inputText: "", outputText: "", jsonText: "", status: "idle", error: "" };
+let activeImageDataText = "";
 const selectedChapterNums = new Set();
 let dragSelecting = false;
 let dragSelectValue = true;
@@ -283,13 +284,17 @@ function renderStageCell(item, stage) {
   const disabled = ["pending", "running", "processing"].includes(String(data.status || ""));
   const sceneWarning = stage === "scene" ? sceneTimingWarningFromChapter(item) : null;
   const shotWarning = stage === "shot" ? shotCountWarningFromChapter(item) : null;
+  const promptJsonWarning = stage === "prompt" && item.promptJsonWarning?.hasWarning ? item.promptJsonWarning : null;
+  const promptWarningTitle = promptJsonWarning
+    ? `存在缺少key的插图JSON：${(promptJsonWarning.items || []).map((entry) => `#${entry.index}`).join(", ")}`
+    : "";
   const actionButtons = stage === "prompt"
     ? `
         <button class="ghost-btn btn-sm illustration-run-btn" type="button" data-stage="${stage}" data-chapter-num="${chapterNum}" ${disabled ? "disabled" : ""}>解析插画${STAGE_LABELS[stage].toLowerCase()}</button>
         <button class="ghost-btn btn-sm illustration-prompt-detail-btn" type="button" data-stage="${stage}" data-chapter-num="${chapterNum}">详情</button>
         <button class="ghost-btn btn-sm illustration-prompt-output-btn" type="button" data-chapter-num="${chapterNum}">输出</button>
         ${item.videoExportTaskId ? `<button class="primary-btn btn-sm illustration-video-btn" type="button" data-chapter-num="${chapterNum}" data-task-id="${Number(item.videoExportTaskId)}"><span aria-hidden="true">▶</span> 播放视频</button>` : ""}
-        ${data.status === "completed" ? renderImagesButton(item, chapterNum) : ""}
+        ${data.status === "completed" ? renderImagesButton(item, chapterNum, promptWarningTitle) : ""}
       `
     : `
         <button class="ghost-btn btn-sm illustration-run-btn" type="button" data-stage="${stage}" data-chapter-num="${chapterNum}" ${disabled ? "disabled" : ""}>解析插画${STAGE_LABELS[stage].toLowerCase()}</button>
@@ -302,6 +307,7 @@ function renderStageCell(item, stage) {
     <div class="stage-cell">
       <div class="stage-status-row">
         <span class="${statusClass(data.status)}" title="${escapeHtml(data.errorMessage || "")}">${statusLabel(data.status)}${progress ? ` ${progress}%` : ""}</span>
+        ${promptJsonWarning ? `<span class="illustration-alert-dot" title="${escapeHtml(promptWarningTitle)}" aria-label="${escapeHtml(promptWarningTitle)}">!</span>` : ""}
         ${stageElapsedLabel(data) ? `<span class="stage-elapsed" ${stageElapsedAttrs(data)} title="${escapeHtml(data.startedAt || "")}">${escapeHtml(stageElapsedLabel(data))}</span>` : ""}
       </div>
       <div class="table-actions-inline">
@@ -359,7 +365,7 @@ function setPayloadTitle(titleEl, text, warningTitle = "") {
   titleEl.appendChild(badge);
 }
 
-function renderImagesButton(item, chapterNum) {
+function renderImagesButton(item, chapterNum, promptWarningTitle = "") {
   const missing = Number(item.images?.missing || 0);
   const unqueued = Number(item.images?.unqueued || 0);
   const expected = Number(item.images?.expected || 0);
@@ -368,11 +374,23 @@ function renderImagesButton(item, chapterNum) {
     ? `未入队列 ${unqueued} 张；插图未生成 ${missing} 张（${generated}/${expected}）`
     : (missing > 0 ? `插图未生成 ${missing} 张（${generated}/${expected}）` : "插图");
   return `
-    <button class="ghost-btn btn-sm illustration-images-btn ${missing > 0 ? "has-missing-images" : ""} ${unqueued > 0 ? "has-unqueued-images" : ""}" type="button" data-chapter-num="${chapterNum}" title="${escapeHtml(title)}">
+    <button class="ghost-btn btn-sm illustration-images-btn ${missing > 0 ? "has-missing-images" : ""} ${unqueued > 0 ? "has-unqueued-images" : ""} ${promptWarningTitle ? "has-illustration-warning" : ""}" type="button" data-chapter-num="${chapterNum}" title="${escapeHtml(promptWarningTitle || title)}">
       插图
-      ${missing > 0 ? '<span class="illustration-alert-dot" aria-hidden="true">!</span>' : ""}
+      ${missing > 0 || promptWarningTitle ? '<span class="illustration-alert-dot" aria-hidden="true">!</span>' : ""}
     </button>
   `;
+}
+
+function openImageDataModal(item) {
+  if (!item) return;
+  const title = document.getElementById("illustrationImageDataTitle");
+  const content = document.getElementById("illustrationImageDataContent");
+  const data = item.promptJson && typeof item.promptJson === "object" && Object.keys(item.promptJson).length ? item.promptJson : item;
+  activeImageDataText = JSON.stringify(data, null, 2);
+  title.textContent = `插图数据 · #${item.index || ""} ${item.sceneTitle || ""}`.trim();
+  content.textContent = activeImageDataText;
+  const dialog = document.getElementById("illustrationImageDataDialog");
+  if (!dialog.open) dialog.showModal();
 }
 
 function openIllustrationVideo(chapterNum, taskId) {
@@ -1227,6 +1245,7 @@ function renderImages(items) {
         <p class="meta illustration-summary-meta">${escapeHtml(item.cnSummary || "-")}</p>
         <div class="card-actions">
           <button class="ghost-btn btn-sm illustration-generate-image-btn" type="button" data-image-id="${item.id}" ${busy ? "disabled" : ""}>${hasImage ? "重新生成" : "生成"}</button>
+          <button class="ghost-btn btn-sm illustration-image-data-btn" type="button" data-image-id="${item.id}">查看数据</button>
         </div>
       </article>
     `;
@@ -2047,6 +2066,12 @@ function bindEvents() {
     await refreshImagesModal();
   });
   document.getElementById("illustrationImagesList").addEventListener("click", async (event) => {
+    const dataBtn = event.target.closest(".illustration-image-data-btn");
+    if (dataBtn) {
+      const item = currentImageItems.find((entry) => String(entry.id) === String(dataBtn.dataset.imageId || ""));
+      openImageDataModal(item);
+      return;
+    }
     const genBtn = event.target.closest(".illustration-generate-image-btn");
     if (genBtn) {
       await enqueueIllustrationImage(genBtn.dataset.imageId);
@@ -2108,6 +2133,11 @@ function bindEvents() {
   document.getElementById("illustrationOptimizeApplyBtn")?.addEventListener("click", applyOptimizedPreviewJson);
   document.getElementById("illustrationOptimizeCopyBtn")?.addEventListener("click", () => {
     copyText(document.getElementById("illustrationOptimizeContent")?.textContent || "").catch((err) => {
+      toast(`复制失败：${err.message}`);
+    });
+  });
+  document.getElementById("illustrationImageDataCopyBtn")?.addEventListener("click", () => {
+    copyText(activeImageDataText).catch((err) => {
       toast(`复制失败：${err.message}`);
     });
   });

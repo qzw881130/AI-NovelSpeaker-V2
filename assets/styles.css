@@ -5372,6 +5372,15 @@ body.is-illustration-drag-selecting {
   font-weight: 700;
 }
 
+.illustration-image-card .card-actions {
+  justify-content: space-between;
+  align-items: center;
+}
+
+.illustration-image-data-btn {
+  margin-left: auto;
+}
+
 .illustration-summary-meta {
   height: 3em;
   overflow: hidden;

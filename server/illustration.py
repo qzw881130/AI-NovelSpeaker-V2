@@ -43,6 +43,28 @@ ILLUSTRATION_LLM_QUEUE_LOCK = threading.Lock()
 DEFAULT_VISUAL_STYLE = "3D皮克斯动画电影风格"
 ILLUSTRATION_PROMPT_OPTIMIZE_CATEGORY = "illustration_prompt_optimize"
 ILLUSTRATION_PROMPT_OPTIMIZE_NAME = "插画-提示词优化"
+REQUIRED_PROMPT_ITEM_KEYS = {
+    "index",
+    "origin",
+    "country",
+    "culture",
+    "era",
+    "visual_style",
+    "scene_type",
+    "scene_type_weight",
+    "style_strength",
+    "scene_title",
+    "cn_summary",
+    "human_count",
+    "visual_character_card",
+    "positive_core",
+    "positive_character",
+    "positive_scene",
+    "positive_camera",
+    "positive_style",
+    "negative",
+    "suggested_size",
+}
 
 
 def _status_value(value: str | None) -> str:
@@ -595,6 +617,26 @@ def _count_prompt_image_items(result_json_text: str) -> int:
     return len(prompts) if isinstance(prompts, list) else 0
 
 
+def _prompt_json_key_warning(result_json_text: str) -> dict:
+    try:
+        parsed = _parse_json_any(str(result_json_text or ""))
+    except Exception:
+        return {"hasWarning": False, "items": []}
+    items = []
+    for pos, item in enumerate(_prompt_items(parsed), start=1):
+        if not isinstance(item, dict):
+            continue
+        missing_keys = sorted(REQUIRED_PROMPT_ITEM_KEYS - set(item.keys()))
+        if not missing_keys:
+            continue
+        try:
+            index = int(item.get("index") or pos)
+        except (TypeError, ValueError):
+            index = pos
+        items.append({"index": index, "missingKeys": missing_keys})
+    return {"hasWarning": bool(items), "items": items}
+
+
 def _scene_timing_warning(result_json_text: str, audio_duration_seconds: float) -> dict:
     try:
         parsed = _parse_json_any(str(result_json_text or ""))
@@ -722,6 +764,7 @@ def list_illustration_chapters(novel_id: int) -> list[dict]:
         shot_result = str(r["shot_result_json"] or "") if _status_value(r["shot_status"]) == "completed" else ""
         shot_count = _shot_item_count(shot_result) if shot_result else 0
         prompt_status = _status_value(r["prompt_status"])
+        prompt_result = str(r["prompt_result_json"] or "") if prompt_status == "completed" else ""
         prompt_progress = int(r["prompt_progress"] or 0)
         prompt_error = str(r["prompt_error"] or "")
         prompt_batch_total = int(r["prompt_batch_total"] or 0)
@@ -770,6 +813,7 @@ def list_illustration_chapters(novel_id: int) -> list[dict]:
                 "sceneCount": scene_count,
                 "shotCount": shot_count,
             },
+            "promptJsonWarning": _prompt_json_key_warning(prompt_result) if prompt_result else {"hasWarning": False, "items": []},
             "stages": {
                 "scene": {"status": _status_value(r["scene_status"]), "progress": int(r["scene_progress"] or 0), "errorMessage": str(r["scene_error"] or ""), "startedAt": str(r["scene_started_at"] or ""), "updatedAt": str(r["scene_updated_at"] or "")},
                 "shot": {"status": _status_value(r["shot_status"]), "progress": int(r["shot_progress"] or 0), "errorMessage": str(r["shot_error"] or ""), "startedAt": str(r["shot_started_at"] or ""), "updatedAt": str(r["shot_updated_at"] or "")},
