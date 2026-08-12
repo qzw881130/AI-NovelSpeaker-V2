@@ -192,6 +192,15 @@ SYSTEM_PROMPTS = [
         "legacy_names": [],
     },
     {
+        "file": PROMPTS_DIR / "illustration_prompt_multi_no_negative_system_prompt.txt",
+        "name": "插画-prompt提示词-多图（无negative）",
+        "description": "基于 插画-prompt提示词 复制",
+        "category": "illustration_prompt",
+        "default_content": "请根据scene.json与shot.json输出配合多图的AI绘画prompt.json，negative保持为空。",
+        "default_llm_settings": ILLUSTRATION_MULTI_PROMPT_LLM_DEFAULTS,
+        "legacy_names": [],
+    },
+    {
         "file": PROMPTS_DIR / "subtitle_fix_system_prompt.txt",
         "name": "修复字幕提示词",
         "description": "系统内置，适用于根据小说正文修复ASR字幕错误",
