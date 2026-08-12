@@ -61,6 +61,7 @@ from .nsfw_review import (
     list_nsfw_review_chapters,
 )
 from .illustration import (
+    cancel_prompt_batch,
     cancel_pending_illustration_images,
     cancel_pending_illustration_tasks,
     enqueue_illustration_task,
@@ -3437,6 +3438,30 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": msg}, 409)
                 return
             self.send_json({"status": "queued", "deletedImages": deleted_images})
+            return
+
+        m_prompt_batch_cancel = re.match(
+            r"^/api/novels/(\d+)/chapters/(\d+)/illustration/(shot|prompt)/batches/(\d+)/cancel$", route
+        )
+        if m_prompt_batch_cancel:
+            novel_id = int(m_prompt_batch_cancel.group(1))
+            chapter_num = int(m_prompt_batch_cancel.group(2))
+            stage = str(m_prompt_batch_cancel.group(3))
+            batch_index = int(m_prompt_batch_cancel.group(4))
+            conn = db_conn()
+            chapter_row = conn.execute(
+                "SELECT id FROM chapters WHERE novel_id=? AND chapter_num=?",
+                (novel_id, chapter_num),
+            ).fetchone()
+            conn.close()
+            if not chapter_row:
+                self.send_json({"error": "chapter not found"}, 404)
+                return
+            ok, msg = cancel_prompt_batch(novel_id, int(chapter_row["id"]), batch_index, stage)
+            if not ok:
+                self.send_json({"error": msg}, 409)
+                return
+            self.send_json({"status": "cancelled"})
             return
 
         m_prompt_output_save = re.match(

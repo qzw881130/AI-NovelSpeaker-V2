@@ -1,6 +1,7 @@
 import {
   cancelPendingIllustrationImages,
   cancelPendingIllustrationTasks,
+  cancelChapterIllustrationPromptBatch,
   enqueueChapterIllustration,
   enqueueAllIllustrationImages,
   enqueueIllustrationImage,
@@ -1160,6 +1161,7 @@ function renderPromptBatchModal() {
   const content = document.getElementById("promptBatchContent");
   const meta = document.getElementById("promptBatchMeta");
   const retryBtn = document.getElementById("retryPromptBatchBtn");
+  const cancelBtn = document.getElementById("cancelPromptBatchBtn");
   const stageLabel = STAGE_LABELS[activePromptBatchStage] || "Prompt";
   list.innerHTML = activePromptBatches.length ? activePromptBatches.map((batch, idx) => `
     <button class="prompt-batch-item ${idx === activePromptBatchIndex ? "active" : ""}" type="button" data-batch-index="${idx}">
@@ -1168,8 +1170,14 @@ function renderPromptBatchModal() {
     </button>
   `).join("") : `<p class="empty-text">暂无批次数据，开始解析 ${stageLabel} 后生成。</p>`;
   const batch = activePromptBatches[activePromptBatchIndex] || null;
+  const batchBusy = Boolean(batch && ["pending", "running", "processing"].includes(String(batch.status || "")));
   meta.textContent = promptBatchMetaText(batch);
-  retryBtn.disabled = !batch || ["pending", "running", "processing"].includes(String(batch.status || ""));
+  retryBtn.hidden = batchBusy;
+  retryBtn.disabled = !batch || batchBusy;
+  if (cancelBtn) {
+    cancelBtn.hidden = !batchBusy;
+    cancelBtn.disabled = !batchBusy;
+  }
   content.textContent = promptBatchContent(batch);
   document.querySelectorAll(".prompt-batch-tab").forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.tab === activePromptBatchTab);
@@ -2034,12 +2042,24 @@ function bindEvents() {
   document.getElementById("retryPromptBatchBtn").addEventListener("click", async () => {
     const batch = activePromptBatches[activePromptBatchIndex];
     if (!batch) return;
+    const retryBtn = document.getElementById("retryPromptBatchBtn");
+    const cancelBtn = document.getElementById("cancelPromptBatchBtn");
+    retryBtn.hidden = true;
+    if (cancelBtn) cancelBtn.hidden = false;
     const result = await retryChapterIllustrationPromptBatch(activeNovel.id, activePromptBatchesChapterNum, batch.batchIndex, activePromptBatchStage);
     const deletedImages = Number(result.deletedImages || 0);
     toast(`第 ${batch.batchIndex} 批已重新入队${deletedImages ? `，已清理 ${deletedImages} 张图片` : ""}`);
     await refreshPromptBatchesModal();
     await refreshPage();
     await refreshImagesModal().catch(() => {});
+  });
+  document.getElementById("cancelPromptBatchBtn")?.addEventListener("click", async () => {
+    const batch = activePromptBatches[activePromptBatchIndex];
+    if (!batch) return;
+    await cancelChapterIllustrationPromptBatch(activeNovel.id, activePromptBatchesChapterNum, batch.batchIndex, activePromptBatchStage);
+    toast(`第 ${batch.batchIndex} 批已终止`);
+    await refreshPromptBatchesModal();
+    await refreshPage();
   });
   document.getElementById("promptBatchDialog").addEventListener("close", () => {
     activePromptBatchesChapterNum = 0;

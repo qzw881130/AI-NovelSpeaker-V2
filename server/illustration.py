@@ -1497,6 +1497,39 @@ def retry_prompt_batch(novel_id: int, chapter_id: int, batch_index: int, stage: 
     return True, "queued", deleted_images
 
 
+def cancel_prompt_batch(novel_id: int, chapter_id: int, batch_index: int, stage: str = "prompt") -> tuple[bool, str]:
+    stage = "shot" if str(stage or "") == "shot" else "prompt"
+    conn = db_conn()
+    task = conn.execute(
+        "SELECT id FROM chapter_illustration_tasks WHERE novel_id=? AND chapter_id=? AND stage=?",
+        (novel_id, chapter_id, stage),
+    ).fetchone()
+    if not task:
+        conn.close()
+        return False, f"{stage} task not found"
+    batch = conn.execute(
+        "SELECT id,status FROM chapter_illustration_prompt_batches WHERE task_id=? AND batch_index=?",
+        (int(task["id"]), int(batch_index)),
+    ).fetchone()
+    if not batch:
+        conn.close()
+        return False, "batch not found"
+    if str(batch["status"] or "") not in {"pending", "running", "processing"}:
+        conn.close()
+        return False, "batch is not running"
+    conn.execute(
+        "UPDATE chapter_illustration_prompt_batches SET status='cancelled',progress=0,error_message='已取消',updated_at=CURRENT_TIMESTAMP WHERE id=?",
+        (int(batch["id"]),),
+    )
+    conn.execute(
+        "UPDATE chapter_illustration_tasks SET status='cancelled',progress=0,error_message='已取消',updated_at=CURRENT_TIMESTAMP WHERE id=? AND status IN ('pending','running','processing')",
+        (int(task["id"]),),
+    )
+    conn.commit()
+    conn.close()
+    return True, "cancelled"
+
+
 def sync_prompt_images(novel_id: int, chapter_id: int) -> list[dict]:
     conn = db_conn()
     row = conn.execute(

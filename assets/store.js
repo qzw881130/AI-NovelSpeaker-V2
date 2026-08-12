@@ -709,6 +709,13 @@ async function retryChapterIllustrationPromptBatch(novelId, chapterNum, batchInd
   });
 }
 
+async function cancelChapterIllustrationPromptBatch(novelId, chapterNum, batchIndex, stage = "prompt") {
+  return api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/illustration/${String(stage || "prompt")}/batches/${Number(batchIndex)}/cancel`, {
+    method: "POST",
+    body: "{}",
+  });
+}
+
 async function saveChapterIllustrationPromptOutput(novelId, chapterNum, jsonText) {
   return api(`/api/novels/${Number(novelId)}/chapters/${Number(chapterNum)}/illustration/prompt/output/save`, {
     method: "POST",
@@ -1190,6 +1197,7 @@ export {
   optimizeIllustrationPromptItem,
   prepareIllustrationPromptItemOptimization,
   enqueueAllIllustrationImages,
+  cancelChapterIllustrationPromptBatch,
   retryChapterIllustrationPromptBatch,
   fetchChapterAsrFile,
   fetchChapterCorrectedSrtFile,
