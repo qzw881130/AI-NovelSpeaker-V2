@@ -5184,6 +5184,12 @@ body.is-illustration-drag-selecting {
   gap: 8px;
 }
 
+.illustration-optimize-apply-row {
+  display: flex;
+  justify-content: flex-end;
+  margin: 10px 0 8px;
+}
+
 .prompt-batch-tab.active {
   border-color: var(--accent);
   color: var(--accent);

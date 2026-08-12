@@ -216,6 +216,7 @@
                 <option value="60">60秒</option>
               </select>
             </label>
+            <button id="generateRemainingIllustrationImagesBtn" class="ghost-btn" type="button">生成剩余</button>
             <button id="generateAllIllustrationImagesBtn" class="primary-btn" type="button">一键生成全部</button>
           </div>
           <button class="dialog-close-btn" type="submit" aria-label="关闭">×</button>
@@ -253,7 +254,9 @@
             <button class="ghost-btn btn-sm illustration-optimize-tab" type="button" data-tab="input">输入</button>
             <button class="ghost-btn btn-sm illustration-optimize-tab" type="button" data-tab="output">输出</button>
           </div>
-          <button id="illustrationOptimizeApplyBtn" class="primary-btn btn-sm" type="button" disabled>应用</button>
+        </div>
+        <div class="illustration-optimize-apply-row">
+          <button id="illustrationOptimizeApplyBtn" class="primary-btn btn-sm" type="button" disabled>应用&amp;重新生图</button>
         </div>
         <p id="illustrationOptimizeMeta" class="meta">等待优化...</p>
         <pre id="illustrationOptimizeContent" class="dialog-code-block prompt-batch-content">等待优化...</pre>

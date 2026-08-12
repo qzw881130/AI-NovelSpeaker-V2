@@ -298,7 +298,7 @@ function renderStageCell(item, stage) {
       `
     : `
         <button class="ghost-btn btn-sm illustration-run-btn" type="button" data-stage="${stage}" data-chapter-num="${chapterNum}" ${disabled ? "disabled" : ""}>解析插画${STAGE_LABELS[stage].toLowerCase()}</button>
-        <button class="ghost-btn btn-sm illustration-llm-params-btn" type="button" data-stage="${stage}" data-chapter-num="${chapterNum}">LLM参数</button>
+        ${stage === "scene" ? `<button class="ghost-btn btn-sm illustration-llm-params-btn" type="button" data-stage="${stage}" data-chapter-num="${chapterNum}">LLM参数</button>` : ""}
         ${stage === "shot" ? `<button class="ghost-btn btn-sm illustration-prompt-detail-btn" type="button" data-stage="${stage}" data-chapter-num="${chapterNum}">详情</button>` : ""}
         <button class="ghost-btn btn-sm illustration-view-btn" type="button" data-kind="input" data-stage="${stage}" data-chapter-num="${chapterNum}">输入</button>
         <button class="ghost-btn btn-sm illustration-view-btn ${sceneWarning || shotWarning ? "has-illustration-warning" : ""}" type="button" data-kind="output" data-stage="${stage}" data-chapter-num="${chapterNum}" ${sceneWarning || shotWarning ? `title="${escapeHtml(sceneWarning || shotWarning)}"` : ""}>输出${sceneWarning || shotWarning ? '<span class="illustration-alert-dot" aria-hidden="true">!</span>' : ""}</button>
@@ -1493,7 +1493,7 @@ function renderOptimizeDetail() {
 }
 
 function openOptimizeDetail(title, inputText) {
-  optimizeDetailTab = "llm";
+  optimizeDetailTab = "output";
   optimizeDetail = { requestPreview: null, inputText, outputText: "", jsonText: "", status: "running", error: "" };
   document.getElementById("illustrationOptimizeTitle").textContent = title || "优化提示词";
   renderOptimizeDetail();
@@ -1652,6 +1652,7 @@ async function restorePreviewJson() {
 }
 
 async function applyOptimizedPreviewJson() {
+  const item = currentPreviewItems[currentPreviewIndex];
   const editor = document.getElementById("illustrationPreviewJsonEditor");
   const btn = document.getElementById("illustrationOptimizeApplyBtn");
   const text = String(optimizeDetail.jsonText || optimizeDetail.outputText || "").trim();
@@ -1679,14 +1680,19 @@ async function applyOptimizedPreviewJson() {
   updateImagesJsonWarning();
   if (btn) {
     btn.disabled = true;
-    btn.textContent = "应用中...";
+    btn.textContent = "应用并重新生图中...";
   }
   try {
     await savePreviewJson(normalized, { quietSuccess: true });
-    toast("优化提示词已应用并保存成功");
+    const imageId = Number(item?.id || 0);
+    if (imageId) await enqueueIllustrationImage(imageId);
+    const dialog = document.getElementById("illustrationOptimizeDialog");
+    if (dialog?.open) dialog.close();
+    toast("优化提示词已应用并重新生图");
+    await refreshImagesModal().catch(() => {});
   } finally {
     if (btn) {
-      btn.textContent = "应用";
+      btn.textContent = "应用&重新生图";
       renderOptimizeDetail();
     }
   }
@@ -2063,6 +2069,21 @@ function bindEvents() {
     if (!activeImagesChapterNum) return;
     const data = await enqueueAllIllustrationImages(activeNovel.id, activeImagesChapterNum);
     toast(`已入队 ${data.queued || 0} 张，跳过 ${data.skipped || 0} 张`);
+    await refreshImagesModal();
+  });
+  document.getElementById("generateRemainingIllustrationImagesBtn")?.addEventListener("click", async () => {
+    if (!activeImagesChapterNum) return;
+    const remaining = currentImageItems.filter((item) => String(item.status || "idle") === "idle");
+    let queued = 0;
+    for (const item of remaining) {
+      try {
+        await enqueueIllustrationImage(item.id);
+        queued += 1;
+      } catch {
+        // Skip items that changed status while this batch was being queued.
+      }
+    }
+    toast(`剩余插图已入队 ${queued} 张`);
     await refreshImagesModal();
   });
   document.getElementById("illustrationImagesList").addEventListener("click", async (event) => {
