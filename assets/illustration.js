@@ -308,7 +308,6 @@ function renderStageCell(item, stage) {
     <div class="stage-cell">
       <div class="stage-status-row">
         <span class="${statusClass(data.status)}" title="${escapeHtml(data.errorMessage || "")}">${statusLabel(data.status)}${progress ? ` ${progress}%` : ""}</span>
-        ${promptJsonWarning ? `<span class="illustration-alert-dot" title="${escapeHtml(promptWarningTitle)}" aria-label="${escapeHtml(promptWarningTitle)}">!</span>` : ""}
         ${stageElapsedLabel(data) ? `<span class="stage-elapsed" ${stageElapsedAttrs(data)} title="${escapeHtml(data.startedAt || "")}">${escapeHtml(stageElapsedLabel(data))}</span>` : ""}
       </div>
       <div class="table-actions-inline">
