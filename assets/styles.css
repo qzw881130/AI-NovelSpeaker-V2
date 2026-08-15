@@ -4669,6 +4669,22 @@ body.is-nsfw-review-drag-selecting .novel-download-table {
   min-height: 200px;
 }
 
+#videoExportTaskList {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 620px), 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+#videoExportTaskList .task-detail-block {
+  height: 100%;
+  margin-bottom: 0;
+}
+
+#videoExportTaskList .empty-text {
+  grid-column: 1 / -1;
+}
+
 .task-detail-grid {
   display: grid;
   gap: 12px;
