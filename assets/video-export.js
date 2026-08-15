@@ -30,11 +30,13 @@ let refreshTimer = null;
 let activeCoverTaskId = null;
 let coverImageOptions = [];
 let coverPreviewLoading = false;
+let taskSortBy = "id";
 let taskIdSortDirection = "desc";
 let coverBundlePollTimer = null;
 let activeYoutubeUploadTaskId = null;
 let youtubeSettings = null;
 const VIDEO_EXPORT_REFRESH_INTERVAL_KEY = "ai_novel_video_export_refresh_interval";
+const VIDEO_EXPORT_SORT_BY_KEY = "ai_novel_video_export_sort_by";
 const VIDEO_EXPORT_SORT_DIRECTION_KEY = "ai_novel_video_export_sort_direction";
 
 function escapeHtml(text) {
@@ -154,12 +156,26 @@ function filteredTasks() {
 
 function sortedTasks(items) {
   const direction = taskIdSortDirection === "asc" ? 1 : -1;
-  return items.slice().sort((a, b) => (Number(a.id || 0) - Number(b.id || 0)) * direction);
+  return items.slice().sort((a, b) => {
+    if (taskSortBy === "chapterNum") {
+      const chapterCompare = Number(a.chapterNum || 0) - Number(b.chapterNum || 0);
+      if (chapterCompare !== 0) return chapterCompare * direction;
+    }
+    if (taskSortBy === "chapterTitle") {
+      const titleCompare = String(a.chapterTitle || "").localeCompare(String(b.chapterTitle || ""), "zh-Hans", { numeric: true });
+      if (titleCompare !== 0) return titleCompare * direction;
+    }
+    return (Number(a.id || 0) - Number(b.id || 0)) * direction;
+  });
 }
 
-function restoreTaskSortDirection() {
-  const saved = localStorage.getItem(VIDEO_EXPORT_SORT_DIRECTION_KEY);
-  taskIdSortDirection = saved === "asc" ? "asc" : "desc";
+function restoreTaskSortOptions() {
+  const savedSortBy = localStorage.getItem(VIDEO_EXPORT_SORT_BY_KEY);
+  const savedDirection = localStorage.getItem(VIDEO_EXPORT_SORT_DIRECTION_KEY);
+  taskSortBy = ["id", "chapterNum", "chapterTitle"].includes(savedSortBy) ? savedSortBy : "id";
+  taskIdSortDirection = savedDirection === "asc" ? "asc" : "desc";
+  const select = document.getElementById("videoExportSortBySelect");
+  if (select) select.value = taskSortBy;
 }
 
 function renderSortOrderButton() {
@@ -169,7 +185,8 @@ function renderSortOrderButton() {
   btn.innerHTML = isAsc
     ? `<svg class="sort-order-icon" viewBox="0 0 24 24" aria-hidden="true"><path class="sort-order-line" d="M4 18h8M4 13h11M4 8h14"/><path class="sort-order-arrow" d="M19 18V6m0 0-4 4m4-4 4 4"/></svg>`
     : `<svg class="sort-order-icon" viewBox="0 0 24 24" aria-hidden="true"><path class="sort-order-line" d="M4 6h8M4 11h11M4 16h14"/><path class="sort-order-arrow" d="M19 6v12m0 0-4-4m4 4 4-4"/></svg>`;
-  const label = isAsc ? "按 ID 升序排列" : "按 ID 降序排列";
+  const sortName = taskSortBy === "chapterTitle" ? "章回标题" : taskSortBy === "chapterNum" ? "编号" : "ID";
+  const label = isAsc ? `按 ${sortName} 升序排列` : `按 ${sortName} 降序排列`;
   btn.setAttribute("aria-label", label);
   btn.title = label;
 }
@@ -644,6 +661,11 @@ function bindEvents() {
   document.getElementById("videoExportStatusFilter")?.addEventListener("change", renderTasks);
   document.getElementById("videoExportSizeFilter")?.addEventListener("change", renderTasks);
   document.getElementById("videoExportSubtitleFilter")?.addEventListener("change", renderTasks);
+  document.getElementById("videoExportSortBySelect")?.addEventListener("change", (event) => {
+    taskSortBy = ["id", "chapterNum", "chapterTitle"].includes(event.target.value) ? event.target.value : "id";
+    localStorage.setItem(VIDEO_EXPORT_SORT_BY_KEY, taskSortBy);
+    renderTasks();
+  });
   document.getElementById("videoExportSortOrderBtn")?.addEventListener("click", () => {
     taskIdSortDirection = taskIdSortDirection === "asc" ? "desc" : "asc";
     localStorage.setItem(VIDEO_EXPORT_SORT_DIRECTION_KEY, taskIdSortDirection);
@@ -725,7 +747,7 @@ function bindEvents() {
 
 async function init() {
   renderNav();
-  restoreTaskSortDirection();
+  restoreTaskSortOptions();
   const data = await getData({ include: ["novels"] });
   novels = data.novels || [];
   const activeId = getActiveNovelId();

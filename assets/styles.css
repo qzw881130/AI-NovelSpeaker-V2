@@ -744,6 +744,18 @@ a.ghost-btn {
   display: inline-flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: nowrap;
+}
+
+.video-export-task-head-actions .ghost-btn,
+.video-export-task-head-actions .queue-summary-badge {
+  white-space: nowrap;
+}
+
+.video-export-sort-select {
+  width: 128px;
+  min-width: 128px;
+  flex: 0 0 128px;
 }
 
 .video-export-sort-btn {

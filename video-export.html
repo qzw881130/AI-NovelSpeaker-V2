@@ -63,6 +63,11 @@
             <h2>导出任务</h2>
             <div class="video-export-task-head-actions">
               <button id="videoExportCoverBundleBtn" class="ghost-btn" type="button">下载所有封面</button>
+              <select id="videoExportSortBySelect" class="video-export-sort-select" aria-label="排序依据" title="排序依据">
+                <option value="id">ID</option>
+                <option value="chapterNum">编号</option>
+                <option value="chapterTitle">章回标题</option>
+              </select>
               <button id="videoExportSortOrderBtn" class="ghost-btn icon-btn video-export-sort-btn" type="button" aria-label="按 ID 降序排列" title="按 ID 降序排列"></button>
               <span id="videoExportSummary" class="queue-summary-badge">0 个任务</span>
             </div>
