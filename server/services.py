@@ -86,6 +86,12 @@ VIDEO_EXPORT_WORKER_HEARTBEAT_TS = 0.0
 VIDEO_EXPORT_WORKER_LAST_PROGRESS_TS = 0.0
 VIDEO_EXPORT_WORKER_GENERATION = 0
 VIDEO_EXPORT_WORKER_STALE_SECONDS = 300.0
+SOCIAL_UPLOAD_WORKER_THREAD: threading.Thread | None = None
+SOCIAL_UPLOAD_WORKER_STOP = threading.Event()
+SOCIAL_UPLOAD_WORKER_HEARTBEAT_TS = 0.0
+SOCIAL_UPLOAD_WORKER_LAST_PROGRESS_TS = 0.0
+SOCIAL_UPLOAD_WORKER_GENERATION = 0
+SOCIAL_UPLOAD_WORKER_STALE_SECONDS = 300.0
 DURATION_CACHE_LOCK = threading.Lock()
 DURATION_CACHE_PENDING: set[int] = set()
 JSON_LLM_THROTTLE_LOCK = threading.Lock()
@@ -201,6 +207,14 @@ def touch_video_export_worker_heartbeat(*, made_progress: bool = False) -> None:
     VIDEO_EXPORT_WORKER_HEARTBEAT_TS = now
     if made_progress:
         VIDEO_EXPORT_WORKER_LAST_PROGRESS_TS = now
+
+
+def touch_social_upload_worker_heartbeat(*, made_progress: bool = False) -> None:
+    global SOCIAL_UPLOAD_WORKER_HEARTBEAT_TS, SOCIAL_UPLOAD_WORKER_LAST_PROGRESS_TS
+    now = time.time()
+    SOCIAL_UPLOAD_WORKER_HEARTBEAT_TS = now
+    if made_progress:
+        SOCIAL_UPLOAD_WORKER_LAST_PROGRESS_TS = now
 
 
 def probe_audio_duration_seconds(file_path: Path) -> float:
@@ -1298,6 +1312,8 @@ def fetch_settings(conn: sqlite3.Connection) -> dict:
     )
     return {
         "comfyUrl": comfy_url,
+        "channelName": str(kv.get("channel_name", "旺仔有声小说") or "旺仔有声小说").strip()
+        or "旺仔有声小说",
         "proxyEnabled": str(kv.get("proxy_enabled", "0") or "0").strip() == "1",
         "proxyUrl": kv.get("proxy_url", ""),
         "llm": llm,
@@ -3867,6 +3883,21 @@ def video_export_worker_loop() -> None:
         VIDEO_EXPORT_WORKER_STOP.wait(1.0 if has_video_export_work else 3.0)
 
 
+def social_upload_worker_loop() -> None:
+    from .social_media import run_social_upload_queue_once
+
+    generation = SOCIAL_UPLOAD_WORKER_GENERATION
+    while not SOCIAL_UPLOAD_WORKER_STOP.is_set() and generation == SOCIAL_UPLOAD_WORKER_GENERATION:
+        touch_social_upload_worker_heartbeat()
+        has_upload_work = False
+        try:
+            has_upload_work = run_social_upload_queue_once(touch_social_upload_worker_heartbeat)
+        except Exception as exc:
+            print(f"[social-upload-worker] queue error: {exc}")
+        touch_social_upload_worker_heartbeat(made_progress=has_upload_work)
+        SOCIAL_UPLOAD_WORKER_STOP.wait(1.0 if has_upload_work else 3.0)
+
+
 def ensure_line_audio_worker() -> None:
     global LINE_AUDIO_WORKER_THREAD, LINE_AUDIO_WORKER_GENERATION, LINE_AUDIO_WORKER_HEARTBEAT_TS
     now = time.time()
@@ -3991,6 +4022,23 @@ def ensure_video_export_worker() -> None:
     VIDEO_EXPORT_WORKER_THREAD.start()
 
 
+def ensure_social_upload_worker() -> None:
+    global SOCIAL_UPLOAD_WORKER_THREAD, SOCIAL_UPLOAD_WORKER_GENERATION, SOCIAL_UPLOAD_WORKER_HEARTBEAT_TS
+    now = time.time()
+    if SOCIAL_UPLOAD_WORKER_THREAD and SOCIAL_UPLOAD_WORKER_THREAD.is_alive():
+        if SOCIAL_UPLOAD_WORKER_HEARTBEAT_TS > 0 and now - SOCIAL_UPLOAD_WORKER_HEARTBEAT_TS > SOCIAL_UPLOAD_WORKER_STALE_SECONDS:
+            print("[social-upload-worker] heartbeat stale, restarting worker")
+            SOCIAL_UPLOAD_WORKER_GENERATION += 1
+            SOCIAL_UPLOAD_WORKER_STOP.clear()
+            SOCIAL_UPLOAD_WORKER_THREAD = threading.Thread(target=social_upload_worker_loop, daemon=True)
+            SOCIAL_UPLOAD_WORKER_THREAD.start()
+        return
+    SOCIAL_UPLOAD_WORKER_STOP.clear()
+    SOCIAL_UPLOAD_WORKER_GENERATION += 1
+    SOCIAL_UPLOAD_WORKER_THREAD = threading.Thread(target=social_upload_worker_loop, daemon=True)
+    SOCIAL_UPLOAD_WORKER_THREAD.start()
+
+
 def restart_task_worker() -> None:
     global TASK_WORKER_THREAD, TASK_WORKER_GENERATION, TASK_WORKER_HEARTBEAT_TS, TASK_WORKER_LAST_PROGRESS_TS
     TASK_WORKER_STOP.set()
@@ -4071,6 +4119,17 @@ def restart_video_export_worker() -> None:
     VIDEO_EXPORT_WORKER_LAST_PROGRESS_TS = 0.0
     VIDEO_EXPORT_WORKER_THREAD = threading.Thread(target=video_export_worker_loop, daemon=True)
     VIDEO_EXPORT_WORKER_THREAD.start()
+
+
+def restart_social_upload_worker() -> None:
+    global SOCIAL_UPLOAD_WORKER_THREAD, SOCIAL_UPLOAD_WORKER_GENERATION, SOCIAL_UPLOAD_WORKER_HEARTBEAT_TS, SOCIAL_UPLOAD_WORKER_LAST_PROGRESS_TS
+    SOCIAL_UPLOAD_WORKER_STOP.set()
+    SOCIAL_UPLOAD_WORKER_GENERATION += 1
+    SOCIAL_UPLOAD_WORKER_STOP.clear()
+    SOCIAL_UPLOAD_WORKER_HEARTBEAT_TS = 0.0
+    SOCIAL_UPLOAD_WORKER_LAST_PROGRESS_TS = 0.0
+    SOCIAL_UPLOAD_WORKER_THREAD = threading.Thread(target=social_upload_worker_loop, daemon=True)
+    SOCIAL_UPLOAD_WORKER_THREAD.start()
 
 
 def get_task_worker_status() -> dict:
@@ -4182,6 +4241,21 @@ def get_video_export_worker_status() -> dict:
         "heartbeatAgeSeconds": round(heartbeat_age, 1) if heartbeat_age >= 0 else None,
         "progressAgeSeconds": round(progress_age, 1) if progress_age >= 0 else None,
         "generation": VIDEO_EXPORT_WORKER_GENERATION,
+    }
+
+
+def get_social_upload_worker_status() -> dict:
+    now = time.time()
+    heartbeat_age = max(0.0, now - SOCIAL_UPLOAD_WORKER_HEARTBEAT_TS) if SOCIAL_UPLOAD_WORKER_HEARTBEAT_TS > 0 else -1.0
+    progress_age = max(0.0, now - SOCIAL_UPLOAD_WORKER_LAST_PROGRESS_TS) if SOCIAL_UPLOAD_WORKER_LAST_PROGRESS_TS > 0 else -1.0
+    state = "stopped"
+    if SOCIAL_UPLOAD_WORKER_THREAD and SOCIAL_UPLOAD_WORKER_THREAD.is_alive():
+        state = "stale" if (SOCIAL_UPLOAD_WORKER_HEARTBEAT_TS > 0 and heartbeat_age > SOCIAL_UPLOAD_WORKER_STALE_SECONDS) else "running"
+    return {
+        "state": state,
+        "heartbeatAgeSeconds": round(heartbeat_age, 1) if heartbeat_age >= 0 else None,
+        "progressAgeSeconds": round(progress_age, 1) if progress_age >= 0 else None,
+        "generation": SOCIAL_UPLOAD_WORKER_GENERATION,
     }
 
 

@@ -175,6 +175,7 @@ function load(settings) {
   const liveEndingAudio = settings.liveEndingAudio || {};
   const videoCoverLogo = settings.videoCoverLogo || {};
   document.getElementById("comfyUrl").value = settings.comfyUrl || "";
+  document.getElementById("channelName").value = settings.channelName || "旺仔有声小说";
   document.getElementById("proxyEnabled").checked = Boolean(settings.proxyEnabled);
   document.getElementById("proxyUrl").value = settings.proxyUrl || "";
   document.getElementById("llmProvider").value = llm.provider || "grok";
@@ -398,6 +399,7 @@ function normalizeProviderMaxTokens(provider, value) {
 function readSettingsForm() {
   return {
     comfyUrl: document.getElementById("comfyUrl").value.trim(),
+    channelName: document.getElementById("channelName").value.trim(),
     proxyEnabled: document.getElementById("proxyEnabled").checked,
     proxyUrl: document.getElementById("proxyUrl").value.trim(),
     llm: {
@@ -575,6 +577,7 @@ function bindEvents() {
   });
 
   document.getElementById("comfyUrl").addEventListener("input", markComfyDirty);
+  document.getElementById("channelName").addEventListener("input", markLlmDirty);
   document.getElementById("proxyEnabled").addEventListener("change", markLlmDirty);
   document.getElementById("proxyUrl").addEventListener("input", markLlmDirty);
   document.getElementById("llmBase").addEventListener("input", markLlmDirty);

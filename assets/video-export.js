@@ -6,13 +6,18 @@ import {
   fetchVideoExportWorkerStatus,
   fetchVideoCoverBundleStatus,
   fetchChapterIllustrationImages,
+  fetchYoutubePlaylists,
+  fetchYoutubeSettings,
   getActiveNovelId,
   getData,
   getVideoCoverBundleFileUrl,
   getVideoExportCoverUrl,
   getVideoExportFileUrl,
   restartVideoExportWorker,
+  retryYoutubeUploadTask,
   retryVideoExportTask,
+  enqueueYoutubeUpload,
+  setVideoExportCoverImage,
   setActiveNovelId,
 } from "./store.js";
 import { fmtDateTime, renderNav, toast } from "./ui.js";
@@ -27,7 +32,10 @@ let coverImageOptions = [];
 let coverPreviewLoading = false;
 let taskIdSortDirection = "desc";
 let coverBundlePollTimer = null;
+let activeYoutubeUploadTaskId = null;
+let youtubeSettings = null;
 const VIDEO_EXPORT_REFRESH_INTERVAL_KEY = "ai_novel_video_export_refresh_interval";
+const VIDEO_EXPORT_SORT_DIRECTION_KEY = "ai_novel_video_export_sort_direction";
 
 function escapeHtml(text) {
   return String(text || "")
@@ -89,6 +97,35 @@ function videoMetaText(task) {
   return `${task.width}x${task.height} · ${task.fps}fps · ${subtitleText} · 时长 ${formatDuration(task.durationSeconds)} · 存储 ${sizeText}`;
 }
 
+function uploadStatusText(upload) {
+  const status = String(upload?.status || "");
+  if (!status) return "未上传";
+  if (status === "pending") return "等待上传";
+  if (status === "running") return `上传中 ${Number(upload.progress || 0)}%`;
+  if (status === "completed") return "上传完成";
+  if (status === "failed") return "上传失败";
+  return status;
+}
+
+function renderYoutubeUploadProgress(upload) {
+  if (!upload) return "";
+  const status = String(upload.status || "pending");
+  const progress = status === "completed" ? 100 : Math.max(0, Math.min(100, Number(upload.progress || 0)));
+  const link = upload.youtubeUrl
+    ? `<a href="${escapeHtml(upload.youtubeUrl)}" target="_blank" rel="noopener noreferrer">查看视频</a>`
+    : "";
+  return `
+    <div class="youtube-upload-progress ${status === "running" ? "is-running" : ""} status-${escapeHtml(status)}">
+      <div class="youtube-upload-ring" style="--progress:${progress}">
+        <span>${progress}%</span>
+      </div>
+      <div>
+        <strong>油管上传：${escapeHtml(uploadStatusText(upload))}</strong>
+        ${link ? `<p>${link}</p>` : ""}
+      </div>
+    </div>`;
+}
+
 function renderNovelSelect() {
   const select = document.getElementById("videoExportNovelSelect");
   select.innerHTML = novels.map((novel) => `<option value="${novel.id}">${escapeHtml(novel.name)}</option>`).join("");
@@ -118,6 +155,11 @@ function filteredTasks() {
 function sortedTasks(items) {
   const direction = taskIdSortDirection === "asc" ? 1 : -1;
   return items.slice().sort((a, b) => (Number(a.id || 0) - Number(b.id || 0)) * direction);
+}
+
+function restoreTaskSortDirection() {
+  const saved = localStorage.getItem(VIDEO_EXPORT_SORT_DIRECTION_KEY);
+  taskIdSortDirection = saved === "asc" ? "asc" : "desc";
 }
 
 function renderSortOrderButton() {
@@ -168,6 +210,14 @@ function renderTasks() {
       const cancel = task.status === "pending" || task.status === "running"
         ? `<button class="ghost-btn btn-sm" data-action="cancel" data-id="${task.id}" type="button">终止</button>`
         : "";
+      const upload = task.youtubeUpload || null;
+      const uploadYoutube = task.status === "completed" && task.downloadUrl
+        ? `<button class="ghost-btn btn-sm" data-action="upload-youtube" data-id="${task.id}" type="button">上传油管</button>`
+        : "";
+      const youtubeUploadProgress = renderYoutubeUploadProgress(upload);
+      const retryYoutubeUpload = upload && ["failed", "running"].includes(String(upload.status || ""))
+        ? `<button class="ghost-btn btn-sm" data-action="retry-youtube-upload" data-upload-id="${upload.id}" type="button">重试油管</button>`
+        : "";
       return `
         <article class="task-detail-block">
           <div class="task-detail-head">
@@ -185,8 +235,10 @@ function renderTasks() {
             <span>文件 ${task.sizeBytes ? bytesToText(task.sizeBytes) : "-"}</span>
             <span>更新 ${escapeHtml(fmtDateTime(task.updatedAt))}</span>
           </div>
+          ${youtubeUploadProgress}
           ${task.errorMessage ? `<p class="error-text">${escapeHtml(task.errorMessage)}</p>` : ""}
-          <div class="actions-row">${play}${download}${downloadSrt}${downloadCover}${previewCover}${retry}${cancel}</div>
+          ${upload?.errorMessage ? `<p class="error-text">油管上传：${escapeHtml(upload.errorMessage)}</p>` : ""}
+          <div class="actions-row">${play}${download}${downloadSrt}${downloadCover}${previewCover}${uploadYoutube}${retryYoutubeUpload}${retry}${cancel}</div>
         </article>`;
     })
     .join("");
@@ -274,6 +326,7 @@ function updateCoverPreviewImage() {
   const download = document.getElementById("videoExportCoverDownloadBtn");
   const select = document.getElementById("videoExportCoverImageSelect");
   const meta = document.getElementById("videoExportCoverImageMeta");
+  const setBtn = document.getElementById("videoExportCoverSetBtn");
   if (!img || !activeCoverTaskId) return;
   const imageIndex = Number(select?.value || 0);
   const selected = coverImageOptions.find((item) => Number(item.index) === imageIndex) || null;
@@ -284,6 +337,12 @@ function updateCoverPreviewImage() {
     meta.textContent = selected
       ? `#${selected.index} ${selected.sceneTitle || selected.cnSummary || "插图"}`
       : "使用默认底图";
+  }
+  const task = tasks.find((item) => String(item.id) === String(activeCoverTaskId));
+  if (setBtn) {
+    const saved = Number(task?.coverImageIndex || 0);
+    setBtn.disabled = !imageIndex || saved === imageIndex;
+    setBtn.textContent = saved === imageIndex ? "当前封面" : "设为封面";
   }
 }
 
@@ -322,7 +381,9 @@ async function openCoverPreview(taskId) {
       select.innerHTML = coverImageOptions.length
         ? coverImageOptions.map((item) => `<option value="${Number(item.index)}">#${Number(item.index)} ${escapeHtml(item.sceneTitle || item.cnSummary || "插图")}</option>`).join("")
         : `<option value="">无可用插图，使用视频帧</option>`;
-      if (coverImageOptions[0]) select.value = String(coverImageOptions[0].index);
+      const savedIndex = Number(task.coverImageIndex || 0);
+      const defaultIndex = savedIndex || Number(coverImageOptions[0]?.index || 0);
+      if (defaultIndex) select.value = String(defaultIndex);
     }
   } catch (err) {
     if (select) select.innerHTML = `<option value="">插图加载失败</option>`;
@@ -331,6 +392,18 @@ async function openCoverPreview(taskId) {
     coverPreviewLoading = false;
     updateCoverNavigationButtons();
   }
+  updateCoverPreviewImage();
+}
+
+async function setActiveCoverImage() {
+  if (!activeCoverTaskId) return;
+  const select = document.getElementById("videoExportCoverImageSelect");
+  const imageIndex = Number(select?.value || 0);
+  if (!imageIndex) return;
+  const updated = await setVideoExportCoverImage(activeCoverTaskId, imageIndex);
+  tasks = tasks.map((task) => String(task.id) === String(activeCoverTaskId) ? { ...task, ...(updated || {}), coverImageIndex: imageIndex } : task);
+  toast("已设置视频封面");
+  renderTasks();
   updateCoverPreviewImage();
 }
 
@@ -411,6 +484,112 @@ function closeCoverBundleDialog() {
   if (dialog?.open) dialog.close();
 }
 
+function defaultYoutubeTitle(task) {
+  const channelName = String(youtubeSettings?.channelName || "旺仔有声小说").trim() || "旺仔有声小说";
+  return `${task.novelName || ""}|${task.chapterTitle || ""} | ${channelName}`;
+}
+
+function defaultYoutubePlaylist(task) {
+  return `有声《${task.novelName || ""}》`;
+}
+
+async function ensureYoutubeSettings() {
+  youtubeSettings = await fetchYoutubeSettings();
+  return youtubeSettings;
+}
+
+async function openYoutubeUploadDialog(taskId) {
+  const task = tasks.find((item) => String(item.id) === String(taskId));
+  if (!task || task.status !== "completed") {
+    toast("视频尚未导出完成");
+    return;
+  }
+  await ensureYoutubeSettings();
+  activeYoutubeUploadTaskId = task.id;
+  const upload = task.youtubeUpload || null;
+  const uploadStatus = String(upload?.status || "");
+  const isUploading = ["pending", "running"].includes(uploadStatus);
+  const dialog = document.getElementById("youtubeUploadDialog");
+  const coverPreview = document.getElementById("youtubeUploadCoverPreview");
+  const defaultPlaylist = upload?.playlistTitle || defaultYoutubePlaylist(task);
+  const submitBtn = document.getElementById("youtubeUploadSubmitBtn");
+  document.getElementById("youtubeUploadMeta").textContent = `#${task.id} · ${task.novelName || ""} · 第${String(task.chapterNum).padStart(3, "0")}回`;
+  document.getElementById("youtubeUploadTitle").value = upload?.title || defaultYoutubeTitle(task);
+  document.getElementById("youtubeUploadTags").value = upload?.tags || youtubeSettings?.defaultTags || "四大名著,三国演义,有声小说,旺仔有声小说";
+  document.getElementById("youtubeUploadPrivacy").value = upload?.privacyStatus || "private";
+  if (submitBtn) {
+    submitBtn.disabled = isUploading;
+    submitBtn.textContent = isUploading ? "上传中" : "上传";
+    submitBtn.title = isUploading ? "当前任务正在上传，不能重复提交" : "";
+  }
+  document.getElementById("youtubeUploadRecordDate").textContent = new Date().toISOString().slice(0, 10);
+  document.getElementById("youtubeUploadSubtitleText").textContent = task.srtDownloadUrl ? "将上传对应 SRT 字幕" : "未找到对应 SRT 字幕";
+  document.getElementById("youtubeUploadCoverText").textContent = task.coverImageIndex ? `使用 #${task.coverImageIndex} 插图封面` : "未设置，使用第一个插图作为封面";
+  if (coverPreview) {
+    coverPreview.src = getVideoExportCoverUrl(task.id);
+    coverPreview.classList.remove("hidden");
+  }
+  const playlistSelect = document.getElementById("youtubeUploadPlaylistSelect");
+  if (playlistSelect) playlistSelect.innerHTML = `<option value="${escapeHtml(defaultPlaylist)}">${escapeHtml(defaultPlaylist)}</option>`;
+  loadYoutubePlaylistOptions(defaultPlaylist).catch((err) => toast(err.message));
+  dialog.showModal();
+}
+
+function closeYoutubeUploadDialog() {
+  const dialog = document.getElementById("youtubeUploadDialog");
+  const coverPreview = document.getElementById("youtubeUploadCoverPreview");
+  activeYoutubeUploadTaskId = null;
+  if (coverPreview) {
+    coverPreview.removeAttribute("src");
+    coverPreview.classList.add("hidden");
+  }
+  if (dialog?.open) dialog.close();
+  const submitBtn = document.getElementById("youtubeUploadSubmitBtn");
+  if (submitBtn) {
+    submitBtn.disabled = false;
+    submitBtn.textContent = "上传";
+    submitBtn.title = "";
+  }
+}
+
+function renderYoutubePlaylistOptions(items, selectedTitle) {
+  const select = document.getElementById("youtubeUploadPlaylistSelect");
+  if (!select) return;
+  const selected = String(selectedTitle || select.value || "").trim();
+  const titles = [];
+  if (selected) titles.push(selected);
+  for (const item of items || []) {
+    const title = String(item.title || "").trim();
+    if (title && !titles.includes(title)) titles.push(title);
+  }
+  select.innerHTML = titles.length
+    ? titles.map((title) => `<option value="${escapeHtml(title)}">${escapeHtml(title)}</option>`).join("")
+    : `<option value="">未读取到播放列表</option>`;
+  if (selected) select.value = selected;
+}
+
+async function loadYoutubePlaylistOptions(selectedTitle = "", options = {}) {
+  const select = document.getElementById("youtubeUploadPlaylistSelect");
+  if (!select) return;
+  const previous = String(selectedTitle || select.value || "").trim();
+  select.innerHTML = `<option value="">拉取中...</option>`;
+  renderYoutubePlaylistOptions(await fetchYoutubePlaylists(options), previous);
+}
+
+async function submitYoutubeUpload() {
+  if (!activeYoutubeUploadTaskId) return;
+  const payload = {
+    title: document.getElementById("youtubeUploadTitle")?.value || "",
+    playlistTitle: document.getElementById("youtubeUploadPlaylistSelect")?.value || "",
+    tags: document.getElementById("youtubeUploadTags")?.value || "",
+    privacyStatus: document.getElementById("youtubeUploadPrivacy")?.value || "private",
+  };
+  await enqueueYoutubeUpload(activeYoutubeUploadTaskId, payload);
+  toast("已加入油管上传队列");
+  closeYoutubeUploadDialog();
+  await refreshTasks();
+}
+
 async function startCoverBundle() {
   if (!activeNovel) return;
   clearCoverBundlePoll();
@@ -467,6 +646,7 @@ function bindEvents() {
   document.getElementById("videoExportSubtitleFilter")?.addEventListener("change", renderTasks);
   document.getElementById("videoExportSortOrderBtn")?.addEventListener("click", () => {
     taskIdSortDirection = taskIdSortDirection === "asc" ? "desc" : "asc";
+    localStorage.setItem(VIDEO_EXPORT_SORT_DIRECTION_KEY, taskIdSortDirection);
     renderTasks();
   });
   document.getElementById("videoExportCoverBundleBtn")?.addEventListener("click", openCoverBundleDialog);
@@ -501,6 +681,16 @@ function bindEvents() {
         await openCoverPreview(btn.dataset.id);
         return;
       }
+      if (btn.dataset.action === "upload-youtube") {
+        await openYoutubeUploadDialog(btn.dataset.id);
+        return;
+      }
+      if (btn.dataset.action === "retry-youtube-upload") {
+        await retryYoutubeUploadTask(btn.dataset.uploadId);
+        toast("已重新加入油管上传队列");
+        await refreshTasks();
+        return;
+      }
       if (btn.dataset.action === "retry") await retryVideoExportTask(btn.dataset.id);
       if (btn.dataset.action === "cancel") await cancelVideoExportTask(btn.dataset.id);
       await refreshTasks();
@@ -513,17 +703,29 @@ function bindEvents() {
   document.getElementById("videoExportCoverCloseBtn")?.addEventListener("click", closeCoverPreview);
   document.getElementById("videoExportCoverDialog")?.addEventListener("close", closeCoverPreview);
   document.getElementById("videoExportCoverImageSelect")?.addEventListener("change", updateCoverPreviewImage);
+  document.getElementById("videoExportCoverSetBtn")?.addEventListener("click", () => {
+    setActiveCoverImage().catch((err) => toast(err.message));
+  });
   document.getElementById("videoExportCoverPrevBtn")?.addEventListener("click", () => {
     navigateCoverPreview(-1).catch((err) => toast(err.message));
   });
   document.getElementById("videoExportCoverNextBtn")?.addEventListener("click", () => {
     navigateCoverPreview(1).catch((err) => toast(err.message));
   });
+  document.getElementById("youtubeUploadCloseBtn")?.addEventListener("click", closeYoutubeUploadDialog);
+  document.getElementById("youtubeUploadDialog")?.addEventListener("close", closeYoutubeUploadDialog);
+  document.getElementById("youtubeUploadLoadPlaylistsBtn")?.addEventListener("click", () => {
+    loadYoutubePlaylistOptions("", { refresh: true }).catch((err) => toast(err.message));
+  });
+  document.getElementById("youtubeUploadSubmitBtn")?.addEventListener("click", () => {
+    submitYoutubeUpload().catch((err) => toast(err.message));
+  });
   document.addEventListener("keydown", handleCoverPreviewKeydown);
 }
 
 async function init() {
   renderNav();
+  restoreTaskSortDirection();
   const data = await getData({ include: ["novels"] });
   novels = data.novels || [];
   const activeId = getActiveNovelId();

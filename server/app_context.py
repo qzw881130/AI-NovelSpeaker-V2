@@ -738,6 +738,7 @@ def migrate_chapter_video_export_tasks_table(conn: sqlite3.Connection) -> None:
             current_frame INTEGER NOT NULL DEFAULT 0,
             total_frames INTEGER NOT NULL DEFAULT 0,
             process_id INTEGER NOT NULL DEFAULT 0,
+            cover_image_index INTEGER NOT NULL DEFAULT 0,
             output_file_path TEXT NOT NULL DEFAULT '',
             error_message TEXT NOT NULL DEFAULT '',
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -754,6 +755,8 @@ def migrate_chapter_video_export_tasks_table(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE chapter_video_export_tasks ADD COLUMN process_id INTEGER NOT NULL DEFAULT 0")
     if "subtitle_mode" not in columns:
         conn.execute("ALTER TABLE chapter_video_export_tasks ADD COLUMN subtitle_mode TEXT NOT NULL DEFAULT 'srt'")
+    if "cover_image_index" not in columns:
+        conn.execute("ALTER TABLE chapter_video_export_tasks ADD COLUMN cover_image_index INTEGER NOT NULL DEFAULT 0")
     unique_columns = []
     for idx in conn.execute("PRAGMA index_list(chapter_video_export_tasks)").fetchall():
         if int(idx[2] or 0) != 1:
@@ -780,6 +783,7 @@ def migrate_chapter_video_export_tasks_table(conn: sqlite3.Connection) -> None:
                 current_frame INTEGER NOT NULL DEFAULT 0,
                 total_frames INTEGER NOT NULL DEFAULT 0,
                 process_id INTEGER NOT NULL DEFAULT 0,
+                cover_image_index INTEGER NOT NULL DEFAULT 0,
                 output_file_path TEXT NOT NULL DEFAULT '',
                 error_message TEXT NOT NULL DEFAULT '',
                 created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -795,10 +799,10 @@ def migrate_chapter_video_export_tasks_table(conn: sqlite3.Connection) -> None:
             """
             INSERT OR IGNORE INTO chapter_video_export_tasks(
                 id,novel_id,chapter_id,chapter_num,chapter_title,status,progress,width,height,fps,
-                subtitle_mode,duration_seconds,current_frame,total_frames,process_id,output_file_path,error_message,created_at,started_at,updated_at
+                subtitle_mode,duration_seconds,current_frame,total_frames,process_id,cover_image_index,output_file_path,error_message,created_at,started_at,updated_at
             )
             SELECT id,novel_id,chapter_id,chapter_num,chapter_title,status,progress,width,height,fps,
-                   COALESCE(NULLIF(subtitle_mode,''),'srt'),duration_seconds,current_frame,total_frames,process_id,output_file_path,error_message,created_at,started_at,updated_at
+                   COALESCE(NULLIF(subtitle_mode,''),'srt'),duration_seconds,current_frame,total_frames,process_id,0,output_file_path,error_message,created_at,started_at,updated_at
             FROM chapter_video_export_tasks_old
             """
         )
@@ -808,6 +812,42 @@ def migrate_chapter_video_export_tasks_table(conn: sqlite3.Connection) -> None:
     )
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_chapter_video_export_tasks_updated ON chapter_video_export_tasks(updated_at)"
+    )
+
+
+def migrate_social_media_tables(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS social_media_upload_tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            platform TEXT NOT NULL DEFAULT 'youtube',
+            video_export_task_id INTEGER NOT NULL,
+            novel_id INTEGER NOT NULL,
+            chapter_id INTEGER NOT NULL,
+            chapter_num INTEGER NOT NULL,
+            title TEXT NOT NULL DEFAULT '',
+            playlist_title TEXT NOT NULL DEFAULT '',
+            tags TEXT NOT NULL DEFAULT '',
+            privacy_status TEXT NOT NULL DEFAULT 'private',
+            status TEXT NOT NULL DEFAULT 'pending',
+            progress INTEGER NOT NULL DEFAULT 0,
+            youtube_video_id TEXT NOT NULL DEFAULT '',
+            youtube_url TEXT NOT NULL DEFAULT '',
+            error_message TEXT NOT NULL DEFAULT '',
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            started_at DATETIME,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(video_export_task_id) REFERENCES chapter_video_export_tasks(id) ON DELETE CASCADE,
+            FOREIGN KEY(novel_id) REFERENCES novels(id) ON DELETE CASCADE,
+            FOREIGN KEY(chapter_id) REFERENCES chapters(id) ON DELETE CASCADE
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_social_media_upload_tasks_status_id ON social_media_upload_tasks(status, id)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_social_media_upload_tasks_video_export ON social_media_upload_tasks(video_export_task_id, platform, id)"
     )
 
 
@@ -848,6 +888,7 @@ def db_conn() -> sqlite3.Connection:
                 migrate_chapter_illustration_prompt_batches_table(conn)
                 migrate_chapter_illustration_images_table(conn)
                 migrate_chapter_video_export_tasks_table(conn)
+                migrate_social_media_tables(conn)
                 migrate_workflow_io_config_column(conn)
                 migrate_workflow_logs_table(conn)
                 conn.commit()

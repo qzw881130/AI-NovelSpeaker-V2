@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>社交媒体 - AI NovelSpeaker V2</title>
+    <link rel="stylesheet" href="./assets/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="main-nav" id="mainNav"></aside>
+      <main class="page">
+        <header class="page-header">
+          <div>
+            <h1>社交媒体</h1>
+            <p class="meta">配置第三方平台上传参数和凭据。</p>
+          </div>
+          <div class="header-actions">
+            <span id="socialUploadWorkerStatus" class="meta">上传Worker: -</span>
+            <button id="restartSocialUploadWorkerBtn" class="ghost-btn" type="button">重启上传Worker</button>
+            <button id="refreshSocialMediaBtn" class="ghost-btn" type="button">刷新</button>
+          </div>
+        </header>
+
+        <section class="panel social-media-panel">
+          <div class="tab-row">
+            <button class="tab-btn active" type="button">油管</button>
+          </div>
+          <div class="settings-grid social-settings-grid">
+            <div class="youtube-file-upload-row">
+              <div>
+                <strong>client_secret.json</strong>
+                <p id="youtubeClientSecretPathText" class="meta">未上传</p>
+              </div>
+              <label class="ghost-btn btn-sm file-upload-btn">上传文件
+                <input id="youtubeClientSecretFile" type="file" accept="application/json,.json" hidden />
+              </label>
+            </div>
+            <div class="youtube-file-upload-row">
+              <div>
+                <strong>token.json</strong>
+                <p id="youtubeTokenPathText" class="meta">未上传</p>
+              </div>
+              <button id="youtubeAuthorizeBtn" class="ghost-btn btn-sm" type="button">授权生成</button>
+            </div>
+            <label>Client ID
+              <input id="youtubeClientId" type="text" placeholder="上传 client_secret.json 后自动填充" />
+            </label>
+            <label>Client secret
+              <input id="youtubeClientSecret" type="password" placeholder="上传 client_secret.json 后自动填充" />
+            </label>
+            <label>Redirect URI
+              <input id="youtubeRedirectUri" type="text" value="http://localhost:8080/oauth" />
+            </label>
+            <label>标签配置
+              <input id="youtubeDefaultTags" type="text" />
+            </label>
+            <label class="youtube-proxy-row">代理
+              <span class="youtube-proxy-toggle"><input id="youtubeProxyEnabled" type="checkbox" /> 开启</span>
+              <input id="youtubeProxyUrl" type="text" value="http://127.0.0.1:7897" />
+            </label>
+          </div>
+          <div class="actions-row">
+            <button id="saveYoutubeSettingsBtn" class="primary-btn" type="button">保存配置</button>
+            <button id="loadYoutubePlaylistsBtn" class="ghost-btn" type="button">拉取油管播放列表</button>
+          </div>
+          <h3>上传所需配置文件</h3>
+          <div id="youtubeConfigFiles" class="task-detail-content"></div>
+          <h3>油管播放列表</h3>
+          <div id="youtubePlaylists" class="task-detail-content"><p class="empty-text">尚未拉取。</p></div>
+        </section>
+      </main>
+    </div>
+    <div id="toast" class="toast"></div>
+    <script type="module" src="./assets/social-media.js"></script>
+  </body>
+</html>

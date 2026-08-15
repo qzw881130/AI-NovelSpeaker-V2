@@ -11,6 +11,7 @@ from .services import (
     ensure_line_audio_worker,
     ensure_nsfw_review_worker,
     ensure_task_worker,
+    ensure_social_upload_worker,
     ensure_video_export_worker,
     sync_system_prompts_from_files,
     sync_system_workflow_from_file,
@@ -33,6 +34,7 @@ def main() -> None:
     ensure_nsfw_review_worker()
     ensure_illustration_workers()
     ensure_video_export_worker()
+    ensure_social_upload_worker()
 
     host = str(os.getenv("NOVELSPEAKER_HOST", "0.0.0.0") or "0.0.0.0")
     try:

@@ -4,6 +4,7 @@ const ACTIVE_KEY = "ai_novel_speaker_v1_active_novel";
 
 const DEFAULT_SETTINGS = {
   comfyUrl: "http://127.0.0.1:8188",
+  channelName: "旺仔有声小说",
   proxyEnabled: false,
   proxyUrl: "",
   llm: {
@@ -55,6 +56,7 @@ function normalizeSettings(raw) {
   const next = raw || {};
   return {
     comfyUrl: String(next.comfyUrl || DEFAULT_SETTINGS.comfyUrl),
+    channelName: String(next.channelName || DEFAULT_SETTINGS.channelName),
     proxyEnabled: Boolean(next.proxyEnabled),
     proxyUrl: String(next.proxyUrl || ""),
     llm: {
@@ -1109,6 +1111,73 @@ async function cancelVideoExportTask(taskId) {
   await api(`/api/video-export-tasks/${Number(taskId)}/cancel`, { method: "POST", body: "{}" });
 }
 
+async function setVideoExportCoverImage(taskId, imageIndex) {
+  const data = await api(`/api/video-export-tasks/${Number(taskId)}/cover-image`, {
+    method: "POST",
+    body: JSON.stringify({ imageIndex: Number(imageIndex || 0) }),
+  });
+  return data.task || null;
+}
+
+async function fetchYoutubeSettings() {
+  const data = await api("/api/social-media/youtube/settings");
+  return data.settings || {};
+}
+
+async function saveYoutubeSettings(settings) {
+  const data = await api("/api/social-media/youtube/settings", {
+    method: "POST",
+    body: JSON.stringify(settings || {}),
+  });
+  return data.settings || {};
+}
+
+async function uploadYoutubeConfigFile(kind, fileBase64) {
+  const data = await api(`/api/social-media/youtube/config-files/${encodeURIComponent(String(kind || ""))}`, {
+    method: "POST",
+    body: JSON.stringify({ fileBase64: String(fileBase64 || "") }),
+  });
+  return data.settings || {};
+}
+
+async function fetchYoutubeOAuthUrl() {
+  const data = await api("/api/social-media/youtube/oauth-url");
+  return data.authUrl || "";
+}
+
+async function fetchYoutubePlaylists(options = {}) {
+  const query = options.refresh ? "?refresh=1" : "";
+  const data = await api(`/api/social-media/youtube/playlists${query}`);
+  return data.playlists || [];
+}
+
+async function enqueueYoutubeUpload(taskId, payload = {}) {
+  const data = await api(`/api/video-export-tasks/${Number(taskId)}/youtube-upload`, {
+    method: "POST",
+    body: JSON.stringify(payload || {}),
+  });
+  return data.task || null;
+}
+
+async function fetchYoutubeUploadTasks(novelId = "") {
+  const suffix = novelId ? `?novelId=${encodeURIComponent(String(novelId))}` : "";
+  const data = await api(`/api/social-media/youtube/uploads${suffix}`);
+  return data.tasks || [];
+}
+
+async function fetchSocialUploadWorkerStatus() {
+  return await api("/api/social-upload-worker/status");
+}
+
+async function restartSocialUploadWorker() {
+  await api("/api/social-upload-worker/restart", { method: "POST", body: "{}" });
+}
+
+async function retryYoutubeUploadTask(taskId) {
+  const data = await api(`/api/social-media/youtube/uploads/${Number(taskId)}/retry`, { method: "POST", body: "{}" });
+  return data.task || null;
+}
+
 function getVideoExportFileUrl(taskId) {
   return `/api/video-export-tasks/${Number(taskId)}/file`;
 }
@@ -1275,10 +1344,21 @@ export {
   fetchChapterVideoExportStatus,
   retryVideoExportTask,
   cancelVideoExportTask,
+  setVideoExportCoverImage,
   getVideoExportFileUrl,
   getVideoExportCoverUrl,
   createVideoCoverBundle,
   fetchVideoCoverBundleStatus,
   getVideoCoverBundleFileUrl,
+  fetchYoutubeSettings,
+  saveYoutubeSettings,
+  uploadYoutubeConfigFile,
+  fetchYoutubeOAuthUrl,
+  fetchYoutubePlaylists,
+  enqueueYoutubeUpload,
+  fetchYoutubeUploadTasks,
+  fetchSocialUploadWorkerStatus,
+  restartSocialUploadWorker,
+  retryYoutubeUploadTask,
   downloadNovelBundleFile,
 };

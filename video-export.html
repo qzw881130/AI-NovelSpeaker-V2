@@ -92,6 +92,7 @@
         <div class="video-cover-head-actions">
           <button id="videoExportCoverPrevBtn" class="ghost-btn" type="button">前一个</button>
           <button id="videoExportCoverNextBtn" class="ghost-btn" type="button">后一个</button>
+          <button id="videoExportCoverSetBtn" class="ghost-btn" type="button">设为封面</button>
           <a id="videoExportCoverDownloadBtn" class="primary-btn" href="#" download>下载封面</a>
           <button id="videoExportCoverCloseBtn" class="ghost-btn" type="button">关闭</button>
         </div>
@@ -120,6 +121,49 @@
           <p id="videoExportCoverBundleStatus" class="meta">等待打包</p>
         </div>
         <a id="videoExportCoverBundleDownloadLink" class="primary-btn hidden" href="#" download>下载 ZIP</a>
+      </div>
+    </dialog>
+
+    <dialog id="youtubeUploadDialog" class="video-cover-bundle-dialog youtube-upload-dialog">
+      <div class="video-player-dialog-head">
+        <div>
+          <h2>上传油管</h2>
+          <p id="youtubeUploadMeta" class="meta"></p>
+        </div>
+        <button id="youtubeUploadCloseBtn" class="ghost-btn" type="button">关闭</button>
+      </div>
+      <div class="settings-grid social-settings-grid">
+        <label>标题规则
+          <input id="youtubeUploadTitle" type="text" />
+        </label>
+        <label>播放列表
+          <div class="inline-field-row">
+            <select id="youtubeUploadPlaylistSelect"></select>
+            <button id="youtubeUploadLoadPlaylistsBtn" class="ghost-btn btn-sm" type="button">刷新</button>
+          </div>
+        </label>
+        <label>标签
+          <input id="youtubeUploadTags" type="text" />
+        </label>
+        <label>保存或发布
+          <select id="youtubeUploadPrivacy">
+            <option value="private">私享</option>
+            <option value="unlisted">不公开</option>
+            <option value="public">公开</option>
+          </select>
+        </label>
+      </div>
+      <div class="task-detail-block compact-block">
+        <p><strong>视频封面：</strong><span id="youtubeUploadCoverText">使用设置的封面</span></p>
+        <img id="youtubeUploadCoverPreview" class="youtube-upload-cover-preview" alt="视频封面" />
+        <p><strong>观众：</strong>不，内容不是面向儿童的</p>
+        <p><strong>AI 使用情况：</strong>是</p>
+        <p><strong>语言和字幕认证：</strong>视频语言：中文；字幕认证：该内容从未在美国的电视媒体上播出过。</p>
+        <p><strong>录制日期：</strong><span id="youtubeUploadRecordDate"></span></p>
+        <p><strong>字幕：</strong><span id="youtubeUploadSubtitleText"></span></p>
+      </div>
+      <div class="actions-row">
+        <button id="youtubeUploadSubmitBtn" class="primary-btn" type="button">上传</button>
       </div>
     </dialog>
 

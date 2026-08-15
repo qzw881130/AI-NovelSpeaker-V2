@@ -39,6 +39,7 @@ const NAV_ICONS = {
   nsfwReview: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 20 6.5v5.7c0 4.2-2.7 7.9-8 9.8-5.3-1.9-8-5.6-8-9.8V6.5l8-3Z"/><path d="M9 12h6"/><path d="M12 9v6"/></svg>`,
   illustration: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 19.5h14"/><path d="M6.5 16.5 10 11l2.5 3.3 2-2.3 3 4.5"/><rect x="4.5" y="4.5" width="15" height="12" rx="2"/><circle cx="15.5" cy="8.5" r="1.2"/></svg>`,
   videoExport: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="5.5" width="15" height="10" rx="2"/><path d="m10 8.5 4.5 2-4.5 2v-4Z"/><path d="M7 19.5h10"/><path d="M12 15.5v4"/></svg>`,
+  socialMedia: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6.5" cy="12" r="2.5"/><circle cx="17.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/><path d="m8.7 10.8 6.6-3.2"/><path d="m8.7 13.2 6.6 3.2"/></svg>`,
   donate: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-4.4-9.1-8.2C1.1 9.5 3.1 6 6.7 6c2 0 3.4 1.1 4.3 2.3C11.9 7.1 13.3 6 15.3 6c3.6 0 5.6 3.5 3.8 6.8C17 16.6 12 21 12 21Z"/><path d="M12 10.5v5"/><path d="M9.7 12.7h4.6"/></svg>`,
 };
 
@@ -80,6 +81,7 @@ const NAV_ITEMS = [
   { href: "./nsfw-review.html", labelKey: "nav.nsfwReview", icon: NAV_ICONS.nsfwReview },
   { href: "./illustration.html", labelKey: "nav.illustration", icon: NAV_ICONS.illustration },
   { href: "./video-export.html", labelKey: "nav.videoExport", icon: NAV_ICONS.videoExport },
+  { href: "./social-media.html", labelKey: "nav.socialMedia", icon: NAV_ICONS.socialMedia },
 ];
 
 const NAV_BADGE_KEYS = {

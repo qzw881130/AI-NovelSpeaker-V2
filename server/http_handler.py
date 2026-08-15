@@ -89,6 +89,19 @@ from .video_export import (
     get_video_export_task,
     list_video_export_tasks,
     retry_video_export_task,
+    set_video_export_cover_image,
+)
+from .social_media import (
+    enqueue_youtube_upload,
+    build_youtube_oauth_url,
+    fetch_youtube_playlists,
+    finish_youtube_oauth,
+    get_cached_youtube_playlists,
+    get_youtube_settings,
+    list_youtube_upload_tasks,
+    retry_youtube_upload,
+    save_youtube_config_file,
+    save_youtube_settings,
 )
 
 VISUAL_STYLE_OPTIONS = {
@@ -852,6 +865,15 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def send_html(self, html: str, status: int = 200) -> None:
+        self._drain_unread_request_body()
+        data = str(html or "").encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
     def _reset_request_body_state(self) -> None:
         self._request_body_cache = None
         self._request_body_consumed = False
@@ -1568,9 +1590,63 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(get_video_export_worker_status())
             return
 
+        if route == "/api/social-upload-worker/status":
+            self.send_json(get_social_upload_worker_status())
+            return
+
         if route == "/api/video-export-tasks":
             novel_id = int(query.get("novelId", [0])[0] or 0)
             self.send_json({"tasks": list_video_export_tasks(novel_id or None)})
+            return
+
+        if route == "/api/social-media/youtube/settings":
+            self.send_json({"settings": get_youtube_settings()})
+            return
+
+        if route == "/api/social-media/youtube/uploads":
+            novel_id = int(query.get("novelId", [0])[0] or 0)
+            self.send_json({"tasks": list_youtube_upload_tasks(novel_id or None)})
+            return
+
+        if route == "/api/social-media/youtube/playlists":
+            try:
+                refresh = str((query.get("refresh") or [""])[0] or "").strip() == "1"
+                self.send_json({"playlists": fetch_youtube_playlists() if refresh else get_cached_youtube_playlists()})
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, 400)
+            return
+
+        if route == "/api/social-media/youtube/oauth-url":
+            code = str((query.get("code") or [""])[0] or "")
+            if code:
+                state = str((query.get("state") or [""])[0] or "")
+                try:
+                    finish_youtube_oauth(code, state)
+                    self.send_html("<h1>YouTube 授权完成</h1><p>token.json 已生成，可以关闭此页面并返回社交媒体页面刷新。</p>")
+                except Exception as exc:
+                    message = str(exc).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                    self.send_html(f"<h1>YouTube 授权失败</h1><p>{message}</p>", status=400)
+                return
+            try:
+                self.send_json({"authUrl": build_youtube_oauth_url()})
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, 400)
+            return
+
+        if route == "/oauth":
+            code = str((query.get("code") or [""])[0] or "")
+            state = str((query.get("state") or [""])[0] or "")
+            error = str((query.get("error") or [""])[0] or "")
+            if error:
+                html = f"<h1>YouTube 授权失败</h1><p>{str(error).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')}</p>"
+                self.send_html(html, status=400)
+                return
+            try:
+                finish_youtube_oauth(code, state)
+                self.send_html("<h1>YouTube 授权完成</h1><p>token.json 已生成，可以关闭此页面并返回社交媒体页面刷新。</p>")
+            except Exception as exc:
+                message = str(exc).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                self.send_html(f"<h1>YouTube 授权失败</h1><p>{message}</p>", status=400)
             return
 
         m_video_cover_bundle_status = re.match(r"^/api/novels/(\d+)/video-cover-bundle/status$", route)
@@ -2238,6 +2314,28 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"status": msg, "task": task})
             return
 
+        if route == "/api/social-media/youtube/settings":
+            self.send_json({"settings": save_youtube_settings(self.read_json())})
+            return
+
+        m_youtube_config_upload = re.match(r"^/api/social-media/youtube/config-files/(client-secret)$", route)
+        if m_youtube_config_upload:
+            body = self.read_json()
+            raw = str(body.get("fileBase64") or "").strip()
+            if not raw:
+                self.send_json({"error": "fileBase64 is required"}, 400)
+                return
+            if "," in raw and raw.split(",", 1)[0].startswith("data:"):
+                raw = raw.split(",", 1)[1]
+            try:
+                file_bytes = base64.b64decode(raw)
+                settings = save_youtube_config_file(m_youtube_config_upload.group(1), file_bytes)
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, 400)
+                return
+            self.send_json({"status": "ok", "settings": settings})
+            return
+
         m_copyright_audio_upload = re.match(
             r"^/api/settings/copyright-audio/(intro|outro)$", route
         )
@@ -2818,6 +2916,11 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"status": "ok"})
             return
 
+        if route == "/api/social-upload-worker/restart":
+            restart_social_upload_worker()
+            self.send_json({"status": "ok"})
+            return
+
         m_video_export_enqueue = re.match(r"^/api/novels/(\d+)/chapters/(\d+)/video-export/enqueue$", route)
         if m_video_export_enqueue:
             novel_id = int(m_video_export_enqueue.group(1))
@@ -2856,6 +2959,36 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": msg}, 409)
                 return
             self.send_json({"status": "ok"})
+            return
+
+        m_video_export_cover_set = re.match(r"^/api/video-export-tasks/(\d+)/cover-image$", route)
+        if m_video_export_cover_set:
+            body = self.read_json()
+            ok, msg, task = set_video_export_cover_image(int(m_video_export_cover_set.group(1)), int(body.get("imageIndex") or 0))
+            if not ok:
+                self.send_json({"error": msg}, 400)
+                return
+            self.send_json({"status": "ok", "task": task})
+            return
+
+        m_youtube_upload = re.match(r"^/api/video-export-tasks/(\d+)/youtube-upload$", route)
+        if m_youtube_upload:
+            ok, msg, task = enqueue_youtube_upload(int(m_youtube_upload.group(1)), self.read_json())
+            if not ok:
+                self.send_json({"error": msg}, 400)
+                return
+            ensure_social_upload_worker()
+            self.send_json({"status": msg, "task": task})
+            return
+
+        m_youtube_upload_retry = re.match(r"^/api/social-media/youtube/uploads/(\d+)/retry$", route)
+        if m_youtube_upload_retry:
+            ok, msg, task = retry_youtube_upload(int(m_youtube_upload_retry.group(1)))
+            if not ok:
+                self.send_json({"error": msg}, 400)
+                return
+            ensure_social_upload_worker()
+            self.send_json({"status": msg, "task": task})
             return
 
         if route == "/api/prompts":
@@ -4281,6 +4414,8 @@ class Handler(BaseHTTPRequestHandler):
             }:
                 ui_timezone = "Asia/Shanghai"
 
+            channel_name = str(body.get("channelName") or "旺仔有声小说").strip() or "旺仔有声小说"
+
             line_audio_queue = body.get("lineAudioQueue") or {}
             if not isinstance(line_audio_queue, dict):
                 line_audio_queue = {}
@@ -4316,6 +4451,7 @@ class Handler(BaseHTTPRequestHandler):
 
             pairs = {
                 "comfy_url": str(body.get("comfyUrl") or ""),
+                "channel_name": channel_name,
                 "proxy_enabled": "1" if bool(body.get("proxyEnabled", False)) else "0",
                 "proxy_url": str(body.get("proxyUrl") or ""),
                 "llm_provider": llm_provider,

@@ -1023,6 +1023,27 @@ def cancel_video_export_task(task_id: int) -> tuple[bool, str]:
     return True, "cancelled"
 
 
+def set_video_export_cover_image(task_id: int, image_index: int) -> tuple[bool, str, dict | None]:
+    conn = db_conn()
+    row = conn.execute("SELECT id,novel_id,chapter_id FROM chapter_video_export_tasks WHERE id=?", (int(task_id),)).fetchone()
+    if not row:
+        conn.close()
+        return False, "task not found", None
+    idx = max(0, int(image_index or 0))
+    if idx > 0:
+        image = conn.execute(
+            "SELECT id FROM chapter_illustration_images WHERE novel_id=? AND chapter_id=? AND item_index=? AND status='completed' AND COALESCE(image_file_path,'')<>''",
+            (int(row["novel_id"]), int(row["chapter_id"]), idx),
+        ).fetchone()
+        if not image:
+            conn.close()
+            return False, "cover image not found", None
+    conn.execute("UPDATE chapter_video_export_tasks SET cover_image_index=?,updated_at=CURRENT_TIMESTAMP WHERE id=?", (idx, int(task_id)))
+    conn.commit()
+    conn.close()
+    return True, "saved", get_video_export_task(int(task_id))
+
+
 def get_video_export_file_path(task_id: int) -> tuple[Path | None, str]:
     conn = db_conn()
     row = conn.execute(
@@ -1044,7 +1065,7 @@ def get_video_export_cover_path(task_id: int, image_index: int | None = None) ->
     conn = db_conn()
     row = conn.execute(
         """
-        SELECT t.output_file_path,t.novel_id,t.chapter_id,t.chapter_num,t.chapter_title,t.width,t.height,t.subtitle_mode,n.name AS novel_name
+        SELECT t.output_file_path,t.novel_id,t.chapter_id,t.chapter_num,t.chapter_title,t.width,t.height,t.subtitle_mode,t.cover_image_index,n.name AS novel_name
         FROM chapter_video_export_tasks t
         JOIN novels n ON n.id=t.novel_id
         WHERE t.id=? AND t.status='completed'
@@ -1056,9 +1077,10 @@ def get_video_export_cover_path(task_id: int, image_index: int | None = None) ->
         return None, ""
     image_params = [int(row["novel_id"]), int(row["chapter_id"])]
     image_where = "novel_id=? AND chapter_id=? AND status='completed' AND COALESCE(image_file_path,'')<>''"
-    if image_index is not None and int(image_index) > 0:
+    selected_image_index = image_index if image_index is not None else int(row["cover_image_index"] or 0)
+    if selected_image_index is not None and int(selected_image_index) > 0:
         image_where += " AND item_index=?"
-        image_params.append(int(image_index))
+        image_params.append(int(selected_image_index))
     image_row = conn.execute(
         f"""
         SELECT item_index,image_file_path,updated_at
@@ -1218,6 +1240,14 @@ def _task_to_dict(row) -> dict:
         srt_path = _resolve_path(str(asr_row["corrected_srt_file_path"] or "")) if asr_row else None
         if srt_path and srt_path.exists() and srt_path.is_file():
             srt_download_url = f"/api/novels/{int(row['novel_id'])}/chapters/{int(row['chapter_num'])}/corrected-srt-file"
+    conn = db_conn()
+    try:
+        from .social_media import latest_youtube_upload_for_video_export
+
+        youtube_upload = latest_youtube_upload_for_video_export(conn, int(row["id"]))
+    except Exception:
+        youtube_upload = None
+    conn.close()
     return {
         "id": int(row["id"]),
         "novelId": int(row["novel_id"]),
@@ -1231,6 +1261,7 @@ def _task_to_dict(row) -> dict:
         "height": int(row["height"] or DEFAULT_VIDEO_HEIGHT),
         "fps": int(row["fps"] or DEFAULT_VIDEO_FPS),
         "subtitleMode": subtitle_mode,
+        "coverImageIndex": int(row["cover_image_index"] or 0) if "cover_image_index" in row.keys() else 0,
         "durationSeconds": float(row["duration_seconds"] or 0),
         "currentFrame": int(row["current_frame"] or 0),
         "totalFrames": int(row["total_frames"] or 0),
@@ -1242,4 +1273,5 @@ def _task_to_dict(row) -> dict:
         "updatedAt": str(row["updated_at"] or ""),
         "downloadUrl": f"/api/video-export-tasks/{int(row['id'])}/file" if size_bytes else "",
         "srtDownloadUrl": srt_download_url,
+        "youtubeUpload": youtube_upload,
     }
