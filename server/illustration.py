@@ -225,9 +225,10 @@ def _json_dumps(data) -> str:
     return json.dumps(data, ensure_ascii=False, indent=2)
 
 
-def _validate_optimized_prompt_item(original: dict, optimized: dict) -> None:
-    if set(original.keys()) != set(optimized.keys()):
-        raise RuntimeError("优化结果最外层字段与原 JSON 不一致")
+def _validate_optimized_prompt_item(optimized: dict) -> None:
+    missing = [key for key in REQUIRED_PROMPT_ITEM_KEYS if key not in optimized]
+    if missing:
+        raise RuntimeError(f"优化结果缺少必需最外层字段：{', '.join(missing)}")
 
 
 def _prompt_items(parsed) -> list:
@@ -1103,8 +1104,7 @@ def optimize_illustration_prompt_item(image_id: int, json_text: str) -> dict:
         optimized = _parse_json_any(raw)
         if not isinstance(optimized, dict):
             raise RuntimeError("优化结果不是 JSON 对象")
-        current = _parse_json_any(prepared["inputText"])
-        _validate_optimized_prompt_item(current, optimized)
+        _validate_optimized_prompt_item(optimized)
     except Exception as exc:
         error = RuntimeError(str(exc))
         error.detail = {
