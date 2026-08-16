@@ -128,6 +128,61 @@ function renderYoutubeUploadProgress(upload) {
     </div>`;
 }
 
+function youtubeUploadErrorSummary(raw, status = "") {
+  const text = String(raw || "").trim();
+  const isFailed = String(status || "") === "failed";
+  const isQuota = /quotaExceeded|youtube\.quota|exceeded your quota|配额|quota/i.test(text);
+  const steps = [];
+  if (text.includes("封面上传失败")) steps.push("封面");
+  if (text.includes("字幕上传失败")) steps.push("字幕");
+  if (text.includes("加入播放列表失败")) steps.push("播放列表");
+  const uniqueSteps = Array.from(new Set(steps));
+  if (isQuota) {
+    return {
+      title: "YouTube API 配额已用尽",
+      summary: isFailed
+        ? "YouTube API 配额不足，上传任务未完成。"
+        : uniqueSteps.length
+        ? `主视频已上传成功，但配额不足，${uniqueSteps.join("、")}未完成。`
+        : "YouTube API 配额不足，部分上传步骤未完成。",
+      steps: uniqueSteps,
+    };
+  }
+  return {
+    title: "油管上传提醒",
+    summary: isFailed
+      ? "上传任务失败，请展开技术详情查看原因。"
+      : uniqueSteps.length
+      ? `主视频已上传成功，但${uniqueSteps.join("、")}未完成。`
+      : "上传过程中出现附加步骤错误。",
+    steps: uniqueSteps,
+  };
+}
+
+function renderYoutubeUploadError(raw, status = "") {
+  const text = String(raw || "").trim();
+  if (!text) return "";
+  const info = youtubeUploadErrorSummary(text, status);
+  const isFailed = String(status || "") === "failed";
+  const stepChips = info.steps.length
+    ? `<div class="youtube-upload-warning-steps">${info.steps.map((step) => `<span>${escapeHtml(step)}</span>`).join("")}</div>`
+    : "";
+  return `
+    <div class="youtube-upload-warning">
+      <div class="youtube-upload-warning-head">
+        <strong>${escapeHtml(info.title)}</strong>
+        <span>${isFailed ? "失败" : "非致命"}</span>
+      </div>
+      <p>${escapeHtml(info.summary)}</p>
+      ${stepChips}
+      <details>
+        <summary>查看技术详情</summary>
+        <button class="ghost-btn btn-sm youtube-upload-copy-error-btn" data-action="copy-youtube-upload-error" type="button">复制详情</button>
+        <pre>${escapeHtml(text)}</pre>
+      </details>
+    </div>`;
+}
+
 function renderNovelSelect() {
   const select = document.getElementById("videoExportNovelSelect");
   select.innerHTML = novels.map((novel) => `<option value="${novel.id}">${escapeHtml(novel.name)}</option>`).join("");
@@ -254,7 +309,7 @@ function renderTasks() {
           </div>
           ${youtubeUploadProgress}
           ${task.errorMessage ? `<p class="error-text">${escapeHtml(task.errorMessage)}</p>` : ""}
-          ${upload?.errorMessage ? `<p class="error-text">油管上传：${escapeHtml(upload.errorMessage)}</p>` : ""}
+          ${renderYoutubeUploadError(upload?.errorMessage, upload?.status)}
           <div class="actions-row">${play}${download}${downloadSrt}${downloadCover}${previewCover}${uploadYoutube}${retryYoutubeUpload}${retry}${cancel}</div>
         </article>`;
     })
@@ -697,6 +752,14 @@ function bindEvents() {
     try {
       if (btn.dataset.action === "play") {
         openVideoPlayer(btn.dataset.id);
+        return;
+      }
+      if (btn.dataset.action === "copy-youtube-upload-error") {
+        const text = btn.closest("details")?.querySelector("pre")?.textContent || "";
+        if (text) {
+          await navigator.clipboard.writeText(text);
+          toast("已复制油管上传错误详情");
+        }
         return;
       }
       if (btn.dataset.action === "preview-cover") {

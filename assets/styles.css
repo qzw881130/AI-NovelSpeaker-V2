@@ -4831,6 +4831,90 @@ body.is-nsfw-review-drag-selecting .novel-download-table {
   color: var(--danger);
 }
 
+.youtube-upload-warning {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid rgba(168, 54, 47, 0.22);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(255, 247, 237, 0.92), rgba(255, 239, 229, 0.78));
+  color: #6b2a20;
+}
+
+.youtube-upload-warning-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.youtube-upload-warning-head strong {
+  font-size: 14px;
+}
+
+.youtube-upload-warning-head span {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(168, 54, 47, 0.11);
+  color: #9b332b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.youtube-upload-warning p {
+  margin: 0;
+  color: #7a3b24;
+  line-height: 1.55;
+}
+
+.youtube-upload-warning-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.youtube-upload-warning-steps span {
+  padding: 3px 8px;
+  border: 1px solid rgba(168, 54, 47, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.58);
+  color: #8f3d28;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.youtube-upload-warning details {
+  margin-top: 8px;
+}
+
+.youtube-upload-warning summary {
+  cursor: pointer;
+  color: #9b421c;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.youtube-upload-copy-error-btn {
+  margin-top: 8px;
+}
+
+.youtube-upload-warning pre {
+  max-height: 128px;
+  margin: 8px 0 0;
+  padding: 10px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border: 1px solid rgba(168, 54, 47, 0.14);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.72);
+  color: #7b2d21;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 @keyframes youtubeRingSweep {
   to {
     transform: rotate(360deg);
