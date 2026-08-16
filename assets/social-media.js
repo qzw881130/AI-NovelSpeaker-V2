@@ -10,6 +10,17 @@ import {
 import { renderNav, toast } from "./ui.js";
 import { localizeDocumentText } from "./i18n.js";
 
+const GOOGLE_OAUTH_EXAMPLES = [
+  "./assets/google-oauth-examples/01.png",
+  "./assets/google-oauth-examples/02.png",
+  "./assets/google-oauth-examples/03.png",
+  "./assets/google-oauth-examples/04.png",
+  "./assets/google-oauth-examples/05.png",
+  "./assets/google-oauth-examples/06.png",
+  "./assets/google-oauth-examples/07.png",
+];
+let googleOauthExampleIndex = 0;
+
 function escapeHtml(text) {
   return String(text || "")
     .replaceAll("&", "&amp;")
@@ -32,14 +43,12 @@ function formPayload() {
 
 function renderSettings(settings) {
   document.getElementById("youtubeClientSecretPathText").textContent = settings.clientSecretPath || "未上传";
-  document.getElementById("youtubeTokenPathText").textContent = settings.tokenPath || "未生成";
   document.getElementById("youtubeClientId").value = settings.clientId || "";
   document.getElementById("youtubeClientSecret").value = settings.clientSecret || "";
   document.getElementById("youtubeRedirectUri").value = settings.redirectUri || "http://localhost:8080/oauth";
   document.getElementById("youtubeDefaultTags").value = settings.defaultTags || "四大名著,三国演义,有声小说,旺仔有声小说";
   document.getElementById("youtubeProxyEnabled").checked = Boolean(settings.proxyEnabled);
   document.getElementById("youtubeProxyUrl").value = settings.proxyUrl || "http://127.0.0.1:7897";
-  renderFiles(settings.files || []);
 }
 
 function readFileAsBase64(file) {
@@ -67,25 +76,6 @@ async function uploadConfigFile(kind, input) {
   }
 }
 
-function renderFiles(files) {
-  const root = document.getElementById("youtubeConfigFiles");
-  if (!files.length) {
-    root.innerHTML = `<p class="empty-text">暂无配置文件。</p>`;
-    return;
-  }
-  root.innerHTML = files.map((file) => `
-    <article class="task-detail-block">
-      <div class="task-detail-head">
-        <div>
-          <h3>${escapeHtml(file.label)}</h3>
-          <p class="meta">${escapeHtml(file.path || "未设置")}</p>
-        </div>
-        <span class="status-badge ${file.exists ? "status-completed" : "status-pending"}">${file.exists ? "已找到" : "未找到"}</span>
-      </div>
-    </article>
-  `).join("");
-}
-
 function renderPlaylists(items) {
   const root = document.getElementById("youtubePlaylists");
   if (!items.length) {
@@ -98,6 +88,54 @@ function renderPlaylists(items) {
       <p class="meta">${escapeHtml(item.id)}</p>
     </article>
   `).join("");
+}
+
+function renderGoogleOauthExample() {
+  const image = document.getElementById("googleOauthExampleImage");
+  const fallback = document.getElementById("googleOauthExampleFallback");
+  const counter = document.getElementById("googleOauthExampleCounter");
+  const dots = document.getElementById("googleOauthExampleDots");
+  const previewImage = document.getElementById("googleOauthExamplePreviewImage");
+  const previewCounter = document.getElementById("googleOauthExamplePreviewCounter");
+  if (!image || !counter || !dots) return;
+  image.classList.remove("hidden");
+  fallback?.classList.add("hidden");
+  image.src = GOOGLE_OAUTH_EXAMPLES[googleOauthExampleIndex];
+  image.alt = `Google 配置示例 ${googleOauthExampleIndex + 1}`;
+  counter.textContent = `${googleOauthExampleIndex + 1} / ${GOOGLE_OAUTH_EXAMPLES.length}`;
+  if (previewImage) {
+    previewImage.src = GOOGLE_OAUTH_EXAMPLES[googleOauthExampleIndex];
+    previewImage.alt = `Google 配置示例大图 ${googleOauthExampleIndex + 1}`;
+  }
+  if (previewCounter) previewCounter.textContent = `${googleOauthExampleIndex + 1} / ${GOOGLE_OAUTH_EXAMPLES.length}`;
+  dots.innerHTML = GOOGLE_OAUTH_EXAMPLES.map((_, index) => (
+    `<button class="${index === googleOauthExampleIndex ? "active" : ""}" data-google-oauth-example-index="${index}" type="button" aria-label="查看示例 ${index + 1}"></button>`
+  )).join("");
+}
+
+function showGoogleOauthExample(delta) {
+  googleOauthExampleIndex = (googleOauthExampleIndex + delta + GOOGLE_OAUTH_EXAMPLES.length) % GOOGLE_OAUTH_EXAMPLES.length;
+  renderGoogleOauthExample();
+}
+
+function openGoogleOauthExamplePreview() {
+  const dialog = document.getElementById("googleOauthExamplePreviewDialog");
+  if (!dialog) return;
+  renderGoogleOauthExample();
+  if (typeof dialog.showModal === "function") dialog.showModal();
+  else dialog.setAttribute("open", "");
+}
+
+function handleGoogleOauthExampleKeydown(event) {
+  const activeTag = document.activeElement?.tagName?.toLowerCase();
+  if (["input", "textarea", "select"].includes(activeTag)) return;
+  if (event.key === "ArrowLeft") {
+    event.preventDefault();
+    showGoogleOauthExample(-1);
+  } else if (event.key === "ArrowRight") {
+    event.preventDefault();
+    showGoogleOauthExample(1);
+  }
 }
 
 async function refreshWorkerStatus() {
@@ -146,6 +184,28 @@ function bindEvents() {
   document.getElementById("youtubeClientSecretFile")?.addEventListener("change", (event) => {
     uploadConfigFile("client-secret", event.target);
   });
+  document.getElementById("googleOauthExamplePrevBtn")?.addEventListener("click", () => showGoogleOauthExample(-1));
+  document.getElementById("googleOauthExampleNextBtn")?.addEventListener("click", () => showGoogleOauthExample(1));
+  document.getElementById("googleOauthExampleImage")?.addEventListener("error", (event) => {
+    event.currentTarget.classList.add("hidden");
+    document.getElementById("googleOauthExampleFallback")?.classList.remove("hidden");
+  });
+  document.getElementById("googleOauthExampleImage")?.addEventListener("click", openGoogleOauthExamplePreview);
+  document.getElementById("googleOauthExamplePreviewPrevBtn")?.addEventListener("click", () => showGoogleOauthExample(-1));
+  document.getElementById("googleOauthExamplePreviewNextBtn")?.addEventListener("click", () => showGoogleOauthExample(1));
+  document.getElementById("googleOauthExamplePreviewCloseBtn")?.addEventListener("click", () => {
+    document.getElementById("googleOauthExamplePreviewDialog")?.close();
+  });
+  document.getElementById("googleOauthExamplePreviewDialog")?.addEventListener("click", (event) => {
+    if (event.target === event.currentTarget) event.currentTarget.close();
+  });
+  document.getElementById("googleOauthExampleDots")?.addEventListener("click", (event) => {
+    const btn = event.target.closest("button[data-google-oauth-example-index]");
+    if (!btn) return;
+    googleOauthExampleIndex = Number(btn.dataset.googleOauthExampleIndex || 0);
+    renderGoogleOauthExample();
+  });
+  document.addEventListener("keydown", handleGoogleOauthExampleKeydown);
   document.getElementById("youtubeAuthorizeBtn")?.addEventListener("click", async () => {
     try {
       renderSettings(await saveYoutubeSettings(formPayload()));
@@ -162,6 +222,7 @@ function bindEvents() {
 async function init() {
   renderNav();
   bindEvents();
+  renderGoogleOauthExample();
   await loadSettings();
   localizeDocumentText(document);
 }

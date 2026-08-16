@@ -26,6 +26,24 @@
           <div class="tab-row">
             <button class="tab-btn active" type="button">油管</button>
           </div>
+          <div class="google-oauth-example-carousel" aria-label="Google 配置示例轮播">
+            <div class="google-oauth-example-head">
+              <div>
+                <strong>Google 配置示例</strong>
+                <p class="meta">按示例完成 Branding、Audience、Clients、Data Access 和 YouTube API 配额配置。</p>
+              </div>
+              <div class="google-oauth-example-controls">
+                <button id="googleOauthExamplePrevBtn" class="ghost-btn btn-sm" type="button">上一张</button>
+                <span id="googleOauthExampleCounter" class="meta">1 / 7</span>
+                <button id="googleOauthExampleNextBtn" class="ghost-btn btn-sm" type="button">下一张</button>
+              </div>
+            </div>
+            <div class="google-oauth-example-stage">
+              <img id="googleOauthExampleImage" src="./assets/google-oauth-examples/01.png" alt="Google 配置示例 1" />
+              <p id="googleOauthExampleFallback" class="empty-text hidden">未找到示例图片。请将图片放到 assets/google-oauth-examples/01.png 到 07.png。</p>
+            </div>
+            <div id="googleOauthExampleDots" class="google-oauth-example-dots" aria-label="示例图片分页"></div>
+          </div>
           <div class="settings-grid social-settings-grid">
             <div class="youtube-file-upload-row">
               <div>
@@ -35,13 +53,6 @@
               <label class="ghost-btn btn-sm file-upload-btn">上传文件
                 <input id="youtubeClientSecretFile" type="file" accept="application/json,.json" hidden />
               </label>
-            </div>
-            <div class="youtube-file-upload-row">
-              <div>
-                <strong>token.json</strong>
-                <p id="youtubeTokenPathText" class="meta">未上传</p>
-              </div>
-              <button id="youtubeAuthorizeBtn" class="ghost-btn btn-sm" type="button">授权生成</button>
             </div>
             <label>Client ID
               <input id="youtubeClientId" type="text" placeholder="上传 client_secret.json 后自动填充" />
@@ -62,15 +73,26 @@
           </div>
           <div class="actions-row">
             <button id="saveYoutubeSettingsBtn" class="primary-btn" type="button">保存配置</button>
+            <button id="youtubeAuthorizeBtn" class="ghost-btn" type="button">授权生成</button>
             <button id="loadYoutubePlaylistsBtn" class="ghost-btn" type="button">拉取油管播放列表</button>
           </div>
-          <h3>上传所需配置文件</h3>
-          <div id="youtubeConfigFiles" class="task-detail-content"></div>
           <h3>油管播放列表</h3>
           <div id="youtubePlaylists" class="task-detail-content"><p class="empty-text">尚未拉取。</p></div>
         </section>
       </main>
     </div>
+    <dialog id="googleOauthExamplePreviewDialog" class="google-oauth-preview-dialog">
+      <div class="google-oauth-preview-head">
+        <strong>Google 配置示例</strong>
+        <span id="googleOauthExamplePreviewCounter" class="meta">1 / 7</span>
+        <button id="googleOauthExamplePreviewCloseBtn" class="dialog-close-btn" type="button" aria-label="关闭">×</button>
+      </div>
+      <div class="google-oauth-preview-stage">
+        <button id="googleOauthExamplePreviewPrevBtn" class="google-oauth-preview-nav" type="button" aria-label="上一张" title="上一张">‹</button>
+        <img id="googleOauthExamplePreviewImage" alt="Google 配置示例大图" />
+        <button id="googleOauthExamplePreviewNextBtn" class="google-oauth-preview-nav" type="button" aria-label="下一张" title="下一张">›</button>
+      </div>
+    </dialog>
     <div id="toast" class="toast"></div>
     <script type="module" src="./assets/social-media.js"></script>
   </body>
