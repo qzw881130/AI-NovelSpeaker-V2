@@ -93,9 +93,12 @@ def get_youtube_settings() -> dict:
         "proxyUrl": _setting(conn, "youtube_proxy_url", DEFAULT_YOUTUBE_PROXY_URL) or DEFAULT_YOUTUBE_PROXY_URL,
         "defaultTags": _setting(conn, "youtube_default_tags", DEFAULT_YOUTUBE_TAGS) or DEFAULT_YOUTUBE_TAGS,
         "channelName": _setting(conn, "channel_name", "旺仔有声小说") or "旺仔有声小说",
+        "projectId": "",
     }
+    cfg = _client_config_from_file(data["clientSecretPath"])
+    if cfg:
+        data["projectId"] = str(cfg.get("project_id") or "").strip()
     if not data["clientId"] or not data["clientSecret"]:
-        cfg = _client_config_from_file(data["clientSecretPath"])
         data["clientId"] = data["clientId"] or str(cfg.get("client_id") or "").strip()
         data["clientSecret"] = data["clientSecret"] or str(cfg.get("client_secret") or "").strip()
         redirects = cfg.get("redirect_uris") if isinstance(cfg.get("redirect_uris"), list) else []

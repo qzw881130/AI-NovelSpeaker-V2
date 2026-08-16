@@ -49,6 +49,16 @@ function renderSettings(settings) {
   document.getElementById("youtubeDefaultTags").value = settings.defaultTags || "四大名著,三国演义,有声小说,旺仔有声小说";
   document.getElementById("youtubeProxyEnabled").checked = Boolean(settings.proxyEnabled);
   document.getElementById("youtubeProxyUrl").value = settings.proxyUrl || "http://127.0.0.1:7897";
+  const quotaLink = document.getElementById("youtubeQuotaLink");
+  const projectId = String(settings.projectId || "").trim();
+  const hasClientSecret = Boolean(settings.clientSecretPath || settings.clientId);
+  if (quotaLink) {
+    quotaLink.classList.toggle("hidden", !hasClientSecret);
+    quotaLink.href = projectId
+      ? `https://console.cloud.google.com/apis/api/youtube.googleapis.com/quotas?project=${encodeURIComponent(projectId)}`
+      : "#";
+    quotaLink.setAttribute("aria-disabled", projectId ? "false" : "true");
+  }
 }
 
 function readFileAsBase64(file) {
