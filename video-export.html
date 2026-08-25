@@ -62,6 +62,7 @@
           <div class="panel-head">
             <h2>导出任务</h2>
             <div class="video-export-task-head-actions">
+              <button id="videoExportGenerateAll4x3Btn" class="ghost-btn" type="button">生成所有4:3封面</button>
               <button id="videoExportCoverBundleBtn" class="ghost-btn" type="button">下载所有封面</button>
               <select id="videoExportSortBySelect" class="video-export-sort-select" aria-label="排序依据" title="排序依据">
                 <option value="id">ID</option>
@@ -98,7 +99,8 @@
           <button id="videoExportCoverPrevBtn" class="ghost-btn" type="button">前一个</button>
           <button id="videoExportCoverNextBtn" class="ghost-btn" type="button">后一个</button>
           <button id="videoExportCoverSetBtn" class="ghost-btn" type="button">设为封面</button>
-          <a id="videoExportCoverDownloadBtn" class="primary-btn" href="#" download>下载封面</a>
+          <a id="videoExportCoverDownload16x9Btn" class="primary-btn" href="#" download>下载16:9</a>
+          <a id="videoExportCoverDownload4x3Btn" class="ghost-btn" href="#" download>下载4:3</a>
           <button id="videoExportCoverCloseBtn" class="ghost-btn" type="button">关闭</button>
         </div>
       </div>
@@ -107,8 +109,13 @@
           <select id="videoExportCoverImageSelect"></select>
         </label>
         <span id="videoExportCoverImageMeta" class="meta"></span>
+        <div class="video-cover-generate-actions">
+          <button id="videoExportGenerateCover16x9Btn" class="ghost-btn" type="button">生成16:9封面</button>
+          <button id="videoExportGenerateCover4x3Btn" class="ghost-btn" type="button">生成4:3封面</button>
+        </div>
       </div>
       <img id="videoExportCoverPreview" class="video-cover-preview" alt="视频封面预览" />
+      <p id="videoExportCoverDimensions" class="video-cover-dimensions">图片尺寸：--</p>
     </dialog>
 
     <dialog id="videoExportCoverBundleDialog" class="video-cover-bundle-dialog">

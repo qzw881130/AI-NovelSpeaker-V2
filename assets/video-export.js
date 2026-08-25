@@ -5,6 +5,7 @@ import {
   fetchVideoExportTasks,
   fetchVideoExportWorkerStatus,
   fetchVideoCoverBundleStatus,
+  fetchVideoCovers4x3Status,
   fetchChapterIllustrationImages,
   fetchYoutubePlaylists,
   fetchYoutubeSettings,
@@ -13,6 +14,9 @@ import {
   getVideoCoverBundleFileUrl,
   getVideoExportCoverUrl,
   getVideoExportFileUrl,
+  generateAllVideoCovers4x3,
+  generateIllustrationImage4x3,
+  generateVideoExportCover4x3,
   restartVideoExportWorker,
   retryYoutubeUploadTask,
   retryVideoExportTask,
@@ -30,9 +34,13 @@ let refreshTimer = null;
 let activeCoverTaskId = null;
 let coverImageOptions = [];
 let coverPreviewLoading = false;
+let cover4x3GenerationStage = "";
+let activeCoverAspect = "16x9";
 let taskSortBy = "id";
 let taskIdSortDirection = "desc";
 let coverBundlePollTimer = null;
+let cover4x3PollTimer = null;
+let lastCover4x3Status = "";
 let activeYoutubeUploadTaskId = null;
 let youtubeSettings = null;
 const VIDEO_EXPORT_REFRESH_INTERVAL_KEY = "ai_novel_video_export_refresh_interval";
@@ -267,8 +275,13 @@ function renderTasks() {
       const download = task.status === "completed" && task.downloadUrl
         ? `<a class="primary-btn btn-sm" href="${getVideoExportFileUrl(task.id)}">下载MP4</a>`
         : "";
-      const downloadCover = task.status === "completed" && task.downloadUrl
-        ? `<a class="ghost-btn btn-sm" href="${getVideoExportCoverUrl(task.id)}">下载封面</a>`
+      const downloadCover16x9 = task.status === "completed" && task.downloadUrl
+        ? `<a class="ghost-btn btn-sm" href="${getVideoExportCoverUrl(task.id)}">下载16:9</a>`
+        : "";
+      const downloadCover4x3 = task.status === "completed" && task.downloadUrl
+        ? task.cover4x3Exists
+          ? `<a class="ghost-btn btn-sm" href="${getVideoExportCoverUrl(task.id, { aspect: "4x3" })}">下载4:3</a>`
+          : `<button class="ghost-btn btn-sm" type="button" disabled>下载4:3</button>`
         : "";
       const previewCover = task.status === "completed" && task.downloadUrl
         ? `<button class="ghost-btn btn-sm" data-action="preview-cover" data-id="${task.id}" type="button">预览封面</button>`
@@ -310,7 +323,7 @@ function renderTasks() {
           ${youtubeUploadProgress}
           ${task.errorMessage ? `<p class="error-text">${escapeHtml(task.errorMessage)}</p>` : ""}
           ${renderYoutubeUploadError(upload?.errorMessage, upload?.status)}
-          <div class="actions-row">${play}${download}${downloadSrt}${downloadCover}${previewCover}${uploadYoutube}${retryYoutubeUpload}${retry}${cancel}</div>
+          <div class="actions-row">${play}${download}${downloadSrt}${downloadCover16x9}${downloadCover4x3}${previewCover}${uploadYoutube}${retryYoutubeUpload}${retry}${cancel}</div>
         </article>`;
     })
     .join("");
@@ -362,9 +375,23 @@ function closeVideoPlayer() {
   if (dialog?.open) dialog.close();
 }
 
-function coverUrl(taskId, imageIndex) {
-  const url = getVideoExportCoverUrl(taskId, imageIndex ? { imageIndex } : {});
+function coverUrl(taskId, imageIndex, aspect = "16x9") {
+  const url = getVideoExportCoverUrl(taskId, { ...(imageIndex ? { imageIndex } : {}), aspect });
   return `${url}${url.includes("?") ? "&" : "?"}v=${Date.now()}`;
+}
+
+function updateCoverPreviewDimensions() {
+  const img = document.getElementById("videoExportCoverPreview");
+  const dimensions = document.getElementById("videoExportCoverDimensions");
+  if (!dimensions) return;
+  dimensions.textContent = img?.naturalWidth && img?.naturalHeight
+    ? `图片尺寸：${img.naturalWidth}x${img.naturalHeight}`
+    : "图片尺寸：--";
+}
+
+function resetCoverPreviewDimensions() {
+  const dimensions = document.getElementById("videoExportCoverDimensions");
+  if (dimensions) dimensions.textContent = "图片尺寸：--";
 }
 
 function coverNavigationTasks() {
@@ -395,16 +422,38 @@ async function navigateCoverPreview(direction) {
 
 function updateCoverPreviewImage() {
   const img = document.getElementById("videoExportCoverPreview");
-  const download = document.getElementById("videoExportCoverDownloadBtn");
+  const download16x9 = document.getElementById("videoExportCoverDownload16x9Btn");
+  const download4x3 = document.getElementById("videoExportCoverDownload4x3Btn");
+  const generateCover16x9Btn = document.getElementById("videoExportGenerateCover16x9Btn");
+  const generateCover4x3Btn = document.getElementById("videoExportGenerateCover4x3Btn");
   const select = document.getElementById("videoExportCoverImageSelect");
   const meta = document.getElementById("videoExportCoverImageMeta");
   const setBtn = document.getElementById("videoExportCoverSetBtn");
   if (!img || !activeCoverTaskId) return;
   const imageIndex = Number(select?.value || 0);
   const selected = coverImageOptions.find((item) => Number(item.index) === imageIndex) || null;
-  const url = coverUrl(activeCoverTaskId, imageIndex);
+  if (activeCoverAspect === "4x3" && !selected?.image4x3Url) activeCoverAspect = "16x9";
+  const url = coverUrl(activeCoverTaskId, imageIndex, activeCoverAspect);
+  resetCoverPreviewDimensions();
   img.src = url;
-  if (download) download.href = getVideoExportCoverUrl(activeCoverTaskId, imageIndex ? { imageIndex } : {});
+  const params = imageIndex ? { imageIndex } : {};
+  if (download16x9) download16x9.href = getVideoExportCoverUrl(activeCoverTaskId, { ...params, aspect: "16x9" });
+  if (download4x3) {
+    download4x3.href = getVideoExportCoverUrl(activeCoverTaskId, { ...params, aspect: "4x3" });
+    download4x3.classList.toggle("is-disabled", !selected?.image4x3Url);
+    download4x3.setAttribute("aria-disabled", selected?.image4x3Url ? "false" : "true");
+  }
+  if (generateCover16x9Btn) generateCover16x9Btn.disabled = activeCoverAspect === "16x9" || coverPreviewLoading;
+  if (generateCover4x3Btn) {
+    generateCover4x3Btn.disabled = !selected || activeCoverAspect === "4x3" || coverPreviewLoading;
+    generateCover4x3Btn.textContent = cover4x3GenerationStage === "image"
+      ? "生成4:3插图中..."
+      : cover4x3GenerationStage === "cover"
+        ? "生成4:3封面中..."
+        : "生成4:3封面";
+    generateCover4x3Btn.classList.toggle("video-cover-pending-btn", Boolean(cover4x3GenerationStage));
+    generateCover4x3Btn.setAttribute("aria-busy", cover4x3GenerationStage ? "true" : "false");
+  }
   if (meta) {
     meta.textContent = selected
       ? `#${selected.index} ${selected.sceneTitle || selected.cnSummary || "插图"}`
@@ -434,6 +483,7 @@ async function openCoverPreview(taskId) {
   if (!dialog || !img) return;
   coverPreviewLoading = true;
   activeCoverTaskId = task.id;
+  activeCoverAspect = "16x9";
   coverImageOptions = [];
   updateCoverNavigationButtons();
   title.textContent = `第${String(task.chapterNum).padStart(3, "0")}回 ${task.chapterTitle || ""}`;
@@ -479,12 +529,51 @@ async function setActiveCoverImage() {
   updateCoverPreviewImage();
 }
 
+async function generateActiveCover4x3() {
+  const select = document.getElementById("videoExportCoverImageSelect");
+  const imageIndex = Number(select?.value || 0);
+  const selected = coverImageOptions.find((item) => Number(item.index) === imageIndex);
+  if (!selected || !activeCoverTaskId || coverPreviewLoading) return;
+  if (selected.image4x3Url) {
+    activeCoverAspect = "4x3";
+    updateCoverPreviewImage();
+    toast("已显示现有4:3封面");
+    return;
+  }
+  cover4x3GenerationStage = "image";
+  coverPreviewLoading = true;
+  updateCoverPreviewImage();
+  try {
+    const result = await generateIllustrationImage4x3(selected.id);
+    selected.image4x3Url = result.image4x3Url || `${selected.imageUrl}?aspect=4x3`;
+    cover4x3GenerationStage = "cover";
+    updateCoverPreviewImage();
+    await generateVideoExportCover4x3(activeCoverTaskId, imageIndex);
+    activeCoverAspect = "4x3";
+    toast("4:3封面已生成");
+  } finally {
+    cover4x3GenerationStage = "";
+    coverPreviewLoading = false;
+    updateCoverPreviewImage();
+  }
+}
+
+function generateActiveCover16x9() {
+  if (!activeCoverTaskId || coverPreviewLoading) return;
+  activeCoverAspect = "16x9";
+  updateCoverPreviewImage();
+  toast("已切换到16:9封面");
+}
+
 function closeCoverPreview() {
   const dialog = document.getElementById("videoExportCoverDialog");
   const img = document.getElementById("videoExportCoverPreview");
   if (img) img.removeAttribute("src");
+  resetCoverPreviewDimensions();
   activeCoverTaskId = null;
+  activeCoverAspect = "16x9";
   coverImageOptions = [];
+  cover4x3GenerationStage = "";
   coverPreviewLoading = false;
   updateCoverNavigationButtons();
   if (dialog?.open) dialog.close();
@@ -673,6 +762,66 @@ async function startCoverBundle() {
   await pollCoverBundleStatus();
 }
 
+function clearCover4x3Poll() {
+  if (cover4x3PollTimer) {
+    clearInterval(cover4x3PollTimer);
+    cover4x3PollTimer = null;
+  }
+}
+
+function renderCover4x3Status(task) {
+  const btn = document.getElementById("videoExportGenerateAll4x3Btn");
+  if (!btn) return;
+  const status = String(task?.status || "idle");
+  const running = status === "queued" || status === "running";
+  const current = Number(task?.current || 0);
+  const total = Number(task?.total || 0);
+  btn.disabled = running || !activeNovel;
+  btn.classList.toggle("video-cover-pending-btn", running);
+  btn.setAttribute("aria-busy", running ? "true" : "false");
+  btn.textContent = running
+    ? `生成所有4:3封面 ${current}/${total || "-"}`
+    : "生成所有4:3封面";
+  btn.title = String(task?.error || "");
+}
+
+async function pollCover4x3Status({ notify = true } = {}) {
+  if (!activeNovel) return;
+  const task = await fetchVideoCovers4x3Status(activeNovel.id);
+  const status = String(task?.status || "idle");
+  const wasRunning = lastCover4x3Status === "queued" || lastCover4x3Status === "running";
+  renderCover4x3Status(task);
+  if (status === "queued" || status === "running") {
+    if (!cover4x3PollTimer) {
+      cover4x3PollTimer = setInterval(() => {
+        pollCover4x3Status().catch((err) => toast(err.message));
+      }, 1500);
+    }
+  } else {
+    clearCover4x3Poll();
+    if (notify && wasRunning) {
+      const summary = task?.summary || {};
+      if (status === "failed") {
+        toast(`4:3封面批量生成失败：${task?.error || "未知错误"}`);
+      } else {
+        toast(`4:3封面处理完成：生成${Number(summary.generatedCovers || 0)}，跳过${Number(summary.skipped || 0)}，失败${Number(summary.failed || 0)}`);
+      }
+      await refreshTasks();
+    }
+  }
+  lastCover4x3Status = status;
+}
+
+async function startCover4x3Batch() {
+  if (!activeNovel) return;
+  if (!window.confirm(`为《${activeNovel.name || "当前小说"}》生成所有缺失的4:3封面？`)) return;
+  clearCover4x3Poll();
+  const task = await generateAllVideoCovers4x3(activeNovel.id);
+  lastCover4x3Status = "queued";
+  renderCover4x3Status(task || { status: "queued", current: 0, total: 0 });
+  await pollCover4x3Status({ notify: false });
+}
+
 function handleCoverPreviewKeydown(event) {
   const dialog = document.getElementById("videoExportCoverDialog");
   if (!dialog?.open) return;
@@ -709,9 +858,12 @@ async function refreshTasks() {
 
 function bindEvents() {
   document.getElementById("videoExportNovelSelect")?.addEventListener("change", (event) => {
+    clearCover4x3Poll();
+    lastCover4x3Status = "";
     setActiveNovelId(event.target.value);
     activeNovel = novels.find((novel) => String(novel.id) === String(event.target.value)) || novels[0] || null;
     refreshTasks();
+    pollCover4x3Status({ notify: false }).catch((err) => toast(err.message));
   });
   document.getElementById("videoExportStatusFilter")?.addEventListener("change", renderTasks);
   document.getElementById("videoExportSizeFilter")?.addEventListener("change", renderTasks);
@@ -727,6 +879,9 @@ function bindEvents() {
     renderTasks();
   });
   document.getElementById("videoExportCoverBundleBtn")?.addEventListener("click", openCoverBundleDialog);
+  document.getElementById("videoExportGenerateAll4x3Btn")?.addEventListener("click", () => {
+    startCover4x3Batch().catch((err) => toast(err.message));
+  });
   document.getElementById("videoExportCoverBundleCloseBtn")?.addEventListener("click", closeCoverBundleDialog);
   document.getElementById("videoExportCoverBundleDialog")?.addEventListener("close", closeCoverBundleDialog);
   document.getElementById("videoExportCoverBundleStartBtn")?.addEventListener("click", () => {
@@ -787,7 +942,16 @@ function bindEvents() {
   document.getElementById("videoExportPlayerDialog")?.addEventListener("close", closeVideoPlayer);
   document.getElementById("videoExportCoverCloseBtn")?.addEventListener("click", closeCoverPreview);
   document.getElementById("videoExportCoverDialog")?.addEventListener("close", closeCoverPreview);
-  document.getElementById("videoExportCoverImageSelect")?.addEventListener("change", updateCoverPreviewImage);
+  document.getElementById("videoExportCoverPreview")?.addEventListener("load", updateCoverPreviewDimensions);
+  document.getElementById("videoExportCoverPreview")?.addEventListener("error", updateCoverPreviewDimensions);
+  document.getElementById("videoExportCoverImageSelect")?.addEventListener("change", () => {
+    activeCoverAspect = "16x9";
+    updateCoverPreviewImage();
+  });
+  document.getElementById("videoExportGenerateCover16x9Btn")?.addEventListener("click", generateActiveCover16x9);
+  document.getElementById("videoExportGenerateCover4x3Btn")?.addEventListener("click", () => {
+    generateActiveCover4x3().catch((err) => toast(err.message));
+  });
   document.getElementById("videoExportCoverSetBtn")?.addEventListener("click", () => {
     setActiveCoverImage().catch((err) => toast(err.message));
   });
@@ -818,6 +982,7 @@ async function init() {
   renderNovelSelect();
   bindEvents();
   await refreshTasks();
+  await pollCover4x3Status({ notify: false });
   applyRefreshInterval();
   localizeDocumentText(document);
 }
@@ -825,6 +990,7 @@ async function init() {
 window.addEventListener("beforeunload", () => {
   if (refreshTimer) clearInterval(refreshTimer);
   clearCoverBundlePoll();
+  clearCover4x3Poll();
 });
 
 init().catch((err) => toast(err.message));

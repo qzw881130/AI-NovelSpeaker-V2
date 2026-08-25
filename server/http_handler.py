@@ -67,6 +67,7 @@ from .illustration import (
     enqueue_illustration_task,
     enqueue_all_illustration_images,
     enqueue_illustration_image,
+    generate_illustration_image_4x3,
     get_illustration_task_payload,
     get_illustration_llm_request_preview,
     get_illustration_prompt_item_original,
@@ -91,6 +92,7 @@ from .video_export import (
     retry_video_export_task,
     set_video_export_cover_image,
 )
+from scripts.generate_novel_4x3_covers import generate_missing_covers
 from .social_media import (
     enqueue_youtube_upload,
     build_youtube_oauth_url,
@@ -332,6 +334,8 @@ BUNDLE_TASKS_LOCK = threading.Lock()
 BUNDLE_TASKS: dict[int, dict] = {}
 VIDEO_COVER_BUNDLE_TASKS_LOCK = threading.Lock()
 VIDEO_COVER_BUNDLE_TASKS: dict[int, dict] = {}
+VIDEO_COVER_4X3_TASKS_LOCK = threading.Lock()
+VIDEO_COVER_4X3_TASKS: dict[int, dict] = {}
 
 
 def _normalize_bundle_audio_preset(value: str) -> str:
@@ -380,6 +384,83 @@ def _set_video_cover_bundle_status(novel_id: int, **updates) -> dict:
         current.update(updates)
         VIDEO_COVER_BUNDLE_TASKS[int(novel_id)] = current
         return dict(current)
+
+
+def _get_video_cover_4x3_status(novel_id: int) -> dict | None:
+    with VIDEO_COVER_4X3_TASKS_LOCK:
+        task = VIDEO_COVER_4X3_TASKS.get(int(novel_id))
+        return dict(task) if task else None
+
+
+def _set_video_cover_4x3_status(novel_id: int, **updates) -> dict:
+    with VIDEO_COVER_4X3_TASKS_LOCK:
+        current = dict(VIDEO_COVER_4X3_TASKS.get(int(novel_id)) or {})
+        current.update(updates)
+        VIDEO_COVER_4X3_TASKS[int(novel_id)] = current
+        return dict(current)
+
+
+def _run_video_cover_4x3_task(novel_id: int) -> None:
+    try:
+        _set_video_cover_4x3_status(
+            novel_id,
+            status="running",
+            current=0,
+            total=0,
+            summary={},
+            error="",
+        )
+
+        def update_progress(current: int, total: int, summary: dict) -> None:
+            _set_video_cover_4x3_status(
+                novel_id,
+                current=int(current),
+                total=int(total),
+                summary=dict(summary or {}),
+            )
+
+        summary = generate_missing_covers(
+            int(novel_id),
+            progress_callback=update_progress,
+        )
+        final = _get_video_cover_4x3_status(novel_id) or {}
+        _set_video_cover_4x3_status(
+            novel_id,
+            status="completed" if not int(summary.get("failed") or 0) else "completed_with_errors",
+            current=int(final.get("total") or 0),
+            summary=summary,
+            finishedAt=datetime.now().isoformat(),
+        )
+    except Exception as exc:
+        _set_video_cover_4x3_status(
+            novel_id,
+            status="failed",
+            error=str(exc),
+            finishedAt=datetime.now().isoformat(),
+        )
+
+
+def _start_video_cover_4x3_task(novel_id: int) -> tuple[bool, str, dict | None]:
+    current = _get_video_cover_4x3_status(novel_id)
+    if current and current.get("status") in {"queued", "running"}:
+        return True, "running", current
+    conn = db_conn()
+    novel = conn.execute("SELECT id FROM novels WHERE id=?", (int(novel_id),)).fetchone()
+    conn.close()
+    if not novel:
+        return False, "novel not found", None
+    task = _set_video_cover_4x3_status(
+        novel_id,
+        status="queued",
+        current=0,
+        total=0,
+        summary={},
+        error="",
+        startedAt=datetime.now().isoformat(),
+        finishedAt="",
+    )
+    threading.Thread(target=_run_video_cover_4x3_task, args=(int(novel_id),), daemon=True).start()
+    return True, "started", task
 
 
 def _get_video_cover_bundle_entries(novel_id: int) -> tuple[bool, str, str, list[dict]]:
@@ -1444,9 +1525,11 @@ class Handler(BaseHTTPRequestHandler):
         m_illustration_image_file = re.match(r"^/api/illustration-images/(\d+)/file$", route)
         if m_illustration_image_file:
             image_id = int(m_illustration_image_file.group(1))
+            aspect = str((query.get("aspect") or [""])[0] or "").strip().lower()
+            path_column = "image_4x3_file_path" if aspect == "4x3" else "image_file_path"
             conn = db_conn()
             row = conn.execute(
-                "SELECT image_file_path FROM chapter_illustration_images WHERE id=?",
+                f"SELECT {path_column} AS image_file_path FROM chapter_illustration_images WHERE id=?",
                 (image_id,),
             ).fetchone()
             conn.close()
@@ -1663,6 +1746,19 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"task": task})
             return
 
+        m_video_cover_4x3_status = re.match(r"^/api/novels/(\d+)/video-covers-4x3/status$", route)
+        if m_video_cover_4x3_status:
+            novel_id = int(m_video_cover_4x3_status.group(1))
+            task = _get_video_cover_4x3_status(novel_id) or {
+                "status": "idle",
+                "current": 0,
+                "total": 0,
+                "summary": {},
+                "error": "",
+            }
+            self.send_json({"task": task})
+            return
+
         m_video_cover_bundle_file = re.match(r"^/api/novels/(\d+)/video-cover-bundles/(.+)$", route)
         if m_video_cover_bundle_file:
             novel_id = int(m_video_cover_bundle_file.group(1))
@@ -1717,8 +1813,9 @@ class Handler(BaseHTTPRequestHandler):
             task_id = int(m_video_export_cover.group(1))
             image_index_raw = str((query.get("imageIndex") or [""])[0] or "").strip()
             image_index = int(image_index_raw) if image_index_raw.isdigit() else None
+            aspect = str((query.get("aspect") or [""])[0] or "").strip()
             try:
-                path, filename = get_video_export_cover_path(task_id, image_index=image_index)
+                path, filename = get_video_export_cover_path(task_id, image_index=image_index, aspect=aspect)
             except Exception as exc:
                 self.send_json({"error": str(exc)}, 400)
                 return
@@ -2310,6 +2407,16 @@ class Handler(BaseHTTPRequestHandler):
             if not ok:
                 code = 404 if "not found" in msg else 400
                 self.send_json({"error": msg}, code)
+                return
+            self.send_json({"status": msg, "task": task})
+            return
+
+        m_video_cover_4x3_start = re.match(r"^/api/novels/(\d+)/video-covers-4x3/generate-all$", route)
+        if m_video_cover_4x3_start:
+            novel_id = int(m_video_cover_4x3_start.group(1))
+            ok, msg, task = _start_video_cover_4x3_task(novel_id)
+            if not ok:
+                self.send_json({"error": msg}, 404 if msg == "novel not found" else 400)
                 return
             self.send_json({"status": msg, "task": task})
             return
@@ -2971,6 +3078,25 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"status": "ok", "task": task})
             return
 
+        m_video_export_cover_4x3 = re.match(r"^/api/video-export-tasks/(\d+)/cover-4x3$", route)
+        if m_video_export_cover_4x3:
+            body = self.read_json()
+            try:
+                image_index = int(body.get("imageIndex") or 0)
+                path, _ = get_video_export_cover_path(
+                    int(m_video_export_cover_4x3.group(1)),
+                    image_index=image_index,
+                    aspect="4x3",
+                )
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, 400)
+                return
+            if not path:
+                self.send_json({"error": "4:3 cover file not found"}, 404)
+                return
+            self.send_json({"status": "completed"})
+            return
+
         m_youtube_upload = re.match(r"^/api/video-export-tasks/(\d+)/youtube-upload$", route)
         if m_youtube_upload:
             ok, msg, task = enqueue_youtube_upload(int(m_youtube_upload.group(1)), self.read_json())
@@ -3065,6 +3191,7 @@ class Handler(BaseHTTPRequestHandler):
                     "voice_transcribe",
                     "audio_asr",
                     "illustration",
+                    "illustration_4x3",
                 }:
                     conn.close()
                     self.send_json({"error": "invalid workflowType"}, 400)
@@ -3697,6 +3824,16 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": msg}, 409)
                 return
             self.send_json({"status": "queued"})
+            return
+
+        m_illustration_image_4x3 = re.match(r"^/api/illustration-images/(\d+)/generate-4x3$", route)
+        if m_illustration_image_4x3:
+            try:
+                result = generate_illustration_image_4x3(int(m_illustration_image_4x3.group(1)))
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, 400)
+                return
+            self.send_json({"status": "completed", **result})
             return
 
         m_illustration_image_optimize = re.match(r"^/api/illustration-images/(\d+)/prompt/optimize$", route)
@@ -4334,6 +4471,7 @@ class Handler(BaseHTTPRequestHandler):
                 "voice_transcribe",
                 "audio_asr",
                 "illustration",
+                "illustration_4x3",
             }:
                 conn.close()
                 self.send_json({"error": "invalid workflowType"}, 400)

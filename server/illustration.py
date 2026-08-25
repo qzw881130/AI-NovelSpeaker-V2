@@ -15,6 +15,7 @@ from .services import (
     call_llm_prompt_json,
     comfy_download_file,
     comfy_request_json,
+    comfy_upload_input_file,
     db_rel_path,
     effective_proxy_url,
     fetch_settings,
@@ -368,17 +369,18 @@ def _safe_unlink_under_root(path: Path) -> None:
 
 def _delete_illustration_image_files(conn, novel_id: int, chapter_id: int) -> None:
     rows = conn.execute(
-        "SELECT image_file_path FROM chapter_illustration_images WHERE novel_id=? AND chapter_id=?",
+        "SELECT image_file_path,image_4x3_file_path FROM chapter_illustration_images WHERE novel_id=? AND chapter_id=?",
         (novel_id, chapter_id),
     ).fetchall()
     touched_dirs: set[Path] = set()
     for row in rows:
-        rel = str(row["image_file_path"] or "").strip()
-        if not rel:
-            continue
-        path = ROOT_DIR / rel
-        touched_dirs.add(path.parent)
-        _safe_unlink_under_root(path)
+        for column in ("image_file_path", "image_4x3_file_path"):
+            rel = str(row[column] or "").strip()
+            if not rel:
+                continue
+            path = ROOT_DIR / rel
+            touched_dirs.add(path.parent)
+            _safe_unlink_under_root(path)
     chapter = conn.execute(
         """
         SELECT n.english_dir, c.chapter_num
@@ -409,7 +411,7 @@ def _reset_illustration_images_in_range(conn, novel_id: int, chapter_id: int, st
     end = max(int(start_index), int(end_index))
     rows = conn.execute(
         """
-        SELECT image_file_path
+        SELECT image_file_path,image_4x3_file_path
         FROM chapter_illustration_images
         WHERE novel_id=? AND chapter_id=? AND item_index BETWEEN ? AND ?
         """,
@@ -418,14 +420,15 @@ def _reset_illustration_images_in_range(conn, novel_id: int, chapter_id: int, st
     deleted = 0
     touched_dirs: set[Path] = set()
     for row in rows:
-        rel = str(row["image_file_path"] or "").strip()
-        if not rel:
-            continue
-        path = ROOT_DIR / rel
-        touched_dirs.add(path.parent)
-        if path.exists():
-            deleted += 1
-        _safe_unlink_under_root(path)
+        for column in ("image_file_path", "image_4x3_file_path"):
+            rel = str(row[column] or "").strip()
+            if not rel:
+                continue
+            path = ROOT_DIR / rel
+            touched_dirs.add(path.parent)
+            if path.exists():
+                deleted += 1
+            _safe_unlink_under_root(path)
     for directory in touched_dirs:
         try:
             resolved = directory.resolve()
@@ -436,7 +439,7 @@ def _reset_illustration_images_in_range(conn, novel_id: int, chapter_id: int, st
     conn.execute(
         """
         UPDATE chapter_illustration_images
-        SET status='idle', progress=0, image_file_path='', error_message='', started_at=NULL, updated_at=CURRENT_TIMESTAMP
+        SET status='idle', progress=0, image_file_path='', image_4x3_file_path='', error_message='', started_at=NULL, updated_at=CURRENT_TIMESTAMP
         WHERE novel_id=? AND chapter_id=? AND item_index BETWEEN ? AND ?
         """,
         (novel_id, chapter_id, start, end),
@@ -571,7 +574,7 @@ def _randomize_workflow_seeds(workflow: dict) -> None:
         if not isinstance(inputs, dict):
             continue
         for key in ("seed", "noise_seed"):
-            if key in inputs:
+            if key in inputs and not isinstance(inputs[key], (list, dict)):
                 inputs[key] = rng.randint(0, 2**31 - 1)
         if "control_after_generate" in inputs:
             inputs["control_after_generate"] = "randomize"
@@ -1633,10 +1636,144 @@ def list_illustration_images(novel_id: int, chapter_id: int, conn=None) -> list[
             "status": str(r["status"] or "idle"),
             "progress": int(r["progress"] or 0),
             "imageUrl": f"/api/illustration-images/{int(r['id'])}/file" if str(r["image_file_path"] or "").strip() else "",
+            "image4x3Url": f"/api/illustration-images/{int(r['id'])}/file?aspect=4x3" if str(r["image_4x3_file_path"] or "").strip() else "",
             "updatedAt": str(r["updated_at"] or ""),
             "errorMessage": str(r["error_message"] or ""),
         })
     return items
+
+
+def generate_illustration_image_4x3(image_id: int) -> dict:
+    conn = db_conn()
+    row = conn.execute(
+        """
+        SELECT i.*, n.english_dir
+        FROM chapter_illustration_images i
+        JOIN novels n ON n.id=i.novel_id
+        WHERE i.id=?
+        """,
+        (int(image_id),),
+    ).fetchone()
+    if not row:
+        conn.close()
+        raise RuntimeError("image item not found")
+    source_rel = str(row["image_file_path"] or "").strip()
+    source_path = (ROOT_DIR / source_rel).resolve() if source_rel else None
+    if not source_path or not source_path.exists() or not source_path.is_file():
+        conn.close()
+        raise RuntimeError("source illustration not found")
+    settings = fetch_settings(conn)
+    comfy_url = str(settings.get("comfyUrl") or "").strip()
+    wf = conn.execute(
+        "SELECT name,json_text,workflow_io_config FROM comfy_workflows WHERE workflow_type='illustration_4x3' ORDER BY CASE WHEN name='修改插画比例4:3' THEN 0 ELSE 1 END, id DESC LIMIT 1"
+    ).fetchone()
+    if not comfy_url:
+        conn.close()
+        raise RuntimeError("ComfyUI URL is not configured")
+    if not wf:
+        conn.close()
+        raise RuntimeError("4:3 illustration workflow not found")
+
+    workflow = workflow_json_to_prompt_json(json.loads(str(wf["json_text"] or "{}")))
+    _randomize_workflow_seeds(workflow)
+    io_config = json.loads(str(wf["workflow_io_config"] or "{}") or "{}")
+    input_node_id = str(io_config.get("inputs", {}).get("sourceImage", {}).get("nodeId") or "").strip()
+    output_node_id = str(io_config.get("outputs", {}).get("imageFile", {}).get("nodeId") or "").strip()
+    if input_node_id not in workflow or output_node_id not in workflow:
+        conn.close()
+        raise RuntimeError("4:3 workflow input/output node configuration is invalid")
+
+    source_data = source_path.read_bytes()
+    conn.close()
+    uploaded = comfy_upload_input_file(
+        f"illustration-{int(image_id)}{source_path.suffix or '.png'}",
+        source_data,
+    )
+    uploaded_name = str(uploaded.get("name") or uploaded.get("filename") or "").strip()
+    uploaded_subfolder = str(uploaded.get("subfolder") or "").strip().strip("/\\")
+    if not uploaded_name:
+        raise RuntimeError("ComfyUI upload did not return a file name")
+    workflow[input_node_id].setdefault("inputs", {})["image"] = (
+        f"{uploaded_subfolder}/{uploaded_name}" if uploaded_subfolder else uploaded_name
+    )
+    workflow[output_node_id].setdefault("inputs", {})["filename_prefix"] = "/".join(
+        [
+            _safe_filename_part(str(row["english_dir"] or "")),
+            f"ch{int(row['chapter_num']):03d}",
+            f"{int(row['item_index']):02d}-4x3",
+        ]
+    )
+    log_conn = db_conn()
+    log_cursor = log_conn.execute(
+        "INSERT INTO comfy_workflow_logs(workflow_category,workflow_name,workflow_json,error_log) VALUES(?,?,?,?)",
+        (
+            "修改插画比例4:3",
+            f"{str(wf['name'] or '修改插画比例4:3')} 第{int(row['chapter_num']):03d}回 #{int(row['item_index'])}",
+            json.dumps(workflow, ensure_ascii=False, indent=2),
+            "",
+        ),
+    )
+    log_id = int(log_cursor.lastrowid or 0)
+    log_conn.commit()
+    log_conn.close()
+    try:
+        response = comfy_request_json(
+            comfy_url=comfy_url,
+            path="/prompt",
+            method="POST",
+            payload={"prompt": workflow},
+            timeout=30.0,
+        )
+        prompt_id = str(response.get("prompt_id") or "").strip()
+        if not prompt_id:
+            raise RuntimeError("ComfyUI prompt_id missing")
+        output = None
+        for _ in range(240):
+            history = comfy_request_json(comfy_url=comfy_url, path=f"/history/{prompt_id}")
+            comfy_error = _extract_comfy_history_error(history, prompt_id)
+            if comfy_error:
+                raise RuntimeError(f"ComfyUI workflow failed: {comfy_error}")
+            output = _extract_image_output(history, prompt_id, output_node_id=output_node_id)
+            if output:
+                break
+            time.sleep(2)
+        if not output:
+            raise RuntimeError("ComfyUI 4:3 image output not found")
+        filename, subfolder, file_type = output
+        data = comfy_download_file(
+            comfy_url=comfy_url,
+            filename=filename,
+            subfolder=subfolder,
+            file_type=file_type,
+        )
+        out_dir = ROOT_DIR / "novel" / str(row["english_dir"] or "") / "illustrations" / f"{int(row['chapter_num']):03d}"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        suffix = Path(filename).suffix or ".png"
+        out_path = out_dir / f"{int(row['item_index']):02d}-4x3{suffix}"
+        out_path.write_bytes(data)
+        old_rel = str(row["image_4x3_file_path"] or "").strip()
+        if old_rel:
+            old_path = (ROOT_DIR / old_rel).resolve()
+            if old_path != out_path.resolve():
+                _safe_unlink_under_root(old_path)
+        conn = db_conn()
+        conn.execute(
+            "UPDATE chapter_illustration_images SET image_4x3_file_path=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            (db_rel_path(out_path.relative_to(ROOT_DIR)), int(image_id)),
+        )
+        conn.commit()
+        conn.close()
+        return {"imageId": int(image_id), "image4x3Url": f"/api/illustration-images/{int(image_id)}/file?aspect=4x3"}
+    except Exception as exc:
+        if log_id:
+            log_conn = db_conn()
+            log_conn.execute(
+                "UPDATE comfy_workflow_logs SET error_log=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                (str(exc), log_id),
+            )
+            log_conn.commit()
+            log_conn.close()
+        raise
 
 
 def enqueue_illustration_image(image_id: int) -> tuple[bool, str]:
@@ -2056,10 +2193,13 @@ def process_illustration_image(image_id: int) -> None:
             old_path = ROOT_DIR / old_rel
             if old_path != out_path:
                 _safe_unlink_under_root(old_path)
+        old_4x3_rel = str(row["image_4x3_file_path"] or "").strip()
+        if old_4x3_rel:
+            _safe_unlink_under_root(ROOT_DIR / old_4x3_rel)
         rel = db_rel_path(out_path.relative_to(ROOT_DIR))
         conn = db_conn()
         conn.execute(
-            "UPDATE chapter_illustration_images SET status='completed',progress=100,image_file_path=?,error_message='',updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            "UPDATE chapter_illustration_images SET status='completed',progress=100,image_file_path=?,image_4x3_file_path='',error_message='',updated_at=CURRENT_TIMESTAMP WHERE id=?",
             (rel, image_id),
         )
         conn.commit()

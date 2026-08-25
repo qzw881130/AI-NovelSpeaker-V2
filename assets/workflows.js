@@ -46,6 +46,10 @@ const WORKFLOW_IO_FIELDS = {
     ],
     outputs: [{ key: "imageFile", label: "生成的插画文件" }],
   },
+  illustration_4x3: {
+    inputs: [{ key: "sourceImage", label: "原插图" }],
+    outputs: [{ key: "imageFile", label: "比例4:3插图" }],
+  },
 };
 
 function orderedWorkflows() {
@@ -65,6 +69,7 @@ const WORKFLOW_TYPE_LABELS = {
   line_audio: "生成台词音频",
   voice_sample: "生成示例音频",
   illustration: "生成插画",
+  illustration_4x3: "修改插画比例4:3",
 };
 
 function getWorkflowTypeLabel(type) {

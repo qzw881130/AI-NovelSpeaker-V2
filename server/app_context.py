@@ -321,6 +321,17 @@ SYSTEM_WORKFLOWS = [
             "outputs": {"imageFile": {"nodeId": "7"}},
         },
     },
+    {
+        "file": WORKFLOWS_DIR / "illustration_4x3_workflow.json",
+        "name": "修改插画比例4:3",
+        "description": "修改插画比例4:3",
+        "workflow_type": "illustration_4x3",
+        "workflow_log_enabled": 0,
+        "workflow_io_config": {
+            "inputs": {"sourceImage": {"nodeId": "76"}},
+            "outputs": {"imageFile": {"nodeId": "9"}},
+        },
+    },
 ]
 DB_INIT_LOCK = threading.Lock()
 DB_INIT_DONE = False
@@ -670,6 +681,7 @@ def migrate_chapter_illustration_images_table(conn: sqlite3.Connection) -> None:
             status TEXT NOT NULL DEFAULT 'idle',
             progress INTEGER NOT NULL DEFAULT 0,
             image_file_path TEXT NOT NULL DEFAULT '',
+            image_4x3_file_path TEXT NOT NULL DEFAULT '',
             error_message TEXT NOT NULL DEFAULT '',
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             started_at DATETIME,
@@ -688,6 +700,8 @@ def migrate_chapter_illustration_images_table(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE chapter_illustration_images ADD COLUMN suggested_size TEXT NOT NULL DEFAULT ''")
     if "original_prompt_json_text" not in column_names:
         conn.execute("ALTER TABLE chapter_illustration_images ADD COLUMN original_prompt_json_text TEXT NOT NULL DEFAULT ''")
+    if "image_4x3_file_path" not in column_names:
+        conn.execute("ALTER TABLE chapter_illustration_images ADD COLUMN image_4x3_file_path TEXT NOT NULL DEFAULT ''")
 
 
 def migrate_chapter_illustration_prompt_batches_table(conn: sqlite3.Connection) -> None:

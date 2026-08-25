@@ -4995,6 +4995,52 @@ body.is-nsfw-review-drag-selecting .novel-download-table {
   gap: 10px;
   align-items: center;
   flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.video-cover-head-actions .is-disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.video-cover-pending-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  opacity: 1;
+  color: var(--accent);
+}
+
+.video-cover-pending-btn:disabled {
+  opacity: 1;
+}
+
+.video-cover-pending-btn::before {
+  width: 14px;
+  height: 14px;
+  content: "";
+  border: 2px solid color-mix(in srgb, var(--accent) 24%, transparent);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: video-cover-pending-spin 0.8s linear infinite;
+}
+
+@keyframes video-cover-pending-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 760px) {
+  .video-cover-dialog .video-player-dialog-head {
+    flex-direction: column;
+  }
+
+  .video-cover-head-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
 }
 
 .video-cover-controls {
@@ -5020,6 +5066,21 @@ body.is-nsfw-review-drag-selecting .novel-download-table {
   background: #fffaf2;
   color: var(--text);
   font: inherit;
+}
+
+.video-cover-generate-actions {
+  display: flex;
+  flex: 0 0 100%;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.video-cover-dimensions {
+  margin: 10px 0 0;
+  color: var(--muted);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
 .cover-logo-settings-row {

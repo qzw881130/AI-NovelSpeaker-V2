@@ -1119,6 +1119,20 @@ async function setVideoExportCoverImage(taskId, imageIndex) {
   return data.task || null;
 }
 
+async function generateIllustrationImage4x3(imageId) {
+  return await api(`/api/illustration-images/${Number(imageId)}/generate-4x3`, {
+    method: "POST",
+    body: "{}",
+  });
+}
+
+async function generateVideoExportCover4x3(taskId, imageIndex) {
+  return await api(`/api/video-export-tasks/${Number(taskId)}/cover-4x3`, {
+    method: "POST",
+    body: JSON.stringify({ imageIndex: Number(imageIndex || 0) }),
+  });
+}
+
 async function fetchYoutubeSettings() {
   const data = await api("/api/social-media/youtube/settings");
   return data.settings || {};
@@ -1185,6 +1199,7 @@ function getVideoExportFileUrl(taskId) {
 function getVideoExportCoverUrl(taskId, options = {}) {
   const params = new URLSearchParams();
   if (options.imageIndex) params.set("imageIndex", String(Number(options.imageIndex)));
+  if (options.aspect) params.set("aspect", String(options.aspect));
   const query = params.toString();
   return `/api/video-export-tasks/${Number(taskId)}/cover${query ? `?${query}` : ""}`;
 }
@@ -1199,6 +1214,19 @@ async function createVideoCoverBundle(novelId) {
 
 async function fetchVideoCoverBundleStatus(novelId) {
   const data = await api(`/api/novels/${Number(novelId)}/video-cover-bundle/status`);
+  return data.task || null;
+}
+
+async function generateAllVideoCovers4x3(novelId) {
+  const data = await api(`/api/novels/${Number(novelId)}/video-covers-4x3/generate-all`, {
+    method: "POST",
+    body: "{}",
+  });
+  return data.task || null;
+}
+
+async function fetchVideoCovers4x3Status(novelId) {
+  const data = await api(`/api/novels/${Number(novelId)}/video-covers-4x3/status`);
   return data.task || null;
 }
 
@@ -1345,10 +1373,14 @@ export {
   retryVideoExportTask,
   cancelVideoExportTask,
   setVideoExportCoverImage,
+  generateIllustrationImage4x3,
+  generateVideoExportCover4x3,
   getVideoExportFileUrl,
   getVideoExportCoverUrl,
   createVideoCoverBundle,
   fetchVideoCoverBundleStatus,
+  generateAllVideoCovers4x3,
+  fetchVideoCovers4x3Status,
   getVideoCoverBundleFileUrl,
   fetchYoutubeSettings,
   saveYoutubeSettings,

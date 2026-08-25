@@ -22,7 +22,7 @@ DEFAULT_VIDEO_WIDTH = 1080
 DEFAULT_VIDEO_HEIGHT = 1920
 DEFAULT_VIDEO_FPS = 30
 FADE_SECONDS = 1.0
-COVER_STYLE_VERSION = 23
+COVER_STYLE_VERSION = 24
 
 
 @dataclass
@@ -405,11 +405,20 @@ def _cover_fill_image(base, target_w: int, target_h: int):
     return canvas
 
 
-def _compose_cover_image(frame_path: Path, cover_path: Path, *, novel_name: str, chapter_num: int, chapter_title: str, logo_path: Path | None = None) -> None:
+def _compose_cover_image(
+    frame_path: Path,
+    cover_path: Path,
+    *,
+    novel_name: str,
+    chapter_num: int,
+    chapter_title: str,
+    logo_path: Path | None = None,
+    target_size: tuple[int, int] = (1920, 1080),
+) -> None:
     from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
 
     base = Image.open(frame_path).convert("RGB")
-    target_w, target_h = 1920, 1080
+    target_w, target_h = target_size
     canvas = _cover_fill_image(base, target_w, target_h)
     canvas = ImageEnhance.Color(canvas).enhance(0.92)
     canvas = ImageEnhance.Contrast(canvas).enhance(1.06)
@@ -424,11 +433,14 @@ def _compose_cover_image(frame_path: Path, cover_path: Path, *, novel_name: str,
         alpha = max(top_alpha, bottom_alpha, int((edge**2.2) * 36))
         if alpha > 0:
             odraw.line([(0, row), (target_w, row)], fill=(0, 0, 0, min(188, alpha)))
+    side_overlay = Image.new("RGBA", (target_w, target_h), (0, 0, 0, 0))
+    side_draw = ImageDraw.Draw(side_overlay)
     for col in range(target_w):
         edge = abs(col - target_w / 2) / (target_w / 2)
         alpha = int((edge**2.4) * 60)
         if alpha > 0:
-            odraw.line([(col, 0), (col, target_h)], fill=(0, 0, 0, alpha))
+            side_draw.line([(col, 0), (col, target_h)], fill=(0, 0, 0, alpha))
+    overlay = Image.alpha_composite(overlay, side_overlay)
     noise = Image.effect_noise((target_w, target_h), 18).convert("L")
     paper = Image.new("RGBA", (target_w, target_h), (232, 205, 150, 0))
     paper.putalpha(noise.point(lambda p: 10 if p > 142 else 0))
@@ -950,7 +962,15 @@ def list_video_export_tasks(novel_id: int | None = None) -> list[dict]:
         params = (novel_id,)
     rows = conn.execute(
         f"""
-        SELECT t.*, n.name AS novel_name
+        SELECT t.*, n.name AS novel_name,
+               (
+                   SELECT i.item_index
+                   FROM chapter_illustration_images i
+                   WHERE i.novel_id=t.novel_id AND i.chapter_id=t.chapter_id
+                     AND i.status='completed' AND COALESCE(i.image_file_path,'')<>''
+                     AND (COALESCE(t.cover_image_index,0)<=0 OR i.item_index=t.cover_image_index)
+                   ORDER BY i.item_index ASC LIMIT 1
+               ) AS selected_cover_image_index
         FROM chapter_video_export_tasks t
         JOIN novels n ON n.id=t.novel_id
         {where}
@@ -967,7 +987,15 @@ def get_video_export_task(task_id: int) -> dict | None:
     conn = db_conn()
     row = conn.execute(
         """
-        SELECT t.*, n.name AS novel_name
+        SELECT t.*, n.name AS novel_name,
+               (
+                   SELECT i.item_index
+                   FROM chapter_illustration_images i
+                   WHERE i.novel_id=t.novel_id AND i.chapter_id=t.chapter_id
+                     AND i.status='completed' AND COALESCE(i.image_file_path,'')<>''
+                     AND (COALESCE(t.cover_image_index,0)<=0 OR i.item_index=t.cover_image_index)
+                   ORDER BY i.item_index ASC LIMIT 1
+               ) AS selected_cover_image_index
         FROM chapter_video_export_tasks t
         JOIN novels n ON n.id=t.novel_id
         WHERE t.id=?
@@ -1061,7 +1089,13 @@ def get_video_export_file_path(task_id: int) -> tuple[Path | None, str]:
     return path, name
 
 
-def get_video_export_cover_path(task_id: int, image_index: int | None = None) -> tuple[Path | None, str]:
+def get_video_export_cover_path(
+    task_id: int,
+    image_index: int | None = None,
+    aspect: str = "16x9",
+    generate_if_missing: bool = True,
+) -> tuple[Path | None, str]:
+    cover_aspect = "4x3" if str(aspect or "").lower() == "4x3" else "16x9"
     conn = db_conn()
     row = conn.execute(
         """
@@ -1083,7 +1117,7 @@ def get_video_export_cover_path(task_id: int, image_index: int | None = None) ->
         image_params.append(int(selected_image_index))
     image_row = conn.execute(
         f"""
-        SELECT item_index,image_file_path,updated_at
+        SELECT item_index,image_file_path,image_4x3_file_path,updated_at
         FROM chapter_illustration_images
         WHERE {image_where}
         ORDER BY item_index ASC LIMIT 1
@@ -1097,9 +1131,15 @@ def get_video_export_cover_path(task_id: int, image_index: int | None = None) ->
         return None, ""
     subtitle_suffix = "nosub" if str(row["subtitle_mode"] or "srt") == "none" else "srt"
     selected_suffix = f"-img{int(image_row['item_index']):03d}" if image_row else "-frame"
-    stem = f"chapter-{int(row['chapter_num']):03d}-{int(row['width'] or DEFAULT_VIDEO_WIDTH)}x{int(row['height'] or DEFAULT_VIDEO_HEIGHT)}-{subtitle_suffix}-cover-v{COVER_STYLE_VERSION}{selected_suffix}"
+    aspect_suffix = "-4x3" if cover_aspect == "4x3" else "-16x9"
+    stem = f"chapter-{int(row['chapter_num']):03d}-{int(row['width'] or DEFAULT_VIDEO_WIDTH)}x{int(row['height'] or DEFAULT_VIDEO_HEIGHT)}-{subtitle_suffix}-cover-v{COVER_STYLE_VERSION}{selected_suffix}{aspect_suffix}"
     cover_path = video_path.with_name(f"{stem}.jpg")
-    source_path = _resolve_path(str(image_row["image_file_path"] or "")) if image_row else None
+    source_column = "image_4x3_file_path" if cover_aspect == "4x3" else "image_file_path"
+    source_path = _resolve_path(str(image_row[source_column] or "")) if image_row else None
+    if cover_aspect == "4x3" and (not source_path or not source_path.exists()):
+        if not generate_if_missing:
+            return None, ""
+        raise RuntimeError("请先生成当前插图的4:3图片")
     logo_path = resolve_video_cover_logo_path(settings)
     cache_mtime = video_path.stat().st_mtime
     if source_path and source_path.exists():
@@ -1107,8 +1147,10 @@ def get_video_export_cover_path(task_id: int, image_index: int | None = None) ->
     if logo_path and logo_path.exists():
         cache_mtime = max(cache_mtime, logo_path.stat().st_mtime)
     if cover_path.exists() and cover_path.stat().st_mtime >= cache_mtime:
-        name = f"第{int(row['chapter_num']):03d}回-{_safe_filename(str(row['chapter_title'] or '封面'))}-cover.jpg"
+        name = f"第{int(row['chapter_num']):03d}回-{_safe_filename(str(row['chapter_title'] or '封面'))}-cover-{cover_aspect}.jpg"
         return cover_path, name
+    if not generate_if_missing:
+        return None, ""
     try:
         import PIL  # noqa: F401
     except ImportError as exc:
@@ -1145,6 +1187,7 @@ def get_video_export_cover_path(task_id: int, image_index: int | None = None) ->
             chapter_num=int(row["chapter_num"] or 0),
             chapter_title=str(row["chapter_title"] or ""),
             logo_path=logo_path,
+            target_size=(1440, 1080) if cover_aspect == "4x3" else (1920, 1080),
         )
     finally:
         if temp_frame_path:
@@ -1152,7 +1195,7 @@ def get_video_export_cover_path(task_id: int, image_index: int | None = None) ->
                 temp_frame_path.unlink(missing_ok=True)
             except Exception:
                 pass
-    name = f"第{int(row['chapter_num']):03d}回-{_safe_filename(str(row['chapter_title'] or '封面'))}-cover.jpg"
+    name = f"第{int(row['chapter_num']):03d}回-{_safe_filename(str(row['chapter_title'] or '封面'))}-cover-{cover_aspect}.jpg"
     return cover_path, name
 
 
@@ -1224,6 +1267,10 @@ def _task_to_dict(row) -> dict:
     output_path = _resolve_path(str(row["output_file_path"] or "")) if row["output_file_path"] else None
     size_bytes = output_path.stat().st_size if output_path and output_path.exists() else 0
     subtitle_mode = str(row["subtitle_mode"] or "srt") if "subtitle_mode" in row.keys() else "srt"
+    selected_cover_index = int(row["selected_cover_image_index"] or 0) if "selected_cover_image_index" in row.keys() else 0
+    selected_suffix = f"-img{selected_cover_index:03d}" if selected_cover_index > 0 else "-frame"
+    cover_stem = f"chapter-{int(row['chapter_num']):03d}-{int(row['width'] or DEFAULT_VIDEO_WIDTH)}x{int(row['height'] or DEFAULT_VIDEO_HEIGHT)}-{'nosub' if subtitle_mode == 'none' else 'srt'}-cover-v{COVER_STYLE_VERSION}{selected_suffix}"
+    cover_4x3_path = output_path.with_name(f"{cover_stem}-4x3.jpg") if output_path else None
     srt_download_url = ""
     if subtitle_mode == "srt":
         conn = db_conn()
@@ -1262,6 +1309,7 @@ def _task_to_dict(row) -> dict:
         "fps": int(row["fps"] or DEFAULT_VIDEO_FPS),
         "subtitleMode": subtitle_mode,
         "coverImageIndex": int(row["cover_image_index"] or 0) if "cover_image_index" in row.keys() else 0,
+        "cover4x3Exists": bool(cover_4x3_path and cover_4x3_path.is_file()),
         "durationSeconds": float(row["duration_seconds"] or 0),
         "currentFrame": int(row["current_frame"] or 0),
         "totalFrames": int(row["total_frames"] or 0),
