@@ -35,6 +35,7 @@ let activeCoverTaskId = null;
 let coverImageOptions = [];
 let coverPreviewLoading = false;
 let cover4x3GenerationStage = "";
+let cover4x3GenerationMode = "";
 let activeCoverAspect = "16x9";
 let taskSortBy = "id";
 let taskIdSortDirection = "desc";
@@ -426,6 +427,7 @@ function updateCoverPreviewImage() {
   const download4x3 = document.getElementById("videoExportCoverDownload4x3Btn");
   const generateCover16x9Btn = document.getElementById("videoExportGenerateCover16x9Btn");
   const generateCover4x3Btn = document.getElementById("videoExportGenerateCover4x3Btn");
+  const forceGenerateCover4x3Btn = document.getElementById("videoExportForceGenerateCover4x3Btn");
   const select = document.getElementById("videoExportCoverImageSelect");
   const meta = document.getElementById("videoExportCoverImageMeta");
   const setBtn = document.getElementById("videoExportCoverSetBtn");
@@ -446,13 +448,25 @@ function updateCoverPreviewImage() {
   if (generateCover16x9Btn) generateCover16x9Btn.disabled = activeCoverAspect === "16x9" || coverPreviewLoading;
   if (generateCover4x3Btn) {
     generateCover4x3Btn.disabled = !selected || activeCoverAspect === "4x3" || coverPreviewLoading;
-    generateCover4x3Btn.textContent = cover4x3GenerationStage === "image"
+    generateCover4x3Btn.textContent = cover4x3GenerationMode === "normal" && cover4x3GenerationStage === "image"
       ? "生成4:3插图中..."
-      : cover4x3GenerationStage === "cover"
+      : cover4x3GenerationMode === "normal" && cover4x3GenerationStage === "cover"
         ? "生成4:3封面中..."
         : "生成4:3封面";
-    generateCover4x3Btn.classList.toggle("video-cover-pending-btn", Boolean(cover4x3GenerationStage));
-    generateCover4x3Btn.setAttribute("aria-busy", cover4x3GenerationStage ? "true" : "false");
+    const pending = cover4x3GenerationMode === "normal" && Boolean(cover4x3GenerationStage);
+    generateCover4x3Btn.classList.toggle("video-cover-pending-btn", pending);
+    generateCover4x3Btn.setAttribute("aria-busy", pending ? "true" : "false");
+  }
+  if (forceGenerateCover4x3Btn) {
+    forceGenerateCover4x3Btn.disabled = !selected || coverPreviewLoading;
+    forceGenerateCover4x3Btn.textContent = cover4x3GenerationMode === "force" && cover4x3GenerationStage === "image"
+      ? "强制生成4:3插图中..."
+      : cover4x3GenerationMode === "force" && cover4x3GenerationStage === "cover"
+        ? "强制生成4:3封面中..."
+        : "强制生成4:3封面";
+    const pending = cover4x3GenerationMode === "force" && Boolean(cover4x3GenerationStage);
+    forceGenerateCover4x3Btn.classList.toggle("video-cover-pending-btn", pending);
+    forceGenerateCover4x3Btn.setAttribute("aria-busy", pending ? "true" : "false");
   }
   if (meta) {
     meta.textContent = selected
@@ -529,17 +543,18 @@ async function setActiveCoverImage() {
   updateCoverPreviewImage();
 }
 
-async function generateActiveCover4x3() {
+async function generateActiveCover4x3(force = false) {
   const select = document.getElementById("videoExportCoverImageSelect");
   const imageIndex = Number(select?.value || 0);
   const selected = coverImageOptions.find((item) => Number(item.index) === imageIndex);
   if (!selected || !activeCoverTaskId || coverPreviewLoading) return;
-  if (selected.image4x3Url) {
+  if (selected.image4x3Url && !force) {
     activeCoverAspect = "4x3";
     updateCoverPreviewImage();
     toast("已显示现有4:3封面");
     return;
   }
+  cover4x3GenerationMode = force ? "force" : "normal";
   cover4x3GenerationStage = "image";
   coverPreviewLoading = true;
   updateCoverPreviewImage();
@@ -550,9 +565,10 @@ async function generateActiveCover4x3() {
     updateCoverPreviewImage();
     await generateVideoExportCover4x3(activeCoverTaskId, imageIndex);
     activeCoverAspect = "4x3";
-    toast("4:3封面已生成");
+    toast(force ? "4:3封面已强制重新生成" : "4:3封面已生成");
   } finally {
     cover4x3GenerationStage = "";
+    cover4x3GenerationMode = "";
     coverPreviewLoading = false;
     updateCoverPreviewImage();
   }
@@ -574,6 +590,7 @@ function closeCoverPreview() {
   activeCoverAspect = "16x9";
   coverImageOptions = [];
   cover4x3GenerationStage = "";
+  cover4x3GenerationMode = "";
   coverPreviewLoading = false;
   updateCoverNavigationButtons();
   if (dialog?.open) dialog.close();
@@ -951,6 +968,10 @@ function bindEvents() {
   document.getElementById("videoExportGenerateCover16x9Btn")?.addEventListener("click", generateActiveCover16x9);
   document.getElementById("videoExportGenerateCover4x3Btn")?.addEventListener("click", () => {
     generateActiveCover4x3().catch((err) => toast(err.message));
+  });
+  document.getElementById("videoExportForceGenerateCover4x3Btn")?.addEventListener("click", () => {
+    if (!window.confirm("确定重新调用 ComfyUI 扩图并覆盖当前4:3封面吗？")) return;
+    generateActiveCover4x3(true).catch((err) => toast(err.message));
   });
   document.getElementById("videoExportCoverSetBtn")?.addEventListener("click", () => {
     setActiveCoverImage().catch((err) => toast(err.message));
