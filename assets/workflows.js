@@ -20,6 +20,7 @@ const WORKFLOW_IO_FIELDS = {
       { key: "referenceAudio", label: "参考音频文件" },
       { key: "lineText", label: "台词" },
       { key: "referenceText", label: "参考音频的文本" },
+      { key: "emotionText", label: "指令", optional: true },
     ],
     outputs: [{ key: "audioFile", label: "生成的声音文件" }],
   },
@@ -138,16 +139,18 @@ function renderWorkflowIoConfig(form, workflowType, ioConfig, readonly) {
   }
   const normalized = normalizeWorkflowIoConfig(ioConfig);
   const nodeOptions = parseWorkflowJsonNodes(form.jsonText.value);
-  const optionHtml = ['<option value="">请选择结点</option>']
+  const buildOptionHtml = (field) => [
+    `<option value="">${field.optional ? "不配置" : "请选择结点"}</option>`,
+  ]
     .concat(nodeOptions.map((node) => `<option value="${node.nodeId}">${node.label}</option>`))
     .join("");
   const renderField = (kind, field) => {
     const selected = String(normalized[`${kind}s`]?.[field.key]?.nodeId || "");
     return `
       <label>
-        <span>${field.label}</span>
+        <span>${field.label}${field.optional ? "（可选）" : ""}</span>
         <select data-io-kind="${kind}" data-io-key="${field.key}" ${readonly ? "disabled" : ""}>
-          ${optionHtml}
+          ${buildOptionHtml(field)}
         </select>
       </label>
     `;
@@ -223,6 +226,8 @@ function setFormReadonly(readonly) {
   form.workflowType.disabled = readonly;
   form.description.readOnly = readonly;
   form.jsonText.readOnly = readonly;
+  const uploadBtn = document.getElementById("workflowUploadBtn");
+  if (uploadBtn) uploadBtn.disabled = readonly;
   const saveBtn = document.getElementById("workflowSaveBtn");
   saveBtn.hidden = readonly;
   document.getElementById("workflowCancelBtn").textContent = readonly ? "关闭" : "取消";
@@ -239,6 +244,22 @@ function formatWorkflowJsonText(jsonText) {
   } catch {
     return text;
   }
+}
+
+async function uploadWorkflowJsonFile(event) {
+  const file = event.target.files?.[0];
+  event.target.value = "";
+  if (!file) return;
+  const content = await file.text();
+  const form = document.getElementById("workflowForm");
+  form.jsonText.value = formatWorkflowJsonText(content);
+  form.name.value = file.name.replace(/\.[^.]+$/, "");
+  renderWorkflowIoConfig(
+    form,
+    String(form.workflowType.value || ""),
+    collectWorkflowIoConfig(form),
+    modalMode === "view"
+  );
 }
 
 function openModal(item, mode = "create") {
@@ -317,6 +338,10 @@ function bindEvents() {
   document.getElementById("workflowCancelBtn").addEventListener("click", () => {
     document.getElementById("workflowModal").close();
   });
+  document.getElementById("workflowUploadBtn").addEventListener("click", () => {
+    document.getElementById("workflowUploadInput").click();
+  });
+  document.getElementById("workflowUploadInput").addEventListener("change", uploadWorkflowJsonFile);
   document.getElementById("workflowForm").addEventListener("submit", async (event) => {
     event.preventDefault();
     if (modalMode === "view") {

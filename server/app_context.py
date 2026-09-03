@@ -139,6 +139,14 @@ SYSTEM_PROMPTS = [
         "legacy_names": [],
     },
     {
+        "file": PROMPTS_DIR / "breeze_tts_2_emotion_system_prompt.txt",
+        "name": "Breeze-TTS-2支持情绪提示词_V2_每句情绪",
+        "description": "系统内置，适用于 Breeze-TTS-2 每句情绪与指令脚本输出",
+        "category": "json_parse",
+        "default_content": "请将章回文本拆分为 role_list 与带 Breeze-TTS-2 指令/情绪标签的 juben JSON 结构。",
+        "legacy_names": [],
+    },
+    {
         "file": PROMPTS_DIR / "nsfw_review_system_prompt.txt",
         "name": "NSFW审查提示词",
         "description": "系统内置，适用于小说章回NSFW内容审查",
@@ -244,6 +252,7 @@ SYSTEM_WORKFLOWS = [
                 "referenceAudio": {"nodeId": "27"},
                 "lineText": {"nodeId": "33"},
                 "referenceText": {"nodeId": "40"},
+                "emotionText": {"nodeId": ""},
             },
             "outputs": {"audioFile": {"nodeId": "41"}},
         },
@@ -259,8 +268,25 @@ SYSTEM_WORKFLOWS = [
                 "referenceAudio": {"nodeId": "6"},
                 "lineText": {"nodeId": "7"},
                 "referenceText": {"nodeId": "8"},
+                "emotionText": {"nodeId": ""},
             },
             "outputs": {"audioFile": {"nodeId": "4"}},
+        },
+    },
+    {
+        "file": WORKFLOWS_DIR / "breeze_tts_2_line_audio_workflow.json",
+        "name": "Breeze+TTS+2+声音导演 API",
+        "description": "系统内置，使用 Breeze-TTS-2 声音导演生成台词音频",
+        "workflow_type": "line_audio",
+        "workflow_log_enabled": 0,
+        "workflow_io_config": {
+            "inputs": {
+                "referenceAudio": {"nodeId": "2"},
+                "lineText": {"nodeId": "10"},
+                "referenceText": {"nodeId": "14"},
+                "emotionText": {"nodeId": "11"},
+            },
+            "outputs": {"audioFile": {"nodeId": "7"}},
         },
     },
     {
@@ -275,6 +301,20 @@ SYSTEM_WORKFLOWS = [
                 "voiceDescription": {"nodeId": "6"},
             },
             "outputs": {"audioFile": {"nodeId": "9"}},
+        },
+    },
+    {
+        "file": WORKFLOWS_DIR / "breeze_tts_2_voice_sample_workflow.json",
+        "name": "Breeze+TTS+2+声音设计",
+        "description": "系统内置，使用 Breeze-TTS-2 声音设计生成示例音频",
+        "workflow_type": "voice_sample",
+        "workflow_log_enabled": 0,
+        "workflow_io_config": {
+            "inputs": {
+                "lineText": {"nodeId": "8"},
+                "voiceDescription": {"nodeId": "9"},
+            },
+            "outputs": {"audioFile": {"nodeId": "6"}},
         },
     },
     {

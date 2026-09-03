@@ -13,7 +13,7 @@
       "device": "auto",
       "precision": "bf16",
       "language": "Chinese",
-      "seed": 720008947256741,
+      "seed": 720008947,
       "max_new_tokens": 2048,
       "top_p": 0.8,
       "top_k": 20,

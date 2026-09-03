@@ -54,10 +54,15 @@
             </select>
           </label>
           <label class="full">描述<input name="description" /></label>
-          <label class="full">内容<textarea name="content" class="prompt-content-textarea" rows="14" required></textarea></label>
+          <label class="full">内容
+            <button class="ghost-btn" id="promptUploadBtn" type="button">上传TXT</button>
+            <input id="promptUploadInput" type="file" accept=".txt,text/plain" hidden />
+            <textarea name="content" class="prompt-content-textarea" rows="14" required></textarea>
+          </label>
         </div>
         <p id="promptCharCount" class="caption">提示词字数: 0</p>
         <menu>
+          <button class="ghost-btn" id="promptDownloadBtn" type="button">下载TXT</button>
           <button class="ghost-btn" id="promptCancelBtn" type="button">取消</button>
           <button class="primary-btn" id="promptSaveBtn" type="submit">保存</button>
         </menu>

@@ -33,6 +33,14 @@ SYSTEM_PROMPTS = [
         "legacy_names": [],
     },
     {
+        "file": PROMPTS_DIR / "breeze_tts_2_emotion_system_prompt.txt",
+        "name": "Breeze-TTS-2支持情绪提示词_V2_每句情绪",
+        "description": "系统内置，适用于 Breeze-TTS-2 每句情绪与指令脚本输出",
+        "category": "json_parse",
+        "default_content": "请将章回文本拆分为 role_list 与带 Breeze-TTS-2 指令/情绪标签的 juben JSON 结构。",
+        "legacy_names": [],
+    },
+    {
         "file": PROMPTS_DIR / "nsfw_review_system_prompt.txt",
         "name": "NSFW审查提示词",
         "description": "系统内置，适用于小说章回NSFW内容审查",

@@ -1,0 +1,138 @@
+{
+  "1": {
+    "inputs": {
+      "dtype": "auto",
+      "device": "auto",
+      "attention": "auto",
+      "download_if_missing": false,
+      "accept_model_license": true
+    },
+    "class_type": "T8_BreezeTTS_ModelLoader",
+    "_meta": {
+      "title": "#1 ① 模型加载器 · 先勾选许可证"
+    }
+  },
+  "2": {
+    "inputs": {
+      "audio": "7c373294d8fe1ea7e73d00c7eb0a60e41f29796c9b85e1171045f463d5363b4a.wav"
+    },
+    "class_type": "LoadAudio",
+    "_meta": {
+      "title": "#2 ② 选择参考音频"
+    }
+  },
+  "3": {
+    "inputs": {
+      "text": [
+        "10",
+        0
+      ],
+      "reference_text": [
+        "14",
+        0
+      ],
+      "direction": [
+        "11",
+        0
+      ],
+      "cfg_scale": 4,
+      "reference_audio": [
+        "2",
+        0
+      ]
+    },
+    "class_type": "T8_BreezeTTS_DirectionRequest",
+    "_meta": {
+      "title": "#3 ③ 声音导演 · 填准确逐字稿"
+    }
+  },
+  "4": {
+    "inputs": {
+      "max_new_tokens": 1500,
+      "temperature": 0.9,
+      "top_k": 50,
+      "top_p": 1,
+      "repetition_penalty": 1.1,
+      "depth_temperature": 0.9,
+      "depth_top_k": 50,
+      "depth_top_p": 1,
+      "seed": 1609988064
+    },
+    "class_type": "T8_BreezeTTS_GenerationSettings",
+    "_meta": {
+      "title": "#4 4 生成设置"
+    }
+  },
+  "5": {
+    "inputs": {
+      "model": [
+        "1",
+        0
+      ],
+      "request": [
+        "3",
+        0
+      ],
+      "settings": [
+        "4",
+        0
+      ]
+    },
+    "class_type": "T8_BreezeTTS_Generate",
+    "_meta": {
+      "title": "#5 5 生成音频"
+    }
+  },
+  "6": {
+    "inputs": {
+      "audio": [
+        "5",
+        0
+      ]
+    },
+    "class_type": "PreviewAudio",
+    "_meta": {
+      "title": "#6 6 试听"
+    }
+  },
+  "7": {
+    "inputs": {
+      "filename_prefix": "audio/T8_Breeze_direction",
+      "audio": [
+        "5",
+        0
+      ]
+    },
+    "class_type": "SaveAudio",
+    "_meta": {
+      "title": "#7 7 保存音频"
+    }
+  },
+  "10": {
+    "inputs": {
+      "prompt": "[叹气]大官人却又慌了。"
+    },
+    "class_type": "CR Prompt Text",
+    "_meta": {
+      "title": "#10 ⚙️ CR Prompt Text（台词）"
+    }
+  },
+  "11": {
+    "inputs": {
+      "prompt": "语气老练从容，略带揶揄和责怪。"
+    },
+    "class_type": "CR Prompt Text",
+    "_meta": {
+      "title": "#11 ⚙️ CR Prompt Text（instruction）"
+    }
+  },
+  "14": {
+    "inputs": {
+      "prompt": "prompt"
+    },
+    "class_type": "CR Prompt Text",
+    "_meta": {
+      "title": "#14 #-1 ⚙️ CR Prompt Text（参考音频文本）"
+    }
+  }
+}

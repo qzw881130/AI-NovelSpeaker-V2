@@ -53,7 +53,11 @@
             </select>
           </label>
           <label class="full">描述<input name="description" /></label>
-          <label class="full">工作流JSON<textarea name="jsonText" rows="10" required></textarea></label>
+          <label class="full">工作流JSON
+            <button class="ghost-btn" id="workflowUploadBtn" type="button">上传JSON</button>
+            <input id="workflowUploadInput" type="file" accept=".json,application/json" hidden />
+            <textarea name="jsonText" rows="10" required></textarea>
+          </label>
           <section class="full workflow-io-panel">
             <div class="panel-head compact">
               <h4>配置输入输出</h4>

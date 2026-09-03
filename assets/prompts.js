@@ -39,6 +39,50 @@ function promptCharCount(content) {
   return Array.from(String(content || "")).length;
 }
 
+function safeDownloadFilename(name) {
+  const safe = String(name || "提示词")
+    .trim()
+    .replace(/[\\/:*?"<>|]+/g, "_")
+    .replace(/\s+/g, " ")
+    .slice(0, 80);
+  return `${safe || "提示词"}.txt`;
+}
+
+function downloadTextFile(filename, content) {
+  const blob = new Blob([String(content || "")], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function downloadCurrentPrompt() {
+  const form = document.getElementById("promptForm");
+  const content = form.content.value;
+  if (!String(content || "").trim()) {
+    toast("提示词内容为空，无法下载");
+    return;
+  }
+  downloadTextFile(safeDownloadFilename(form.name.value), content);
+}
+
+async function uploadPromptFile(event) {
+  const file = event.target.files?.[0];
+  event.target.value = "";
+  if (!file) return;
+  const content = await file.text();
+  const form = document.getElementById("promptForm");
+  form.content.value = content;
+  if (!form.name.value.trim()) {
+    form.name.value = file.name.replace(/\.[^.]+$/, "");
+  }
+  document.getElementById("promptCharCount").textContent = `${translateText("提示词字数")}: ${promptCharCount(content)}`;
+}
+
 function orderedPrompts() {
   return [...(currentData.prompts || [])]
     .filter((item) => String(item.category || "json_parse") === activePromptCategory)
@@ -230,6 +274,11 @@ function bindEvents() {
   document.getElementById("promptCancelBtn").addEventListener("click", () => {
     document.getElementById("promptModal").close();
   });
+  document.getElementById("promptDownloadBtn").addEventListener("click", downloadCurrentPrompt);
+  document.getElementById("promptUploadBtn").addEventListener("click", () => {
+    document.getElementById("promptUploadInput").click();
+  });
+  document.getElementById("promptUploadInput").addEventListener("change", uploadPromptFile);
   document.getElementById("promptForm").content.addEventListener("input", (event) => {
     document.getElementById("promptCharCount").textContent = `${translateText("提示词字数")}: ${promptCharCount(event.target.value)}`;
   });

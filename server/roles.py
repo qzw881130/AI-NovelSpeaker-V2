@@ -628,7 +628,7 @@ def generate_role_sample_audio(
             continue
         inputs = node.get("inputs", {})
         if "seed" in inputs:
-            inputs["seed"] = random.randint(0, 2**63 - 1)
+            inputs["seed"] = random.randint(0, 2**31 - 1)
 
     # 获取ComfyUI配置
     settings = fetch_settings(db_conn())

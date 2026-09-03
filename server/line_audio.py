@@ -107,6 +107,16 @@ def _clean_line_text(text: str) -> str:
     return raw.strip()
 
 
+def _split_line_instruction_text(text: str) -> tuple[str, str]:
+    raw = _clean_line_text(text)
+    match = re.match(r"^\s*\{([^{}]*)\}(.*)$", raw, flags=re.S)
+    if not match:
+        return "", raw
+    instruction = str(match.group(1) or "").strip()
+    line_text = _clean_line_text(match.group(2) or "")
+    return instruction, line_text
+
+
 def _interrupt_comfy_before_timeout_failure(comfy_url: str) -> str:
     try:
         if comfy_interrupt_execution(comfy_url):
@@ -916,13 +926,14 @@ def process_line_audio_task(task_id: int) -> None:
     chapter_num = int(row["chapter_num"])
     reference_audio_path = str(row["reference_audio_path"] or "").strip()
     line_text = _clean_line_text(row["line_text"])
+    line_instruction, line_tts_text = _split_line_instruction_text(line_text)
     reference_text = str(row["reference_text"] or "").strip()
     line_hash = str(row["line_hash"] or "").strip()
     existing_prompt_id = str(row["comfy_prompt_id"] or "").strip()
     existing_comfy_status = str(row["comfy_status"] or "").strip()
     workflow_log_id = 0
 
-    if not reference_audio_path or not line_text or not line_hash:
+    if not reference_audio_path or not line_tts_text or not line_hash:
         conn = db_conn()
         conn.execute(
             """
@@ -1028,6 +1039,15 @@ def process_line_audio_task(task_id: int) -> None:
                 ).strip()
                 or None
             )
+            instruction_node = (
+                str(
+                    workflow_io_config.get("inputs", {})
+                    .get("emotionText", {})
+                    .get("nodeId")
+                    or ""
+                ).strip()
+                or None
+            )
             ref_text_node = None
             if reference_text:
                 ref_text_node_configured = str(
@@ -1075,7 +1095,9 @@ def process_line_audio_task(task_id: int) -> None:
                 workflow[audio_input_node]["inputs"]["audioUI"] = (
                     f"/api/view?filename={filename}&type={file_type}&subfolder={subfolder}&rand={time.time():.6f}"
                 )
-            _assign_text_input(workflow, text_prompt_node, line_text, "目标文本")
+            _assign_text_input(workflow, text_prompt_node, line_tts_text, "目标文本")
+            if line_instruction and instruction_node and instruction_node in workflow:
+                _assign_text_input(workflow, instruction_node, line_instruction, "指令")
             if reference_text and ref_text_node:
                 _assign_text_input(workflow, ref_text_node, reference_text, "参考文本")
             workflow[output_node]["inputs"]["filename_prefix"] = (
@@ -1118,7 +1140,7 @@ def process_line_audio_task(task_id: int) -> None:
             conn.close()
 
         # 等待工作流完成。短台词异常拖长通常意味着 ComfyUI 卡住或尾部静音，尽早中断。
-        is_short_line_timeout = _line_text_char_count(line_text) <= 10
+        is_short_line_timeout = _line_text_char_count(line_tts_text) <= 10
         started = time.time()
         timeout_seconds = 15 if is_short_line_timeout else 60 * 60
         poll_interval = 1 if is_short_line_timeout else 3
