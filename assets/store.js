@@ -218,6 +218,10 @@ async function listNovelBundles(novelId) {
   return data.bundles || [];
 }
 
+async function organizeNovelVideos(novelId) {
+  return api(`/api/novels/${Number(novelId)}/organize-videos`, { method: "POST" });
+}
+
 async function createNovelBundle(novelId, options = {}) {
   const data = await api(`/api/novels/${Number(novelId)}/bundles`, {
     method: "POST",
@@ -1305,6 +1309,7 @@ export {
   saveNovel,
   listNovelBundles,
   createNovelBundle,
+  organizeNovelVideos,
   fetchNovelBundleStatus,
   listRoleVoiceBundles,
   createRoleVoiceBundle,

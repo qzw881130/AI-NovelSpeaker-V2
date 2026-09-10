@@ -10,6 +10,7 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -66,6 +67,87 @@ def _strip_chapter_prefix(value: str) -> str:
     text = str(value or "").strip()
     text = re.sub(r"^第\s*[0-9０-９零〇一二三四五六七八九十百千万两]+\s*回[\s　·、，,：:—-]*", "", text)
     return text.strip() or str(value or "").strip()
+
+
+def organize_novel_videos(novel_id: int) -> dict:
+    conn = db_conn()
+    try:
+        novel = conn.execute("SELECT name, english_dir FROM novels WHERE id=?", (novel_id,)).fetchone()
+        if not novel:
+            raise ValueError("novel not found")
+        rows = conn.execute(
+            """
+            SELECT t.*, c.chapter_num AS current_chapter_num, c.title AS current_title,
+                   (SELECT a.corrected_srt_file_path FROM chapter_asr_tasks a
+                    WHERE a.novel_id=t.novel_id AND a.chapter_id=t.chapter_id
+                      AND COALESCE(a.corrected_srt_file_path,'')<>''
+                    ORDER BY a.id DESC LIMIT 1) AS srt_file_path
+            FROM chapter_video_export_tasks t
+            JOIN chapters c ON c.id=t.chapter_id AND c.novel_id=t.novel_id
+            WHERE t.novel_id=? AND t.status='completed'
+            ORDER BY c.chapter_num, t.width, t.height,
+                     CASE WHEN t.subtitle_mode='srt' THEN 0 ELSE 1 END, t.id DESC
+            """,
+            (novel_id,),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    english_dir = str(novel["english_dir"] or "").strip()
+    novel_root = (NOVEL_DIR / english_dir).resolve()
+    if not english_dir or not novel_root.is_relative_to(NOVEL_DIR.resolve()) or novel_root == NOVEL_DIR.resolve():
+        raise ValueError("invalid novel english_dir")
+    output_dir = (novel_root / "video_final").resolve()
+    if not output_dir.is_relative_to(novel_root):
+        raise ValueError("invalid video_final directory")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    novel_name = _safe_filename(novel["name"], fallback=english_dir)
+    result = {"path": str(output_dir), "videoCount": 0, "subtitleCount": 0, "sizeBytes": 0}
+    seen_sources = set()
+    used_names = set()
+    for row in rows:
+        source = _resolve_path(str(row["output_file_path"] or ""))
+        if not source or not source.is_file():
+            continue
+        source_stat = source.stat()
+        source_key = (source_stat.st_dev, source_stat.st_ino)
+        if source_key in seen_sources:
+            continue
+        width, height = int(row["width"] or 0), int(row["height"] or 0)
+        if width <= 0 or height <= 0:
+            continue
+        seen_sources.add(source_key)
+        divisor = math.gcd(width, height)
+        ratio_dir = output_dir / f"{novel_name}_{width // divisor}x{height // divisor}"
+        if not ratio_dir.resolve().is_relative_to(output_dir):
+            raise ValueError("invalid video ratio directory")
+        ratio_dir.mkdir(parents=True, exist_ok=True)
+        title = _safe_filename(str(row["current_title"] or "").replace("\u3000", " "), fallback="")
+        stem = f"第{int(row['current_chapter_num']):03d}回 {title}".rstrip()
+        target = ratio_dir / f"{stem}.mp4"
+        if target in used_names:
+            mode = "nosub" if row["subtitle_mode"] == "none" else "srt"
+            target = ratio_dir / f"{stem}-{width}x{height}-{mode}-{int(row['fps'])}fps.mp4"
+            if target in used_names:
+                target = ratio_dir / f"{target.stem}-{int(row['id'])}.mp4"
+        used_names.add(target)
+        subtitle = _resolve_path(str(row["srt_file_path"] or ""))
+        files = [(source, target, "videoCount")]
+        if subtitle and subtitle.is_file():
+            files.append((subtitle, target.with_suffix(".srt"), "subtitleCount"))
+        for src, dest, count_key in files:
+            # Publish only complete copies, including when replacing a previous export.
+            with tempfile.NamedTemporaryFile(dir=ratio_dir, prefix=".organize-", delete=False) as temporary:
+                temp_path = Path(temporary.name)
+            try:
+                shutil.copy2(src, temp_path)
+                size = temp_path.stat().st_size
+                os.replace(temp_path, dest)
+            finally:
+                temp_path.unlink(missing_ok=True)
+            result[count_key] += 1
+            result["sizeBytes"] += size
+    return result
 
 
 def _parse_timestamp(value: str) -> float | None:

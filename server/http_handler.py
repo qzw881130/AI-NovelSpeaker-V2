@@ -89,6 +89,7 @@ from .video_export import (
     get_video_export_file_path,
     get_video_export_task,
     list_video_export_tasks,
+    organize_novel_videos,
     retry_video_export_task,
     set_video_export_cover_image,
 )
@@ -2593,6 +2594,19 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"ok": True, "message": f"{health_url} 返回 {code}"})
                 return
             self.send_json({"ok": False, "message": f"{health_url} 返回 {code}"})
+            return
+
+        m_video_organize = re.match(r"^/api/novels/(\d+)/organize-videos$", route)
+        if m_video_organize:
+            try:
+                result = organize_novel_videos(int(m_video_organize.group(1)))
+            except ValueError as exc:
+                self.send_json({"error": str(exc)}, 404 if str(exc) == "novel not found" else 400)
+                return
+            except OSError as exc:
+                self.send_json({"error": f"整理视频目录失败：{exc}"}, 500)
+                return
+            self.send_json({"status": "ok", **result})
             return
 
         m_bundle_create = re.match(r"^/api/novels/(\d+)/bundles$", route)

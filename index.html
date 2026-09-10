@@ -175,6 +175,19 @@
       </form>
     </dialog>
 
+    <dialog id="videoFinalModal" class="modal" aria-labelledby="videoFinalModalTitle">
+      <form method="dialog">
+        <h3 id="videoFinalModalTitle">视频目录整理成功</h3>
+        <p class="meta">视频目录绝对路径</p>
+        <p id="videoFinalPath" style="overflow-wrap: anywhere; user-select: text;"></p>
+        <p id="videoFinalStats" class="meta"></p>
+        <p id="videoFinalEmpty" class="meta" hidden>未找到已完成且文件存在的视频，已创建视频目录。</p>
+        <menu>
+          <button class="primary-btn" type="submit">关闭</button>
+        </menu>
+      </form>
+    </dialog>
+
     <div id="toast" class="toast"></div>
     <script type="module" src="./assets/index.js"></script>
   </body>

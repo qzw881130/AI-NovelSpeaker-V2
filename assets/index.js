@@ -8,6 +8,7 @@ import {
   getActiveNovelId,
   getData,
   listNovelBundles,
+  organizeNovelVideos,
   refreshNovelAudioDuration,
   saveNovel,
   setActiveNovelId,
@@ -25,6 +26,7 @@ const DEFAULT_VISUAL_STYLE = "3D皮克斯动画电影风格";
 const NOVEL_CHIPS_EXPANDED_KEY = "ai_novel_index_chips_expanded";
 let activeBundleNovelId = "";
 let bundleTaskTimer = 0;
+const organizingNovelIds = new Set();
 
 function readJsonMap(key) {
   try {
@@ -220,6 +222,7 @@ function renderNovelCards() {
         <div class="card-actions">
           <button class="ghost-btn" data-action="chapters" data-id="${n.id}">章节管理</button>
           <button class="ghost-btn" data-action="download" data-id="${n.id}">打包下载</button>
+          <button class="ghost-btn" data-action="organize-videos" data-id="${n.id}" ${organizingNovelIds.has(String(n.id)) ? "disabled" : ""}>${organizingNovelIds.has(String(n.id)) ? "整理中..." : "整理视频目录"}</button>
         </div>
       </article>
     `
@@ -547,6 +550,23 @@ async function onNovelAction(action, id) {
     }
     if (action === "download") {
       await openBundleModal(novel);
+    }
+    if (action === "organize-videos") {
+      if (organizingNovelIds.has(String(id))) return;
+      organizingNovelIds.add(String(id));
+      renderNovelCards();
+      try {
+        const result = await organizeNovelVideos(id);
+        document.getElementById("videoFinalModalTitle").textContent = `${novel.name} · 视频目录整理成功`;
+        document.getElementById("videoFinalPath").textContent = result.path;
+        document.getElementById("videoFinalStats").textContent = `本次整理：视频 ${fmtNumber(result.videoCount)} 个，SRT 字幕 ${fmtNumber(result.subtitleCount)} 个，总大小 ${bytesToText(result.sizeBytes)}（含字幕）`;
+        document.getElementById("videoFinalEmpty").hidden = result.videoCount > 0;
+        const modal = document.getElementById("videoFinalModal");
+        if (!modal.open) modal.showModal();
+      } finally {
+        organizingNovelIds.delete(String(id));
+        renderNovelCards();
+      }
     }
     if (action === "chapters") {
       setActiveNovelId(id);
