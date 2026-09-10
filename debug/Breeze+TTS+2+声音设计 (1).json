@@ -1,0 +1,737 @@
+{
+  "id": "533675ed-0775-4ccd-a730-49b085a2b910",
+  "revision": 0,
+  "last_node_id": 9,
+  "last_link_id": 7,
+  "nodes": [
+    {
+      "id": 3,
+      "type": "T8_BreezeTTS_GenerationSettings",
+      "pos": [
+        0,
+        350
+      ],
+      "size": [
+        370,
+        360
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "max_new_tokens",
+          "name": "max_new_tokens",
+          "type": "INT",
+          "widget": {
+            "name": "max_new_tokens"
+          }
+        },
+        {
+          "label": "temperature",
+          "name": "temperature",
+          "type": "FLOAT",
+          "widget": {
+            "name": "temperature"
+          }
+        },
+        {
+          "label": "top_k",
+          "name": "top_k",
+          "type": "INT",
+          "widget": {
+            "name": "top_k"
+          }
+        },
+        {
+          "label": "top_p",
+          "name": "top_p",
+          "type": "FLOAT",
+          "widget": {
+            "name": "top_p"
+          }
+        },
+        {
+          "label": "repetition_penalty",
+          "name": "repetition_penalty",
+          "type": "FLOAT",
+          "widget": {
+            "name": "repetition_penalty"
+          }
+        },
+        {
+          "label": "depth_temperature",
+          "name": "depth_temperature",
+          "type": "FLOAT",
+          "widget": {
+            "name": "depth_temperature"
+          }
+        },
+        {
+          "label": "depth_top_k",
+          "name": "depth_top_k",
+          "type": "INT",
+          "widget": {
+            "name": "depth_top_k"
+          }
+        },
+        {
+          "label": "depth_top_p",
+          "name": "depth_top_p",
+          "type": "FLOAT",
+          "widget": {
+            "name": "depth_top_p"
+          }
+        },
+        {
+          "label": "seed",
+          "name": "seed",
+          "type": "INT",
+          "widget": {
+            "name": "seed"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "label": "settings",
+          "name": "settings",
+          "type": "BREEZE_T8_SETTINGS",
+          "slot_index": 0,
+          "links": [
+            3
+          ]
+        }
+      ],
+      "title": "#3 3 生成设置",
+      "properties": {
+        "aux_id": "T8mars/Comfyui-breeze-tts",
+        "ver": "0.2.5",
+        "Node name for S&R": "T8_BreezeTTS_GenerationSettings",
+        "cnr_id": "comfyui-breeze-tts-T8",
+        "ue_properties": {
+          "version": "7.7",
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        1500,
+        0.9,
+        50,
+        1,
+        1.1,
+        0.9,
+        50,
+        1,
+        1087091473,
+        "randomize"
+      ],
+      "widgets_values_named": {
+        "max_new_tokens": 1500,
+        "temperature": 0.9,
+        "top_k": 50,
+        "top_p": 1,
+        "repetition_penalty": 1.1,
+        "depth_temperature": 0.9,
+        "depth_top_k": 50,
+        "depth_top_p": 1,
+        "seed": 1087091473,
+        "control_after_generate": "randomize"
+      },
+      "color": "#4b4777",
+      "bgcolor": "#262442"
+    },
+    {
+      "id": 5,
+      "type": "PreviewAudio",
+      "pos": [
+        1220,
+        100
+      ],
+      "size": [
+        300,
+        100
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "audio",
+          "name": "audio",
+          "type": "AUDIO",
+          "link": 5
+        },
+        {
+          "label": "audioUI",
+          "name": "audioUI",
+          "type": "AUDIO_UI",
+          "widget": {
+            "name": "audioUI"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "label": "audio",
+          "name": "audio",
+          "type": "AUDIO",
+          "slot_index": 0
+        }
+      ],
+      "title": "#5 5 试听",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.3.60",
+        "Node name for S&R": "PreviewAudio",
+        "ue_properties": {
+          "version": "7.7",
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [],
+      "widgets_values_named": {},
+      "color": "#33505d",
+      "bgcolor": "#1d3039"
+    },
+    {
+      "id": 6,
+      "type": "SaveAudio",
+      "pos": [
+        1220,
+        270
+      ],
+      "size": [
+        330,
+        120
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "audio",
+          "name": "audio",
+          "type": "AUDIO",
+          "link": 4
+        },
+        {
+          "label": "filename_prefix",
+          "name": "filename_prefix",
+          "type": "STRING",
+          "widget": {
+            "name": "filename_prefix"
+          }
+        },
+        {
+          "label": "audioUI",
+          "name": "audioUI",
+          "type": "AUDIO_UI",
+          "widget": {
+            "name": "audioUI"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "label": "audio",
+          "name": "audio",
+          "type": "AUDIO",
+          "slot_index": 0
+        }
+      ],
+      "title": "#6 6 保存音频",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.3.60",
+        "Node name for S&R": "SaveAudio",
+        "ue_properties": {
+          "version": "7.7",
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "audio/T8_Breeze_design"
+      ],
+      "widgets_values_named": {
+        "filename_prefix": "audio/T8_Breeze_design"
+      },
+      "color": "#33505d",
+      "bgcolor": "#1d3039"
+    },
+    {
+      "id": 4,
+      "type": "T8_BreezeTTS_Generate",
+      "pos": [
+        831.8074951171875,
+        174.7853240966797
+      ],
+      "size": [
+        330,
+        160
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "model",
+          "name": "model",
+          "type": "BREEZE_T8_MODEL",
+          "link": 1
+        },
+        {
+          "label": "request",
+          "name": "request",
+          "type": "BREEZE_T8_REQUEST",
+          "link": 2
+        },
+        {
+          "label": "settings",
+          "name": "settings",
+          "type": "BREEZE_T8_SETTINGS",
+          "link": 3
+        }
+      ],
+      "outputs": [
+        {
+          "label": "audio",
+          "name": "audio",
+          "type": "AUDIO",
+          "slot_index": 0,
+          "links": [
+            4,
+            5
+          ]
+        },
+        {
+          "label": "generation_info",
+          "name": "generation_info",
+          "type": "STRING",
+          "slot_index": 1
+        }
+      ],
+      "title": "#4 4 生成音频",
+      "properties": {
+        "aux_id": "T8mars/Comfyui-breeze-tts",
+        "ver": "0.2.5",
+        "Node name for S&R": "T8_BreezeTTS_Generate",
+        "cnr_id": "comfyui-breeze-tts-T8",
+        "ue_properties": {
+          "version": "7.7",
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {}
+        }
+      },
+      "color": "#7a405f",
+      "bgcolor": "#38202f"
+    },
+    {
+      "id": 2,
+      "type": "T8_BreezeTTS_DesignRequest",
+      "pos": [
+        390,
+        80
+      ],
+      "size": [
+        390,
+        250
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "text",
+          "name": "text",
+          "type": "STRING",
+          "widget": {
+            "name": "text"
+          },
+          "link": 6
+        },
+        {
+          "label": "voice_description",
+          "name": "voice_description",
+          "type": "STRING",
+          "widget": {
+            "name": "voice_description"
+          },
+          "link": 7
+        },
+        {
+          "label": "cfg_scale",
+          "name": "cfg_scale",
+          "type": "FLOAT",
+          "widget": {
+            "name": "cfg_scale"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "label": "request",
+          "name": "request",
+          "type": "BREEZE_T8_REQUEST",
+          "slot_index": 0,
+          "links": [
+            2
+          ]
+        }
+      ],
+      "title": "#2 ② 声音设计",
+      "properties": {
+        "aux_id": "T8mars/Comfyui-breeze-tts",
+        "ver": "0.2.5",
+        "Node name for S&R": "T8_BreezeTTS_DesignRequest",
+        "cnr_id": "comfyui-breeze-tts-T8",
+        "ue_properties": {
+          "version": "7.7",
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "[笑] 欢迎使用 Breeze TTS 2。",
+        "一位温柔自信的年轻女性，声音清晰，语气亲切。",
+        4
+      ],
+      "widgets_values_named": {
+        "text": "[笑] 欢迎使用 Breeze TTS 2。",
+        "voice_description": "一位温柔自信的年轻女性，声音清晰，语气亲切。",
+        "cfg_scale": 4
+      },
+      "color": "#6f3d65",
+      "bgcolor": "#342033"
+    },
+    {
+      "id": 9,
+      "type": "CR Prompt Text",
+      "pos": [
+        -514.8410034179688,
+        392.2131652832031
+      ],
+      "size": [
+        400,
+        200
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "prompt",
+          "name": "prompt",
+          "type": "STRING",
+          "widget": {
+            "name": "prompt"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "label": "prompt",
+          "name": "prompt",
+          "type": "STRING",
+          "links": [
+            7
+          ]
+        },
+        {
+          "label": "show_help",
+          "name": "show_help",
+          "type": "STRING"
+        }
+      ],
+      "title": "#9 ⚙️ CR Prompt Text(声音描述)",
+      "properties": {
+        "cnr_id": "ComfyUI_Comfyroll_CustomNodes",
+        "ver": "d78b780ae43fcf8c6b7c6505e6ffb4584281ceca",
+        "Node name for S&R": "CR Prompt Text",
+        "ue_properties": {
+          "version": "7.7",
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "一位温柔自信的年轻女性，声音清晰，语气亲切。"
+      ],
+      "widgets_values_named": {
+        "prompt": "一位温柔自信的年轻女性，声音清晰，语气亲切。"
+      }
+    },
+    {
+      "id": 8,
+      "type": "CR Prompt Text",
+      "pos": [
+        -550.9960327148438,
+        147.88601684570312
+      ],
+      "size": [
+        400,
+        200
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "prompt",
+          "name": "prompt",
+          "type": "STRING",
+          "widget": {
+            "name": "prompt"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "label": "prompt",
+          "name": "prompt",
+          "type": "STRING",
+          "links": [
+            6
+          ]
+        },
+        {
+          "label": "show_help",
+          "name": "show_help",
+          "type": "STRING"
+        }
+      ],
+      "title": "#8 ⚙️ CR Prompt Text(台词)",
+      "properties": {
+        "cnr_id": "ComfyUI_Comfyroll_CustomNodes",
+        "ver": "d78b780ae43fcf8c6b7c6505e6ffb4584281ceca",
+        "Node name for S&R": "CR Prompt Text",
+        "ue_properties": {
+          "version": "7.7",
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "[笑] 欢迎使用 Breeze TTS 2。"
+      ],
+      "widgets_values_named": {
+        "prompt": "[笑] 欢迎使用 Breeze TTS 2。"
+      }
+    },
+    {
+      "id": 1,
+      "type": "T8_BreezeTTS_ModelLoader",
+      "pos": [
+        0,
+        80
+      ],
+      "size": [
+        340,
+        210
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "dtype",
+          "name": "dtype",
+          "type": "COMBO",
+          "widget": {
+            "name": "dtype"
+          }
+        },
+        {
+          "label": "device",
+          "name": "device",
+          "type": "COMBO",
+          "widget": {
+            "name": "device"
+          }
+        },
+        {
+          "label": "attention",
+          "name": "attention",
+          "type": "COMBO",
+          "widget": {
+            "name": "attention"
+          }
+        },
+        {
+          "label": "download_if_missing",
+          "name": "download_if_missing",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "download_if_missing"
+          }
+        },
+        {
+          "label": "accept_model_license",
+          "name": "accept_model_license",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "accept_model_license"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "label": "model",
+          "name": "model",
+          "type": "BREEZE_T8_MODEL",
+          "slot_index": 0,
+          "links": [
+            1
+          ]
+        },
+        {
+          "label": "model_info",
+          "name": "model_info",
+          "type": "STRING",
+          "slot_index": 1
+        }
+      ],
+      "title": "#1 ① 模型加载器 · 先勾选许可证",
+      "properties": {
+        "aux_id": "T8mars/Comfyui-breeze-tts",
+        "ver": "0.2.5",
+        "Node name for S&R": "T8_BreezeTTS_ModelLoader",
+        "cnr_id": "comfyui-breeze-tts-T8",
+        "ue_properties": {
+          "version": "7.7",
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "auto",
+        "auto",
+        "auto",
+        false,
+        true
+      ],
+      "widgets_values_named": {
+        "dtype": "auto",
+        "device": "auto",
+        "attention": "auto",
+        "download_if_missing": false,
+        "accept_model_license": true
+      },
+      "color": "#5b3153",
+      "bgcolor": "#2b1b2a"
+    }
+  ],
+  "links": [
+    [
+      1,
+      1,
+      0,
+      4,
+      0,
+      "BREEZE_T8_MODEL"
+    ],
+    [
+      2,
+      2,
+      0,
+      4,
+      1,
+      "BREEZE_T8_REQUEST"
+    ],
+    [
+      3,
+      3,
+      0,
+      4,
+      2,
+      "BREEZE_T8_SETTINGS"
+    ],
+    [
+      4,
+      4,
+      0,
+      6,
+      0,
+      "AUDIO"
+    ],
+    [
+      5,
+      4,
+      0,
+      5,
+      0,
+      "AUDIO"
+    ],
+    [
+      6,
+      8,
+      0,
+      2,
+      0,
+      "STRING"
+    ],
+    [
+      7,
+      9,
+      0,
+      2,
+      1,
+      "STRING"
+    ]
+  ],
+  "groups": [
+    {
+      "id": 1,
+      "title": "Breeze TTS 2 声音设计｜先在①中阅读并勾选 accept_model_license",
+      "bounding": [
+        -30,
+        20,
+        1610,
+        750
+      ],
+      "color": "#ff6f9f",
+      "flags": {}
+    },
+    {
+      "id": 2,
+      "title": "B站，Youtube：T8star-Aix",
+      "bounding": [
+        -455.2441101074219,
+        -490.2301025390625,
+        2836.38525390625,
+        427.2743835449219
+      ],
+      "color": "#3f789e",
+      "flags": {}
+    }
+  ],
+  "config": {},
+  "extra": {
+    "links_added_by_ue": [],
+    "t8_node_version": "0.2.5",
+    "ue_links": [],
+    "pixaromaGroups": [],
+    "0246.VERSION": [
+      0,
+      0,
+      4
+    ],
+    "frontendVersion": "1.49.6",
+    "ds": {
+      "scale": 0.9646149645000016,
+      "offset": [
+        640.9748217056575,
+        476.010788991859
+      ]
+    },
+    "t8_example_kind": "ui_workflow",
+    "VHS_latentpreview": false,
+    "VHS_latentpreviewrate": 0,
+    "VHS_MetadataImage": true,
+    "VHS_KeepIntermediate": true
+  },
+  "version": 0.4
+}

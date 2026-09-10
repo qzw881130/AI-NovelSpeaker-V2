@@ -1,0 +1,112 @@
+{
+  "1": {
+    "inputs": {
+      "dtype": "auto",
+      "device": "auto",
+      "attention": "auto",
+      "download_if_missing": false,
+      "accept_model_license": true
+    },
+    "class_type": "T8_BreezeTTS_ModelLoader",
+    "_meta": {
+      "title": "#1 ① 模型加载器 · 先勾选许可证"
+    }
+  },
+  "2": {
+    "inputs": {
+      "text": [
+        "8",
+        0
+      ],
+      "voice_description": [
+        "9",
+        0
+      ],
+      "cfg_scale": 4
+    },
+    "class_type": "T8_BreezeTTS_DesignRequest",
+    "_meta": {
+      "title": "#2 ② 声音设计"
+    }
+  },
+  "3": {
+    "inputs": {
+      "max_new_tokens": 1500,
+      "temperature": 0.9,
+      "top_k": 50,
+      "top_p": 1,
+      "repetition_penalty": 1.1,
+      "depth_temperature": 0.9,
+      "depth_top_k": 50,
+      "depth_top_p": 1,
+      "seed": 1087091473
+    },
+    "class_type": "T8_BreezeTTS_GenerationSettings",
+    "_meta": {
+      "title": "#3 3 生成设置"
+    }
+  },
+  "4": {
+    "inputs": {
+      "model": [
+        "1",
+        0
+      ],
+      "request": [
+        "2",
+        0
+      ],
+      "settings": [
+        "3",
+        0
+      ]
+    },
+    "class_type": "T8_BreezeTTS_Generate",
+    "_meta": {
+      "title": "#4 4 生成音频"
+    }
+  },
+  "5": {
+    "inputs": {
+      "audio": [
+        "4",
+        0
+      ]
+    },
+    "class_type": "PreviewAudio",
+    "_meta": {
+      "title": "#5 5 试听"
+    }
+  },
+  "6": {
+    "inputs": {
+      "filename_prefix": "audio/T8_Breeze_design",
+      "audio": [
+        "4",
+        0
+      ]
+    },
+    "class_type": "SaveAudio",
+    "_meta": {
+      "title": "#6 6 保存音频"
+    }
+  },
+  "8": {
+    "inputs": {
+      "prompt": "[笑] 欢迎使用 Breeze TTS 2。"
+    },
+    "class_type": "CR Prompt Text",
+    "_meta": {
+      "title": "#8 ⚙️ CR Prompt Text(台词)"
+    }
+  },
+  "9": {
+    "inputs": {
+      "prompt": "一位温柔自信的年轻女性，声音清晰，语气亲切。"
+    },
+    "class_type": "CR Prompt Text",
+    "_meta": {
+      "title": "#9 ⚙️ CR Prompt Text(声音描述)"
+    }
+  }
+}
